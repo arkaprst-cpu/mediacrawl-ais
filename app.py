@@ -621,7 +621,6 @@ else:
     filter_tone = st.selectbox(
         "Filter tone:",
         ["Semua", "Positif", "Netral", "Negatif"],
-        horizontal=True if hasattr(st, 'horizontal') else False
     )
 
     tampil = hasil_list if filter_tone == "Semua" else [
