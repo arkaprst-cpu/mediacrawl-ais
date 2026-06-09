@@ -1,6 +1,6 @@
 """
 Media Crawl AIS — Pustrajakwas BPKP
-Streamlit web app: input keyword → crawl → analisis Groq → download Excel
+Streamlit web app: input keyword → Groq query expansion → crawl → analisis → download Excel
 """
 
 import streamlit as st
@@ -38,6 +38,7 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
 .artikel-ringkasan { font-size: 0.85rem; color: #374151; line-height: 1.6; margin-bottom: 0.8rem; }
 .artikel-risiko { font-size: 0.82rem; color: #7c3aed; background: #f5f3ff; padding: 0.5rem 0.8rem; border-radius: 6px; margin-bottom: 0.5rem; }
 .artikel-tindak { font-size: 0.82rem; color: #065f46; background: #ecfdf5; padding: 0.5rem 0.8rem; border-radius: 6px; }
+.query-tag { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; margin: 2px; font-family: 'IBM Plex Mono', monospace; }
 section[data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid #e8ecf0; }
 .stButton > button { background: #1F3864 !important; color: white !important; border: none !important; border-radius: 8px !important; font-weight: 600 !important; width: 100%; }
 .stButton > button:hover { background: #2d5299 !important; }
@@ -82,6 +83,7 @@ Aturan: Tone HANYA Positif/Netral/Negatif. Bahasa Indonesia formal. Output HANYA
 
 HEADERS_HTTP = {"User-Agent": "Mozilla/5.0 (compatible; MediaCrawlBot/1.0)"}
 
+# ── Helper functions ──────────────────────────────────────────
 def parse_tanggal(entry):
     for field in ["published", "updated"]:
         val = entry.get(field, "")
@@ -96,16 +98,58 @@ def parse_tanggal(entry):
 def bersihkan_html(teks):
     return re.sub(r"<[^>]+>", " ", teks).strip()
 
-def crawl_google_news(kata_kunci, max_hasil=40):
+# ── QUERY EXPANSION oleh Groq ─────────────────────────────────
+def ekspansi_keyword(client, keyword_input):
+    """
+    Minta Groq untuk memperluas keyword user menjadi
+    5-6 variasi query yang lebih cerdas dan kontekstual.
+    Mengembalikan list query strings.
+    """
+    prompt = f"""Kamu adalah asisten pencarian berita media Indonesia.
+
+User ingin mencari berita terkait: "{keyword_input}"
+
+Tugasmu: hasilkan 5 query pencarian yang BERBEDA-BEDA untuk Google News,
+agar berita yang ditemukan lebih lengkap dan kontekstual.
+
+Aturan:
+- Variasikan: singkatan, nama lengkap, sinonim, aktor kunci, lokasi jika ada
+- Setiap query pendek (2-5 kata), seperti yang orang ketik di search engine
+- Gunakan bahasa Indonesia
+- Output HANYA array JSON, tidak ada teks lain
+
+Contoh untuk input "MBG Jawa Tengah":
+["MBG Jawa Tengah", "Makan Bergizi Gratis Semarang", "program makan siang sekolah Jateng", "dapur MBG Solo Semarang", "Makan Bergizi Gratis Jateng evaluasi"]
+
+Sekarang buat untuk: "{keyword_input}"
+"""
+    try:
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=300
+        )
+        teks = resp.choices[0].message.content.strip()
+        teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+        queries = json.loads(teks)
+        if isinstance(queries, list) and len(queries) > 0:
+            return [str(q) for q in queries[:6]]
+    except Exception:
+        pass
+    # Fallback: pakai keyword asli kalau Groq gagal
+    return [k.strip() for k in keyword_input.split(",") if k.strip()]
+
+# ── Crawl functions ───────────────────────────────────────────
+def crawl_google_news(queries, max_hasil=50):
+    """Crawl Google News menggunakan list query hasil ekspansi."""
     hasil, link_sudah = [], set()
-    queries = [" OR ".join(kata_kunci), kata_kunci[0]]
-    if len(kata_kunci) > 1:
-        queries.append(kata_kunci[1])
     for q in queries:
         url = f"https://news.google.com/rss/search?q={quote_plus(q)}&hl=id&gl=ID&ceid=ID:id"
         try:
             resp = requests.get(url, headers=HEADERS_HTTP, timeout=15)
             feed = feedparser.parse(resp.text)
+            baru = 0
             for entry in feed.entries:
                 link = entry.get("link", "")
                 if link in link_sudah: continue
@@ -121,12 +165,14 @@ def crawl_google_news(kata_kunci, max_hasil=40):
                     "snippet": summary[:600] if summary else judul_raw,
                     "tier"   : "Tier 1",
                 })
+                baru += 1
         except Exception:
             pass
         time.sleep(0.5)
     return hasil[:max_hasil]
 
-def crawl_rss_feeds(kata_kunci):
+def crawl_rss_feeds(kata_kunci_asli):
+    """RSS feed pakai kata kunci asli user sebagai filter."""
     hasil = []
     for nama, tier, url in RSS_FEEDS:
         try:
@@ -136,7 +182,7 @@ def crawl_rss_feeds(kata_kunci):
             for entry in feed.entries:
                 judul   = entry.get("title", "")
                 summary = bersihkan_html(entry.get("summary", ""))
-                if not any(k.lower() in (judul + summary).lower() for k in kata_kunci): continue
+                if not any(k.lower() in (judul+summary).lower() for k in kata_kunci_asli): continue
                 hasil.append({
                     "tanggal": parse_tanggal(entry),
                     "sumber" : nama,
@@ -227,30 +273,33 @@ st.markdown("""
 
 with st.sidebar:
     st.markdown("### ⚙️ Konfigurasi")
-
-    # Baca dari Streamlit Secrets jika tersedia
     groq_key_secret = st.secrets.get("GROQ_API_KEY", "") if hasattr(st, "secrets") else ""
     if groq_key_secret:
         st.success("✅ API Key terbaca dari Secrets", icon="🔑")
         groq_key = groq_key_secret
     else:
-        groq_key = st.text_input(
-            "Groq API Key",
-            type="password",
-            placeholder="gsk_...",
-            help="Daftar gratis di console.groq.com"
-        )
+        groq_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...", help="Daftar gratis di console.groq.com")
 
     st.markdown("---")
     st.markdown("### 🔍 Parameter Crawl")
-    keyword_input = st.text_input("Kata Kunci Isu", placeholder="Contoh: DSI, Danantara Sumberdaya", help="Pisahkan dengan koma")
-    label_isu     = st.text_input("Label Isu (untuk nama file)", placeholder="Contoh: DSI_Danantara")
-    max_artikel   = st.slider("Maks. Artikel Diproses", min_value=5, max_value=30, value=20, step=5)
+    keyword_input = st.text_input(
+        "Kata Kunci Isu",
+        placeholder="Contoh: MBG Jawa Tengah",
+        help="Tulis natural saja — AI akan memperluas keyword secara otomatis"
+    )
+    label_isu   = st.text_input("Label Isu (untuk nama file)", placeholder="Contoh: MBG_Jateng")
+    max_artikel = st.slider("Maks. Artikel Diproses", min_value=5, max_value=30, value=20, step=5)
     st.markdown("---")
-    tombol_crawl  = st.button("🚀 Mulai Crawl & Analisis", use_container_width=True)
+    tombol_crawl = st.button("🚀 Mulai Crawl & Analisis", use_container_width=True)
     st.markdown("---")
-    st.markdown("""<div style="font-size:0.75rem;color:#6b7280;line-height:1.6">
-    <b>Cara pakai:</b><br>1. Isi kata kunci isu<br>2. Klik Mulai Crawl<br>3. Unduh hasil Excel
+    st.markdown("""<div style="font-size:0.75rem;color:#6b7280;line-height:1.8">
+    <b>Cara pakai:</b><br>
+    1. Ketik isu secara natural<br>
+    &nbsp;&nbsp;&nbsp;<i>Contoh: "MBG Jawa Tengah"</i><br>
+    &nbsp;&nbsp;&nbsp;<i>atau: "korupsi pengadaan alkes"</i><br>
+    2. AI otomatis perluas keyword<br>
+    3. Klik Mulai Crawl<br>
+    4. Unduh hasil Excel
     </div>""", unsafe_allow_html=True)
 
 if not tombol_crawl:
@@ -258,7 +307,7 @@ if not tombol_crawl:
     <div style="text-align:center;padding:4rem 2rem;color:#9ca3af;">
         <div style="font-size:3rem;margin-bottom:1rem">🗞️</div>
         <div style="font-size:1.1rem;font-weight:600;color:#374151;margin-bottom:0.5rem">Siap melakukan crawl</div>
-        <div style="font-size:0.88rem">Isi kata kunci di panel kiri, lalu klik <b>Mulai Crawl & Analisis</b></div>
+        <div style="font-size:0.88rem">Ketik isu di panel kiri — AI akan otomatis memperluas pencarian</div>
     </div>""", unsafe_allow_html=True)
 else:
     if not groq_key:
@@ -267,30 +316,48 @@ else:
         st.error("❌ Kata kunci belum diisi."); st.stop()
     if not label_isu.strip():
         label_isu = keyword_input.split(",")[0].strip().replace(" ", "_")
-    kata_kunci = [k.strip() for k in keyword_input.split(",") if k.strip()]
+    kata_kunci_asli = [k.strip() for k in keyword_input.replace(",", " ").split() if k.strip()]
 
     try:
         client = Groq(api_key=groq_key)
-        client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content":"OK"}], max_tokens=3)
+        client.chat.completions.create(model="llama-3.3-70b-versatile",
+            messages=[{"role":"user","content":"OK"}], max_tokens=3)
     except Exception as e:
         st.error(f"❌ Groq API gagal: {e}"); st.stop()
 
+    # ── TAHAP 0: Query Expansion ──────────────────────────────
+    st.markdown("### 🧠 Tahap 0 — Ekspansi Keyword oleh AI")
+    with st.spinner("AI sedang memperluas keyword pencarian..."):
+        queries_expanded = ekspansi_keyword(client, keyword_input)
+
+    # Tampilkan query yang dihasilkan
+    tags_html = " ".join([f'<span class="query-tag">🔍 {q}</span>' for q in queries_expanded])
+    st.markdown(f"""
+    <div style="background:#f0f4ff;border:1px solid #c7d2fe;border-radius:8px;padding:1rem 1.2rem;margin-bottom:1rem;">
+        <div style="font-size:0.78rem;color:#4338ca;font-weight:600;margin-bottom:0.5rem">
+            ✨ AI mengubah "{keyword_input}" menjadi {len(queries_expanded)} query pencarian:
+        </div>
+        {tags_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── TAHAP 1: Crawl ────────────────────────────────────────
     st.markdown("### 📡 Tahap 1 — Crawl Media")
     status_crawl = st.empty(); prog_crawl = st.progress(0)
     status_crawl.info("🌐 Mengambil artikel dari Google News...")
     semua, link_set = [], set()
-    gn = crawl_google_news(kata_kunci)
+    gn = crawl_google_news(queries_expanded, max_hasil=50)
     for a in gn:
         if a["link"] not in link_set: semua.append(a); link_set.add(a["link"])
     prog_crawl.progress(40)
     status_crawl.info("📡 Mengambil dari RSS media Indonesia...")
-    rss = crawl_rss_feeds(kata_kunci)
+    rss = crawl_rss_feeds(kata_kunci_asli)
     for a in rss:
         if a["link"] not in link_set: semua.append(a); link_set.add(a["link"])
     prog_crawl.progress(100)
     semua = semua[:max_artikel]
     if not semua:
-        st.warning("⚠️ Tidak ada artikel. Coba kata kunci lebih pendek."); st.stop()
+        st.warning("⚠️ Tidak ada artikel ditemukan. Coba kata kunci berbeda."); st.stop()
     status_crawl.success(f"✅ Ditemukan **{len(semua)} artikel** relevan.")
     c1,c2,c3 = st.columns(3)
     for col, num, label in [(c1,len(semua),"Total Artikel"),(c2,len(gn),"Google News"),(c3,len(rss),"RSS Media")]:
@@ -298,6 +365,7 @@ else:
             st.markdown(f'<div class="stat-card"><div class="stat-number">{num}</div><div class="stat-label">{label}</div></div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # ── TAHAP 2: Analisis ─────────────────────────────────────
     st.markdown("### 🤖 Tahap 2 — Analisis dengan Groq AI")
     status_ai = st.empty(); prog_ai = st.progress(0); hasil_list = []
     for i, artikel in enumerate(semua):
@@ -308,15 +376,18 @@ else:
     prog_ai.progress(100)
     status_ai.success(f"✅ Selesai — {len(hasil_list)} artikel dianalisis.")
 
+    # ── Statistik tone ────────────────────────────────────────
     tone_counts = {"Positif":0,"Netral":0,"Negatif":0}
     for h in hasil_list: tone_counts[h.get("tone","Netral")] = tone_counts.get(h.get("tone","Netral"),0)+1
-    st.markdown("<br>### 📊 Ringkasan Tone Berita", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 📊 Ringkasan Tone Berita")
     c1,c2,c3 = st.columns(3)
     for col, tone, warna, emoji in [(c1,"Positif","#065f46","🟢"),(c2,"Netral","#92400e","🟡"),(c3,"Negatif","#991b1b","🔴")]:
         with col:
             st.markdown(f'<div class="stat-card"><div class="stat-number" style="color:{warna}">{tone_counts[tone]}</div><div class="stat-label">{emoji} {tone}</div></div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # ── Download ──────────────────────────────────────────────
     st.markdown("### ⬇️ Unduh Hasil")
     excel_buf = buat_excel(hasil_list, label_isu)
     nama_file = f"MediaCrawl_AIS_{label_isu.replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
@@ -325,6 +396,7 @@ else:
                        use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # ── Pratinjau ─────────────────────────────────────────────
     st.markdown("### 📋 Pratinjau Hasil Analisis")
     filter_tone = st.selectbox("Filter tone:", ["Semua","Positif","Netral","Negatif"])
     tampil = hasil_list if filter_tone=="Semua" else [h for h in hasil_list if h.get("tone")==filter_tone]
