@@ -1,10 +1,10 @@
 """
 Media Crawl AIS — Pustrajakwas BPKP
-Streamlit web app: input keyword → crawl Google News RSS → analisis Groq → download Excel
+Streamlit web app: input keyword → Groq query expansion → crawl → analisis → download Excel
 """
 
 import streamlit as st
-import feedparser, json, time, re, io
+import feedparser, json, time, re, requests, io
 from groq import Groq
 from datetime import datetime
 from urllib.parse import quote_plus
@@ -12,7 +12,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# ── Page config ────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Media Crawl AIS — Pustrajakwas",
     page_icon="📰",
@@ -20,39 +19,87 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important; }
-.stButton>button {
-    background: #1F3864; color: white; border: none;
-    border-radius: 6px; font-weight: 600; padding: 0.5rem 1.2rem;
+html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
+
+.main-header {
+    background: linear-gradient(135deg, #1F3864 0%, #2d5299 100%);
+    color: white; padding: 2rem 2.5rem; border-radius: 12px; margin-bottom: 2rem;
 }
-.stButton>button:hover { background: #2E4D8F; }
-.card {
-    background: #f8f9fb; border-left: 4px solid #1F3864;
-    border-radius: 6px; padding: 1rem 1.2rem; margin-bottom: 0.8rem;
+.main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.3rem 0; }
+.main-header p  { font-size: 0.85rem; opacity: 0.75; margin: 0; font-family: 'IBM Plex Mono', monospace; }
+
+.stat-card {
+    background: white; border: 1px solid #e8ecf0; border-radius: 10px;
+    padding: 1.2rem 1.5rem; text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
-.card-neg { border-left-color: #c0392b; }
-.card-pos { border-left-color: #27ae60; }
-.badge {
-    display: inline-block; padding: 2px 10px;
-    border-radius: 12px; font-size: 0.75rem; font-weight: 600;
+.stat-number { font-size: 2rem; font-weight: 700; color: #1F3864; line-height: 1; }
+.stat-label  { font-size: 0.75rem; color: #6b7280; margin-top: 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.artikel-card {
+    background: #ffffff; border: 1px solid #e2e8f0;
+    border-left: 4px solid #1F3864; border-radius: 8px;
+    padding: 1.2rem 1.5rem; margin-bottom: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
-.badge-pos { background: #C6EFCE; color: #276221; }
-.badge-net { background: #FFEB9C; color: #7D5A00; }
-.badge-neg { background: #FFC7CE; color: #9C0006; }
-hr.divcard { margin: 0.5rem 0; border-color: #e0e4ed; }
+.artikel-card:hover { box-shadow: 0 4px 12px rgba(31,56,100,0.12); }
+.artikel-judul {
+    font-size: 1rem; font-weight: 600; color: #1e293b;
+    margin-bottom: 0.4rem; line-height: 1.4;
+}
+.artikel-meta {
+    font-size: 0.78rem; color: #64748b; margin-bottom: 0.8rem;
+    font-family: 'IBM Plex Mono', monospace;
+}
+.artikel-ringkasan {
+    font-size: 0.88rem; color: #374151; line-height: 1.6;
+    margin-bottom: 0.6rem;
+}
+.artikel-risiko {
+    font-size: 0.85rem; color: #7c3aed; background: #f5f3ff;
+    border-left: 3px solid #7c3aed; padding: 0.5rem 0.8rem;
+    border-radius: 0 6px 6px 0; margin-bottom: 0.5rem;
+}
+.artikel-tindak {
+    font-size: 0.85rem; color: #065f46; background: #ecfdf5;
+    border-left: 3px solid #059669; padding: 0.5rem 0.8rem;
+    border-radius: 0 6px 6px 0;
+}
+
+.tone-positif {
+    background: #d1fae5; color: #065f46;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600;
+}
+.tone-netral {
+    background: #fef3c7; color: #92400e;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600;
+}
+.tone-negatif {
+    background: #fee2e2; color: #991b1b;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600;
+}
+
+.query-box {
+    background: #eff6ff; border: 1px solid #bfdbfe;
+    border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1rem;
+    font-size: 0.83rem; color: #1e40af;
+    font-family: 'IBM Plex Mono', monospace;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ── Tier sumber ────────────────────────────────────────────────────────────
 TIER1_KEYWORDS = {
-    "kompas", "tempo", "detik", "cnnindonesia", "republika", "antaranews",
-    "mediaindonesia", "bisnis", "kontan", "tribunnews", "liputan6", "okezone",
-    "sindonews", "jpnn", "suara", "kumparan", "rmol", "inews", "katadata",
-    "validnews", "thejakartapost", "jawapos",
+    "kompas","tempo","detik","cnnindonesia","republika","antaranews",
+    "mediaindonesia","bisnis","kontan","tribunnews","liputan6","okezone",
+    "sindonews","jpnn","suara","kumparan","rmol","inews","katadata",
+    "validnews","thejakartapost","jawapos",
 }
 
 def tier_sumber(url: str) -> str:
@@ -62,15 +109,42 @@ def tier_sumber(url: str) -> str:
             return "Tier 1"
     return "Tier 2"
 
+# ── Query expansion ────────────────────────────────────────────────────────
+def ekspansi_keyword(client: Groq, keyword: str) -> list:
+    prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
+
+Keyword input: "{keyword}"
+
+Aturan:
+- Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
+- Gunakan bahasa Indonesia
+- Kembalikan HANYA array JSON berisi string query, tanpa teks lain
+
+Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
+    try:
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=300,
+        )
+        teks = resp.choices[0].message.content.strip()
+        teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+        queries = json.loads(teks)
+        if isinstance(queries, list):
+            return [keyword] + [q for q in queries if isinstance(q, str)]
+    except Exception:
+        pass
+    return [keyword]
+
 # ── Crawl Google News RSS ──────────────────────────────────────────────────
-def crawl_google_news(keywords: list, max_articles: int) -> list:
+def crawl_google_news(queries: list, max_articles: int) -> list:
     articles = []
     seen = set()
     headers = {"User-Agent": "Mozilla/5.0 (compatible; AIS-Crawler/1.0)"}
 
-    for kw in keywords:
-        query = quote_plus(kw)
-        url = f"https://news.google.com/rss/search?q={query}&hl=id&gl=ID&ceid=ID:id"
+    for q in queries:
+        url = f"https://news.google.com/rss/search?q={quote_plus(q)}&hl=id&gl=ID&ceid=ID:id"
         try:
             feed = feedparser.parse(url, request_headers=headers)
             for entry in feed.entries:
@@ -85,7 +159,7 @@ def crawl_google_news(keywords: list, max_articles: int) -> list:
                     pub = entry.get("published", "")
                     tanggal = pub[:10] if pub else "-"
 
-                tier = tier_sumber(link)
+                tier   = tier_sumber(link)
                 domain = re.sub(r"https?://(www\.)?", "", link).split("/")[0]
                 snippet = re.sub(r"<[^>]+>", "", entry.get("summary", ""))[:500]
 
@@ -100,7 +174,7 @@ def crawl_google_news(keywords: list, max_articles: int) -> list:
                 if len(articles) >= max_articles:
                     return articles
         except Exception as e:
-            st.warning(f"Gagal crawl '{kw}': {e}")
+            st.warning(f"Gagal crawl '{q}': {e}")
 
     return articles
 
@@ -216,17 +290,11 @@ def buat_excel(data: list, label_isu: str) -> bytes:
         r  = 5 + i
         bg = C_ODD if i % 2 == 0 else C_EVEN
         baris = [
-            i + 1,
-            d.get("tanggal", "-"),
-            d.get("sumber", "-"),
-            d.get("link", "-"),
-            d.get("judul", "-"),
-            d.get("ringkasan_isu", "-"),
-            d.get("isu_subisu", "-"),
-            d.get("aktor_lokasi", "-"),
-            d.get("tone", "Netral"),
-            d.get("risiko_ais", "-"),
-            d.get("tindak_lanjut", "-"),
+            i + 1, d.get("tanggal","-"), d.get("sumber","-"),
+            d.get("link","-"), d.get("judul","-"),
+            d.get("ringkasan_isu","-"), d.get("isu_subisu","-"),
+            d.get("aktor_lokasi","-"), d.get("tone","Netral"),
+            d.get("risiko_ais","-"), d.get("tindak_lanjut","-"),
         ]
         for col, val in enumerate(baris, 1):
             c = ws.cell(row=r, column=col, value=val)
@@ -247,11 +315,10 @@ def buat_excel(data: list, label_isu: str) -> bytes:
 
 # ── Sidebar ────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("📰 Media Crawl AIS")
+    st.markdown("### 📰 Media Crawl AIS")
     st.caption("Pustrajakwas BPKP")
     st.divider()
 
-    # API Key — Secrets-aware
     groq_key_default = ""
     if hasattr(st, "secrets"):
         groq_key_default = st.secrets.get("GROQ_API_KEY", "")
@@ -260,8 +327,7 @@ with st.sidebar:
         groq_key = groq_key_default
     else:
         groq_key = st.text_input(
-            "Groq API Key",
-            type="password",
+            "Groq API Key", type="password",
             placeholder="gsk_...",
             help="Daftar gratis di console.groq.com",
         )
@@ -271,7 +337,7 @@ with st.sidebar:
         "Kata Kunci Isu",
         placeholder="Contoh:\nMBG, makan bergizi gratis\nDanantara ekspor\nPertamax BBM",
         height=130,
-        help="Satu kata kunci per baris, atau pisahkan dengan koma.",
+        help="Satu kata kunci per baris, atau pisahkan dengan koma. Groq akan memperluas tiap keyword secara otomatis.",
     )
     label_isu = st.text_input(
         "Label Isu (nama file Excel)",
@@ -283,8 +349,12 @@ with st.sidebar:
     run_btn = st.button("🔍 Mulai Crawl & Analisis", use_container_width=True)
 
 # ── Main area ──────────────────────────────────────────────────────────────
-st.title("Analisis Isu Strategis Pengawasan")
-st.caption("Media Crawl otomatis · Analisis Groq (llama-3.3-70b) · Output Excel · Pustrajakwas BPKP")
+st.markdown("""
+<div class="main-header">
+  <h1>📰 Analisis Isu Strategis Pengawasan</h1>
+  <p>Media Crawl otomatis · Query Expansion · Analisis Groq · Output Excel · Pustrajakwas BPKP</p>
+</div>
+""", unsafe_allow_html=True)
 
 if run_btn:
     if not groq_key:
@@ -297,14 +367,26 @@ if run_btn:
         st.error("Isi Label Isu untuk nama file Excel.")
         st.stop()
 
-    keywords = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
+    keywords_input = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
+    client = Groq(api_key=groq_key)
 
+    # Tahap 0 — Query expansion
     st.subheader("⏳ Proses Crawl & Analisis")
-    prog_bar  = st.progress(0, text="Memulai crawl...")
-    status_tx = st.empty()
+    with st.spinner("Memperluas keyword dengan Groq..."):
+        all_queries = []
+        for kw in keywords_input:
+            expanded = ekspansi_keyword(client, kw)
+            all_queries.extend(expanded)
 
-    status_tx.info(f"Crawling Google News untuk {len(keywords)} kata kunci...")
-    artikel_raw = crawl_google_news(keywords, max_art)
+    # Tampilkan queries yang dihasilkan
+    query_lines = "\n".join(f"🔍 {q}" for q in all_queries)
+    st.markdown(f'<div class="query-box"><b>Query yang akan dicari ({len(all_queries)} variasi):</b><br>{query_lines.replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
+
+    # Tahap 1 — Crawl
+    prog_bar  = st.progress(0, text="Crawling Google News...")
+    status_tx = st.empty()
+    status_tx.info(f"Crawling {len(all_queries)} query ke Google News...")
+    artikel_raw = crawl_google_news(all_queries, max_art)
 
     if not artikel_raw:
         st.warning("Tidak ada artikel ditemukan. Coba kata kunci yang berbeda atau lebih pendek.")
@@ -312,72 +394,77 @@ if run_btn:
 
     status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis Groq...")
 
-    client = Groq(api_key=groq_key)
-    hasil_semua = []
-
+    # Tahap 2 — Analisis
+    hasil_list = []
     for idx, art in enumerate(artikel_raw):
         pct = int((idx + 1) / len(artikel_raw) * 100)
         prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
         time.sleep(0.15)
-
         analisis = analisis_artikel(client, art)
-        hasil_semua.append({**art, **analisis})
+        hasil_list.append({**art, **analisis})
 
     prog_bar.progress(100, text="✅ Selesai!")
     status_tx.empty()
 
-    st.session_state["hasil"]     = hasil_semua
+    st.session_state["hasil"]     = hasil_list
     st.session_state["label_isu"] = label_isu.strip()
 
 # ── Tampilkan hasil ────────────────────────────────────────────────────────
 if "hasil" in st.session_state:
-    hasil_semua = st.session_state["hasil"]
-    label_isu   = st.session_state["label_isu"]
+    hasil_list = st.session_state["hasil"]
+    label_isu  = st.session_state["label_isu"]
 
-    n_pos = sum(1 for h in hasil_semua if h.get("tone") == "Positif")
-    n_net = sum(1 for h in hasil_semua if h.get("tone") == "Netral")
-    n_neg = sum(1 for h in hasil_semua if h.get("tone") == "Negatif")
+    # Stat cards
+    tone_counts = {"Positif": 0, "Netral": 0, "Negatif": 0}
+    for h in hasil_list:
+        t = h.get("tone", "Netral")
+        tone_counts[t] = tone_counts.get(t, 0) + 1
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Artikel", len(hasil_semua))
-    col2.metric("🟢 Positif",    n_pos)
-    col3.metric("🟡 Netral",     n_net)
-    col4.metric("🔴 Negatif",    n_neg)
+    c0, c1, c2, c3 = st.columns(4)
+    with c0:
+        st.markdown(f'<div class="stat-card"><div class="stat-number">{len(hasil_list)}</div><div class="stat-label">Total Artikel</div></div>', unsafe_allow_html=True)
+    for col, tone, warna, emoji in [
+        (c1, "Positif", "#065f46", "🟢"),
+        (c2, "Netral",  "#92400e", "🟡"),
+        (c3, "Negatif", "#991b1b", "🔴"),
+    ]:
+        with col:
+            st.markdown(
+                f'<div class="stat-card">'
+                f'<div class="stat-number" style="color:{warna}">{tone_counts[tone]}</div>'
+                f'<div class="stat-label">{emoji} {tone}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
-    excel_bytes = buat_excel(hasil_semua, label_isu)
-    fname = f"AIS_{label_isu.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Download
+    st.markdown("### ⬇️ Unduh Hasil")
+    excel_buf = buat_excel(hasil_list, label_isu)
+    nama_file = f"MediaCrawl_AIS_{label_isu.replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     st.download_button(
-        "⬇️ Download Excel",
-        data=excel_bytes,
-        file_name=fname,
+        "📥 Download Excel", data=excel_buf, file_name=nama_file,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
     )
 
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    filter_tone = st.selectbox("Filter Tone", ["Semua", "Positif", "Netral", "Negatif"])
-    tampil = (
-        hasil_semua if filter_tone == "Semua"
-        else [h for h in hasil_semua if h.get("tone") == filter_tone]
-    )
-
-    st.subheader(f"Pratinjau Artikel ({len(tampil)} ditampilkan)")
+    # Pratinjau
+    st.markdown("### 📋 Pratinjau Hasil Analisis")
+    filter_tone = st.selectbox("Filter tone:", ["Semua", "Positif", "Netral", "Negatif"])
+    tampil = hasil_list if filter_tone == "Semua" else [h for h in hasil_list if h.get("tone") == filter_tone]
 
     for h in tampil:
-        tone      = h.get("tone", "Netral")
-        card_cls  = {"Positif": "card-pos", "Negatif": "card-neg"}.get(tone, "")
-        badge_cls = {"Positif": "badge-pos", "Negatif": "badge-neg"}.get(tone, "badge-net")
+        tone = h.get("tone", "Netral")
         st.markdown(f"""
-        <div class="card {card_cls}">
-          <strong>{h.get('judul', '-')}</strong><br>
-          <small>{h.get('tanggal', '-')} · {h.get('sumber', '-')} · {h.get('tier', '')}</small>
-          &nbsp;<span class="badge {badge_cls}">{tone}</span>
-          <hr class="divcard">
-          <b>Ringkasan:</b> {h.get('ringkasan_isu', '-')}<br>
-          <b>Isu/Subisu:</b> {h.get('isu_subisu', '-')}<br>
-          <b>Aktor/Lokasi:</b> {h.get('aktor_lokasi', '-')}<br>
-          <b>⚠️ Risiko:</b> {h.get('risiko_ais', '-')}<br>
-          <b>✅ Tindak Lanjut:</b> {h.get('tindak_lanjut', '-')}<br>
-          <a href="{h.get('link', '#')}" target="_blank"><small>🔗 Buka artikel</small></a>
-        </div>
-        """, unsafe_allow_html=True)
+        <div class="artikel-card">
+            <div class="artikel-judul">{h.get('judul','-')}</div>
+            <div class="artikel-meta">📅 {h.get('tanggal','-')} &nbsp;·&nbsp; 📰 {h.get('sumber','-')} &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
+            <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
+            <div class="artikel-risiko">⚠️ <b>Risiko:</b> {h.get('risiko_ais','-')}</div>
+            <div class="artikel-tindak">✅ <b>Tindak Lanjut:</b> {h.get('tindak_lanjut','-')}</div>
+        </div>""", unsafe_allow_html=True)
+        with st.expander("🔗 Lihat link artikel"):
+            st.write(h.get("link", "-"))
