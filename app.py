@@ -18,6 +18,21 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+# Di bagian paling atas app.py, SETELAH st.set_page_config():
+
+with st.sidebar:
+    page = st.radio(
+        "Navigasi",
+        options=["🔍 Crawl & Analisis", "📊 Dashboard AIS"],
+        label_visibility="collapsed"
+    )
+
+if page == "🔍 Crawl & Analisis":
+    # === PASTE SELURUH KODE CRAWL EXISTING KAMU DI SINI ===
+    pass
+
+elif page == "📊 Dashboard AIS":
+    exec(open('dashboard_ais.py').read())
 
 st.markdown("""
 <style>
