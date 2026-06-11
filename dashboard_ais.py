@@ -62,7 +62,7 @@ st.markdown("""
 
   /* Stat cards */
   .stat-card {
-    background: var(--background-color, white); border: 1px solid rgba(128,128,128,0.25);
+    background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
     border-radius: 8px; padding: 16px;
     text-align: center;
   }
@@ -74,7 +74,7 @@ st.markdown("""
 
   /* Issue card */
   .issue-card {
-    background: var(--background-color, white); border: 1px solid rgba(128,128,128,0.25);
+    background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
     border-radius: 6px; padding: 14px 14px 14px 18px;
     margin-bottom: 8px; position: relative;
     overflow: hidden;
@@ -97,10 +97,10 @@ st.markdown("""
     padding: 2px 7px; border-radius: 3px;
     margin-right: 4px; margin-top: 2px;
   }
-  .badge-negatif { background: #FDECEA; color: #E74C3C; }
-  .badge-netral { background: #ECF0F1; color: #7F8C8D; }
-  .badge-positif { background: #E8F8EE; color: #27AE60; }
-  .badge-aktor { background: #EEF2FF; color: #3730A3; }
+  .badge-negatif { background: rgba(231,76,60,0.15); color: #E74C3C; }
+  .badge-netral { background: rgba(127,140,141,0.15); color: #95A5A6; }
+  .badge-positif { background: rgba(39,174,96,0.15); color: #27AE60; }
+  .badge-aktor { background: rgba(99,102,241,0.15); color: #818CF8; }
 
   /* Detail box */
   .detail-section { margin-bottom: 14px; }
@@ -111,12 +111,12 @@ st.markdown("""
   }
   .detail-text { font-size: 12px; color: inherit; line-height: 1.6; }
   .implikasi-box {
-    background: #FFF8F0; border: 1px solid #F5A623;
+    background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.5);
     border-radius: 5px; padding: 10px 12px;
     font-size: 12px; color: inherit; line-height: 1.6;
   }
   .tindaklanjut-box {
-    background: #F0F5FF; border: 1px solid #93B4E8;
+    background: rgba(147,180,232,0.12); border: 1px solid rgba(147,180,232,0.5);
     border-radius: 5px; padding: 10px 12px;
     font-size: 12px; color: inherit; line-height: 1.6;
   }
@@ -262,7 +262,7 @@ if uploaded is None:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("""
-        <div style='text-align:center;padding:60px 20px;background:var(--background-color,white);border-radius:12px;border:2px dashed rgba(128,128,128,0.3);'>
+        <div style='text-align:center;padding:60px 20px;background:rgba(128,128,128,0.06);border-radius:12px;border:2px dashed rgba(128,128,128,0.3);'>
           <div style='font-size:40px;margin-bottom:12px'>📊</div>
           <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Upload File Excel AIS</div>
           <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6'>
@@ -489,7 +489,7 @@ with tab2:
                 tone_class = str(row['Tone']).lower()
 
                 st.markdown(f"""
-                <div style='background:var(--background-color,white);border:1px solid rgba(128,128,128,0.25);border-radius:8px;padding:18px;position:sticky;top:0'>
+                <div style='background:rgba(128,128,128,0.06);border:1px solid rgba(128,128,128,0.2);border-radius:8px;padding:18px;position:sticky;top:0'>
                   <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
                     <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{row['Judul']}</div>
                     <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
@@ -550,8 +550,8 @@ with tab3:
             label = (subisu[:45]+'…') if len(subisu)>45 else subisu
             st.markdown(f"""
             <div style='display:flex;align-items:center;justify-content:space-between;
-                        padding:8px 10px;margin-bottom:4px;background:white;
-                        border:1px solid #ECF0F1;border-radius:5px;border-left:3px solid {dom_color}'>
+                        padding:8px 10px;margin-bottom:4px;background:rgba(128,128,128,0.06);
+                        border:1px solid rgba(128,128,128,0.15);border-radius:5px;border-left:3px solid {dom_color}'>
               <div style='font-size:11px;font-weight:600;color:inherit;flex:1'>{label}</div>
               <div style='display:flex;gap:10px;font-size:10px;font-family:monospace'>
                 <span style='color:#E74C3C'>N:{int(row_t['Negatif'])}</span>
@@ -602,14 +602,14 @@ with tab3:
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         st.markdown(f"""
-        <div style='background:#FDECEA;border-radius:6px;padding:12px;border-left:3px solid #E74C3C'>
+        <div style='background:rgba(231,76,60,0.12);border-radius:6px;padding:12px;border-left:3px solid #E74C3C'>
           <div style='font-size:10px;font-weight:700;color:#E74C3C;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Dominan Negatif</div>
           <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in neg_issues) if neg_issues else "—"}</div>
         </div>
         """, unsafe_allow_html=True)
     with col_b:
         st.markdown(f"""
-        <div style='background:#FFF8F0;border-radius:6px;padding:12px;border-left:3px solid #F5A623'>
+        <div style='background:rgba(245,166,35,0.12);border-radius:6px;padding:12px;border-left:3px solid #F5A623'>
           <div style='font-size:10px;font-weight:700;color:#c47d0a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Volume Pemberitaan</div>
           <div style='font-size:11px;color:inherit;line-height:1.6'>
             Total <strong>{stats['total']}</strong> artikel dalam periode ini.<br>
@@ -619,7 +619,7 @@ with tab3:
         """, unsafe_allow_html=True)
     with col_c:
         st.markdown(f"""
-        <div style='background:#E8F8EE;border-radius:6px;padding:12px;border-left:3px solid #27AE60'>
+        <div style='background:rgba(39,174,96,0.12);border-radius:6px;padding:12px;border-left:3px solid #27AE60'>
           <div style='font-size:10px;font-weight:700;color:#27AE60;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Bernada Positif</div>
           <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in pos_issues) if pos_issues else "—"}</div>
         </div>
