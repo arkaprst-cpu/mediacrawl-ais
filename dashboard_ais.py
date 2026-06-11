@@ -1,0 +1,710 @@
+"""
+dashboard_ais.py
+Halaman Dashboard AIS — Analisis Isu Strategis Pengawasan
+Pustrajakwas BPKP
+
+Cara pakai:
+- Upload file Excel hasil crawl (.xlsx) via sidebar
+- Dashboard otomatis render semua komponen
+- Bisa juga load dari ais_data.json jika tersedia
+"""
+
+import streamlit as st
+import pandas as pd
+import json
+import io
+from collections import Counter
+from datetime import datetime
+
+# ── PAGE CONFIG ──────────────────────────────────────────────
+st.set_page_config(
+    page_title="AIS Dashboard — Pustrajakwas BPKP",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ── CUSTOM CSS ───────────────────────────────────────────────
+st.markdown("""
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+
+  /* Topbar */
+  .ais-topbar {
+    background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin-bottom: 20px;
+    border-bottom: 3px solid #F5A623;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .ais-logo { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; color: #F5A623; }
+  .ais-subtitle { font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 2px; }
+  .ais-badge {
+    background: #F5A623; color: #0D1B2A;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 700;
+    padding: 4px 12px; border-radius: 4px;
+    letter-spacing: 0.06em;
+  }
+
+  /* Spotlight */
+  .spotlight-box {
+    background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    border-left: 4px solid #F5A623;
+  }
+  .spotlight-eyebrow {
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: #F5A623; margin-bottom: 6px;
+  }
+  .spotlight-title { font-size: 16px; font-weight: 700; color: white; line-height: 1.3; margin-bottom: 10px; }
+  .spotlight-body { font-size: 12px; color: rgba(255,255,255,0.75); line-height: 1.65; }
+
+  /* Stat cards */
+  .stat-card {
+    background: white; border: 1px solid #D0DCE8;
+    border-radius: 8px; padding: 16px;
+    text-align: center;
+  }
+  .stat-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px; font-weight: 700; color: #0D1B2A; line-height: 1;
+  }
+  .stat-label { font-size: 11px; color: #5A6A7A; margin-top: 4px; }
+
+  /* Issue card */
+  .issue-card {
+    background: white; border: 1px solid #D0DCE8;
+    border-radius: 6px; padding: 14px 14px 14px 18px;
+    margin-bottom: 8px; position: relative;
+    overflow: hidden;
+  }
+  .issue-card::before {
+    content: ''; position: absolute;
+    left: 0; top: 0; bottom: 0; width: 4px;
+  }
+  .issue-card.negatif::before { background: #E74C3C; }
+  .issue-card.netral::before { background: #95A5A6; }
+  .issue-card.positif::before { background: #27AE60; }
+  .issue-title { font-size: 13px; font-weight: 600; color: #1A2A3A; line-height: 1.4; }
+  .issue-sub { font-size: 11px; color: #5A6A7A; margin-top: 2px; }
+  .issue-summary { font-size: 11px; color: #5A6A7A; line-height: 1.5; margin-top: 6px; }
+
+  /* Badges */
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 2px 7px; border-radius: 3px;
+    margin-right: 4px; margin-top: 2px;
+  }
+  .badge-negatif { background: #FDECEA; color: #E74C3C; }
+  .badge-netral { background: #ECF0F1; color: #7F8C8D; }
+  .badge-positif { background: #E8F8EE; color: #27AE60; }
+  .badge-aktor { background: #EEF2FF; color: #3730A3; }
+
+  /* Detail box */
+  .detail-section { margin-bottom: 14px; }
+  .detail-label {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: #7F8C8D; margin-bottom: 4px;
+  }
+  .detail-text { font-size: 12px; color: #1A2A3A; line-height: 1.6; }
+  .implikasi-box {
+    background: #FFF8F0; border: 1px solid #F5A623;
+    border-radius: 5px; padding: 10px 12px;
+    font-size: 12px; color: #1A2A3A; line-height: 1.6;
+  }
+  .tindaklanjut-box {
+    background: #F0F5FF; border: 1px solid #93B4E8;
+    border-radius: 5px; padding: 10px 12px;
+    font-size: 12px; color: #1A2A3A; line-height: 1.6;
+  }
+
+  /* Tone pill */
+  .tone-neg { color: #E74C3C; font-weight: 600; }
+  .tone-net { color: #7F8C8D; font-weight: 600; }
+  .tone-pos { color: #27AE60; font-weight: 600; }
+
+  /* Hide streamlit chrome */
+  #MainMenu {visibility: hidden;}
+  footer {visibility: hidden;}
+  .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ── DATA LOADER ──────────────────────────────────────────────
+def load_from_excel(uploaded_file):
+    """Parse Excel output dari pipeline AIS."""
+    df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
+    
+    # Baca metadata dari baris ke-2 (index 1)
+    meta_str = str(df_raw.iloc[1, 0]) if df_raw.shape[0] > 1 else ""
+    meta = {"raw": meta_str}
+    try:
+        parts = meta_str.split("|")
+        meta["isu"] = parts[0].replace("Isu:", "").strip() if len(parts) > 0 else "—"
+        meta["generate"] = parts[1].replace("Generate:", "").strip() if len(parts) > 1 else "—"
+        meta["total"] = parts[2].replace("Total:", "").replace("artikel", "").strip() if len(parts) > 2 else "—"
+        meta["unit"] = parts[3].strip() if len(parts) > 3 else "Pustrajakwas BPKP"
+    except:
+        meta["isu"] = "BPKP"; meta["generate"] = "—"; meta["total"] = "—"; meta["unit"] = "Pustrajakwas BPKP"
+
+    # Data mulai dari baris ke-4 (header di index 2, data mulai index 3)
+    df = pd.read_excel(uploaded_file, sheet_name=0, header=3)
+    df.columns = ['No','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
+    df = df.dropna(subset=['Judul'])
+    df = df[df['No'] != 'No']
+    df = df.reset_index(drop=True)
+    df['Tanggal'] = df['Tanggal'].astype(str)
+
+    return df, meta
+
+
+def compute_stats(df):
+    """Hitung statistik dari dataframe."""
+    tone_counts = df['Tone'].value_counts().to_dict()
+    total = len(df)
+    neg = tone_counts.get('Negatif', 0)
+    net = tone_counts.get('Netral', 0)
+    pos = tone_counts.get('Positif', 0)
+    
+    # Hitung skor risiko sederhana berdasarkan tone + panjang teks risiko
+    def skor_risiko(row):
+        base = {'Negatif': 7, 'Netral': 5, 'Positif': 3}.get(str(row['Tone']), 5)
+        bonus = min(2, len(str(row['Risiko'])) // 200)
+        return base + bonus
+    
+    df = df.copy()
+    df['skor_risiko'] = df.apply(skor_risiko, axis=1)
+    df['level_risiko'] = df['skor_risiko'].apply(
+        lambda s: 'Tinggi' if s >= 8 else ('Sedang' if s >= 6 else 'Rendah')
+    )
+    
+    return df, {
+        'total': total,
+        'negatif': neg, 'netral': net, 'positif': pos,
+        'pct_neg': round(neg/total*100) if total else 0,
+        'pct_net': round(net/total*100) if total else 0,
+        'pct_pos': round(pos/total*100) if total else 0,
+        'tinggi': (df['level_risiko']=='Tinggi').sum(),
+        'sedang': (df['level_risiko']=='Sedang').sum(),
+    }
+
+
+def extract_keywords(df):
+    """Extract top keywords dari kolom IsuSubisu dan Judul."""
+    stopwords = {'dan','di','ke','dari','untuk','yang','ini','itu','dengan',
+                 'pada','oleh','sebagai','dalam','telah','akan','dapat','tidak',
+                 'bpjs','kesehatan','bpkp','atas','terkait','bagi','juga','serta'}
+    words = []
+    for col in ['IsuSubisu', 'Judul']:
+        for text in df[col].astype(str):
+            for w in text.lower().split():
+                w = w.strip('.,;:!?()[]"\'')
+                if len(w) > 3 and w not in stopwords:
+                    words.append(w)
+    return Counter(words).most_common(15)
+
+
+def extract_aktors(df):
+    """Extract aktor yang paling sering disebut."""
+    aktors = []
+    for text in df['AktorLokasi'].astype(str):
+        for a in text.split(','):
+            a = a.strip()
+            if a and a != 'nan' and len(a) > 2:
+                aktors.append(a)
+    return Counter(aktors).most_common(12)
+
+
+# ── SIDEBAR ──────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### 📂 Upload Data")
+    st.markdown("<div style='font-size:11px;color:#888;margin-bottom:8px'>Upload file Excel hasil pipeline crawl AIS (.xlsx)</div>", unsafe_allow_html=True)
+    
+    uploaded = st.file_uploader(
+        "Pilih file Excel", type=["xlsx"],
+        label_visibility="collapsed"
+    )
+    
+    st.markdown("---")
+    st.markdown("### 🔍 Filter")
+    filter_tone = st.multiselect(
+        "Filter Tone",
+        options=["Negatif", "Netral", "Positif"],
+        default=["Negatif", "Netral", "Positif"]
+    )
+    filter_risiko = st.multiselect(
+        "Filter Level Risiko",
+        options=["Tinggi", "Sedang", "Rendah"],
+        default=["Tinggi", "Sedang", "Rendah"]
+    )
+
+    st.markdown("---")
+    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pustrajakwas BPKP<br>Powered by Groq · llama-3.3-70b</div>", unsafe_allow_html=True)
+
+
+# ── MAIN CONTENT ─────────────────────────────────────────────
+if uploaded is None:
+    # Landing state
+    st.markdown("""
+    <div class="ais-topbar">
+      <div>
+        <div class="ais-logo">AIS Dashboard</div>
+        <div class="ais-subtitle">Analisis Isu Strategis Pengawasan — Pustrajakwas BPKP</div>
+      </div>
+      <div class="ais-badge">SIAP DIGUNAKAN</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.markdown("""
+        <div style='text-align:center;padding:60px 20px;background:white;border-radius:12px;border:2px dashed #D0DCE8;'>
+          <div style='font-size:40px;margin-bottom:12px'>📊</div>
+          <div style='font-size:16px;font-weight:600;color:#1A2A3A;margin-bottom:8px'>Upload File Excel AIS</div>
+          <div style='font-size:12px;color:#7F8C8D;line-height:1.6'>
+            Upload file <code>.xlsx</code> hasil pipeline media crawl<br>
+            melalui panel di sebelah kiri.<br><br>
+            Dashboard akan otomatis render semua tab<br>
+            berdasarkan data hasil analisis.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.stop()
+
+# ── LOAD & PROCESS DATA ──────────────────────────────────────
+df_raw, meta = load_from_excel(uploaded)
+df, stats = compute_stats(df_raw)
+
+# Apply filters
+df_filtered = df[
+    (df['Tone'].isin(filter_tone)) & 
+    (df['level_risiko'].isin(filter_risiko))
+].reset_index(drop=True)
+
+# ── TOPBAR ───────────────────────────────────────────────────
+st.markdown(f"""
+<div class="ais-topbar">
+  <div>
+    <div class="ais-logo">AIS Dashboard</div>
+    <div class="ais-subtitle">Analisis Isu Strategis Pengawasan — {meta.get('unit','Pustrajakwas BPKP')}</div>
+  </div>
+  <div>
+    <span class="ais-badge">ISU: {meta.get('isu','—').upper()}</span>
+    &nbsp;
+    <span style='font-size:11px;color:rgba(255,255,255,0.5)'>{meta.get('generate','—')}</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── TABS ─────────────────────────────────────────────────────
+tab1, tab2, tab3, tab4 = st.tabs(["📋 Ikhtisar", "🗂️ Daftar Isu", "📈 Tone & Tren", "🔑 Kata Kunci"])
+
+
+# ════════════════════════════════════════════
+# TAB 1 — IKHTISAR
+# ════════════════════════════════════════════
+with tab1:
+
+    # Stat row
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #F5A623">
+          <div class="stat-num">{stats['total']}</div>
+          <div class="stat-label">Total Artikel</div>
+        </div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #E74C3C">
+          <div class="stat-num" style="color:#E74C3C">{stats['negatif']}</div>
+          <div class="stat-label">Tone Negatif</div>
+        </div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #95A5A6">
+          <div class="stat-num" style="color:#7F8C8D">{stats['netral']}</div>
+          <div class="stat-label">Tone Netral</div>
+        </div>""", unsafe_allow_html=True)
+    with c4:
+        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #27AE60">
+          <div class="stat-num" style="color:#27AE60">{stats['positif']}</div>
+          <div class="stat-label">Tone Positif</div>
+        </div>""", unsafe_allow_html=True)
+    with c5:
+        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #E74C3C">
+          <div class="stat-num" style="color:#E74C3C">{stats['pct_neg']}%</div>
+          <div class="stat-label">Dominasi Negatif</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
+
+    # Spotlight — ambil artikel Negatif dengan teks risiko terpanjang
+    df_neg = df[df['Tone']=='Negatif'].copy()
+    df_neg['risiko_len'] = df_neg['Risiko'].astype(str).apply(len)
+    if len(df_neg) > 0:
+        spotlight = df_neg.loc[df_neg['risiko_len'].idxmax()]
+        st.markdown(f"""
+        <div class="spotlight-box">
+          <div class="spotlight-eyebrow">⚡ Isu Prioritas — Risiko Tertinggi</div>
+          <div class="spotlight-title">{spotlight['Judul']}</div>
+          <div class="spotlight-body">{spotlight['Ringkasan']}<br><br>
+            <strong style="color:rgba(255,255,255,0.9)">Risiko:</strong> {spotlight['Risiko']}
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Tone bar + frekuensi subisu
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.markdown("**Distribusi Tone Pemberitaan**")
+        
+        # Visual tone bar
+        pn = stats['pct_neg']; pt = stats['pct_net']; pp = stats['pct_pos']
+        st.markdown(f"""
+        <div style='height:12px;border-radius:6px;overflow:hidden;display:flex;margin-bottom:8px'>
+          <div style='width:{pn}%;background:#E74C3C'></div>
+          <div style='width:{pt}%;background:#BDC3C7'></div>
+          <div style='width:{pp}%;background:#27AE60'></div>
+        </div>
+        <div style='display:flex;gap:16px;font-size:11px;color:#5A6A7A'>
+          <span>🔴 Negatif {pn}%</span>
+          <span>⚪ Netral {pt}%</span>
+          <span>🟢 Positif {pp}%</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
+
+        # Level risiko breakdown
+        st.markdown("**Level Risiko Artikel**")
+        tinggi = stats['tinggi']; sedang = stats['sedang']
+        rendah = stats['total'] - tinggi - sedang
+        for label, count, color in [("Tinggi", tinggi, "#E74C3C"), ("Sedang", sedang, "#F5A623"), ("Rendah", rendah, "#27AE60")]:
+            pct = round(count/stats['total']*100) if stats['total'] else 0
+            st.markdown(f"""
+            <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
+              <div style='font-size:11px;color:#5A6A7A;width:50px'>{label}</div>
+              <div style='flex:1;height:14px;background:#ECF0F1;border-radius:3px;overflow:hidden'>
+                <div style='width:{pct}%;height:100%;background:{color};border-radius:3px'></div>
+              </div>
+              <div style='font-size:10px;font-family:monospace;color:#95A5A6;width:24px'>{count}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with col_right:
+        st.markdown("**Frekuensi per Subisu**")
+        subisu_counts = df['IsuSubisu'].value_counts().head(8)
+        max_val = subisu_counts.max() if len(subisu_counts) > 0 else 1
+        for subisu, count in subisu_counts.items():
+            pct = round(count / max_val * 100)
+            tone_subisu = df[df['IsuSubisu']==subisu]['Tone'].mode()
+            tone_color = {'Negatif':'#E74C3C','Netral':'#BDC3C7','Positif':'#27AE60'}.get(
+                tone_subisu[0] if len(tone_subisu)>0 else 'Netral', '#BDC3C7')
+            label = (subisu[:40]+'…') if len(subisu)>40 else subisu
+            st.markdown(f"""
+            <div style='display:flex;align-items:center;gap:8px;margin-bottom:7px'>
+              <div style='font-size:11px;color:#1A2A3A;width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' title='{subisu}'>{label}</div>
+              <div style='flex:1;height:14px;background:#ECF0F1;border-radius:3px;overflow:hidden'>
+                <div style='width:{pct}%;height:100%;background:{tone_color};border-radius:3px'></div>
+              </div>
+              <div style='font-size:10px;font-family:monospace;color:#95A5A6;width:18px'>{count}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Risiko tinggi preview cards
+    st.markdown("---")
+    st.markdown("**Artikel Risiko Tinggi — Perlu Perhatian**")
+    df_tinggi = df[df['level_risiko']=='Tinggi'].head(3)
+    if len(df_tinggi) == 0:
+        df_tinggi = df[df['Tone']=='Negatif'].head(3)
+
+    cols = st.columns(min(3, len(df_tinggi)))
+    for i, (_, row) in enumerate(df_tinggi.iterrows()):
+        with cols[i]:
+            tone_class = str(row['Tone']).lower()
+            aktor_short = str(row['AktorLokasi'])[:40]
+            st.markdown(f"""
+            <div class="issue-card {tone_class}">
+              <div class="issue-title">{str(row['Judul'])[:80]}{'…' if len(str(row['Judul']))>80 else ''}</div>
+              <div class="issue-sub">{str(row['IsuSubisu'])}</div>
+              <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
+              <div style='margin-top:8px'>
+                <span class="badge badge-{tone_class}">{row['Tone']}</span>
+                <span class="badge badge-aktor">{aktor_short}</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════
+# TAB 2 — DAFTAR ISU
+# ════════════════════════════════════════════
+with tab2:
+    st.markdown(f"**{len(df_filtered)} artikel** ditampilkan berdasarkan filter aktif")
+
+    if len(df_filtered) == 0:
+        st.info("Tidak ada artikel yang sesuai filter. Ubah filter di sidebar.")
+    else:
+        # Split: list kiri, detail kanan
+        col_list, col_detail = st.columns([5, 4])
+
+        with col_list:
+            # Pilih artikel
+            selected_idx = st.session_state.get('selected_idx', 0)
+
+            for i, (_, row) in enumerate(df_filtered.iterrows()):
+                tone_class = str(row['Tone']).lower()
+                is_selected = (i == selected_idx)
+                border_style = "border:2px solid #0D1B2A;" if is_selected else "border:1px solid #D0DCE8;"
+                bg_style = "background:#F0F5FA;" if is_selected else "background:white;"
+
+                judul_short = str(row['Judul'])[:75]+'…' if len(str(row['Judul']))>75 else str(row['Judul'])
+                
+                btn_key = f"artikel_{i}"
+                st.markdown(f"""
+                <div class="issue-card {tone_class}" style="{border_style}{bg_style}">
+                  <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px'>
+                    <div>
+                      <div class="issue-title">{judul_short}</div>
+                      <div class="issue-sub">{str(row['IsuSubisu'])}</div>
+                    </div>
+                    <span class="badge badge-{tone_class}" style='flex-shrink:0'>{row['Tone']}</span>
+                  </div>
+                  <div style='margin-top:6px;font-size:10px;color:#95A5A6;font-family:monospace'>
+                    📅 {row['Tanggal']} &nbsp;·&nbsp; 🏢 {str(row['AktorLokasi'])[:40]}
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if st.button(f"Lihat detail →", key=btn_key, use_container_width=True):
+                    st.session_state['selected_idx'] = i
+                    st.rerun()
+
+        with col_detail:
+            idx = st.session_state.get('selected_idx', 0)
+            if idx < len(df_filtered):
+                row = df_filtered.iloc[idx]
+                tone_class = str(row['Tone']).lower()
+
+                st.markdown(f"""
+                <div style='background:white;border:1px solid #D0DCE8;border-radius:8px;padding:18px;position:sticky;top:0'>
+                  <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
+                    <div style='font-size:14px;font-weight:700;color:#0D1B2A;line-height:1.4;flex:1'>{row['Judul']}</div>
+                    <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
+                  </div>
+
+                  <div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px'>
+                    <span class="badge badge-aktor">{row['IsuSubisu']}</span>
+                    <span class="badge badge-aktor">{row['AktorLokasi']}</span>
+                  </div>
+
+                  <hr style='border:none;border-top:1px solid #ECF0F1;margin:10px 0'>
+
+                  <div class="detail-section">
+                    <div class="detail-label">Ringkasan Isu</div>
+                    <div class="detail-text">{row['Ringkasan']}</div>
+                  </div>
+
+                  <div class="detail-section">
+                    <div class="detail-label">Risiko / Implikasi AIS</div>
+                    <div class="implikasi-box">{row['Risiko']}</div>
+                  </div>
+
+                  <div class="detail-section">
+                    <div class="detail-label">Tindak Lanjut yang Disarankan</div>
+                    <div class="tindaklanjut-box">{row['TindakLanjut']}</div>
+                  </div>
+
+                  <hr style='border:none;border-top:1px solid #ECF0F1;margin:10px 0'>
+                  <div style='font-size:10px;color:#95A5A6'>
+                    📅 {row['Tanggal']} &nbsp;·&nbsp;
+                    🔗 <a href="{row['Link']}" target="_blank" style='color:#3B82F6'>Buka artikel asli</a>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════
+# TAB 3 — TONE & TREN
+# ════════════════════════════════════════════
+with tab3:
+    col_tbl, col_chart = st.columns([3, 2])
+
+    with col_tbl:
+        st.markdown("**Tone per Subisu**")
+        
+        tone_table = df.groupby(['IsuSubisu','Tone']).size().unstack(fill_value=0)
+        for col_name in ['Negatif','Netral','Positif']:
+            if col_name not in tone_table.columns:
+                tone_table[col_name] = 0
+        tone_table = tone_table[['Negatif','Netral','Positif']]
+        tone_table['Total'] = tone_table.sum(axis=1)
+        tone_table['Tone Dominan'] = tone_table[['Negatif','Netral','Positif']].idxmax(axis=1)
+        tone_table = tone_table.sort_values('Total', ascending=False)
+
+        for subisu, row_t in tone_table.iterrows():
+            dom = row_t['Tone Dominan']
+            dom_color = {'Negatif':'#E74C3C','Netral':'#7F8C8D','Positif':'#27AE60'}.get(dom,'#7F8C8D')
+            label = (subisu[:45]+'…') if len(subisu)>45 else subisu
+            st.markdown(f"""
+            <div style='display:flex;align-items:center;justify-content:space-between;
+                        padding:8px 10px;margin-bottom:4px;background:white;
+                        border:1px solid #ECF0F1;border-radius:5px;border-left:3px solid {dom_color}'>
+              <div style='font-size:11px;font-weight:600;color:#1A2A3A;flex:1'>{label}</div>
+              <div style='display:flex;gap:10px;font-size:10px;font-family:monospace'>
+                <span style='color:#E74C3C'>N:{int(row_t['Negatif'])}</span>
+                <span style='color:#95A5A6'>T:{int(row_t['Netral'])}</span>
+                <span style='color:#27AE60'>P:{int(row_t['Positif'])}</span>
+                <span style='color:#0D1B2A;font-weight:700'>{int(row_t['Total'])}</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with col_chart:
+        st.markdown("**Distribusi Tone Keseluruhan**")
+        
+        import streamlit as st
+        tone_data = df['Tone'].value_counts()
+        colors_map = {'Negatif':'#E74C3C','Netral':'#BDC3C7','Positif':'#27AE60'}
+        
+        # Visual bar chart manual — lebih clean dari st.bar_chart default
+        for tone_val, count in tone_data.items():
+            pct = round(count/stats['total']*100)
+            color = colors_map.get(str(tone_val),'#BDC3C7')
+            st.markdown(f"""
+            <div style='margin-bottom:12px'>
+              <div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px'>
+                <span style='font-weight:600;color:{color}'>{tone_val}</span>
+                <span style='font-family:monospace;color:#95A5A6'>{count} artikel ({pct}%)</span>
+              </div>
+              <div style='height:20px;background:#ECF0F1;border-radius:4px;overflow:hidden'>
+                <div style='width:{pct}%;height:100%;background:{color};border-radius:4px'></div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
+        st.markdown("**Distribusi per Tanggal**")
+        
+        tanggal_counts = df.groupby(['Tanggal','Tone']).size().unstack(fill_value=0)
+        if not tanggal_counts.empty:
+            st.bar_chart(tanggal_counts, color=["#E74C3C","#BDC3C7","#27AE60"] if all(c in tanggal_counts.columns for c in ['Negatif','Netral','Positif']) else None, height=200)
+
+    # Catatan analitis
+    st.markdown("---")
+    st.markdown("**Catatan Analitis**")
+
+    neg_issues = df[df['Tone']=='Negatif']['IsuSubisu'].value_counts().head(3).index.tolist()
+    pos_issues = df[df['Tone']=='Positif']['IsuSubisu'].value_counts().head(2).index.tolist()
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.markdown(f"""
+        <div style='background:#FDECEA;border-radius:6px;padding:12px;border-left:3px solid #E74C3C'>
+          <div style='font-size:10px;font-weight:700;color:#E74C3C;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Dominan Negatif</div>
+          <div style='font-size:11px;color:#1A2A3A;line-height:1.6'>{"<br>".join(f"• {x}" for x in neg_issues) if neg_issues else "—"}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_b:
+        st.markdown(f"""
+        <div style='background:#FFF8F0;border-radius:6px;padding:12px;border-left:3px solid #F5A623'>
+          <div style='font-size:10px;font-weight:700;color:#c47d0a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Volume Pemberitaan</div>
+          <div style='font-size:11px;color:#1A2A3A;line-height:1.6'>
+            Total <strong>{stats['total']}</strong> artikel dalam periode ini.<br>
+            {stats['negatif']} negatif ({stats['pct_neg']}%) menunjukkan tekanan pemberitaan yang perlu diwaspadai.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_c:
+        st.markdown(f"""
+        <div style='background:#E8F8EE;border-radius:6px;padding:12px;border-left:3px solid #27AE60'>
+          <div style='font-size:10px;font-weight:700;color:#27AE60;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Bernada Positif</div>
+          <div style='font-size:11px;color:#1A2A3A;line-height:1.6'>{"<br>".join(f"• {x}" for x in pos_issues) if pos_issues else "—"}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════
+# TAB 4 — KATA KUNCI
+# ════════════════════════════════════════════
+with tab4:
+    col_cloud, col_bar = st.columns(2)
+
+    keywords = extract_keywords(df)
+    aktors = extract_aktors(df)
+
+    with col_cloud:
+        st.markdown("**Kata Kunci Dominan**")
+        if keywords:
+            max_freq = keywords[0][1]
+            cloud_html = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 0">'
+            for word, freq in keywords:
+                size = 11 + (freq / max_freq) * 12
+                opacity = 0.4 + (freq / max_freq) * 0.6
+                cloud_html += f'<span style="font-size:{size:.0f}px;background:#E8F0F7;border:1px solid #D0DCE8;border-radius:3px;padding:3px 10px;color:#0D1B2A;opacity:{opacity:.2f};font-weight:500">{word}</span>'
+            cloud_html += '</div>'
+            st.markdown(cloud_html, unsafe_allow_html=True)
+
+    with col_bar:
+        st.markdown("**Top Kata Kunci — Frekuensi**")
+        if keywords:
+            max_freq = keywords[0][1]
+            for word, freq in keywords[:10]:
+                pct = round(freq / max_freq * 100)
+                st.markdown(f"""
+                <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
+                  <div style='font-size:11px;color:#1A2A3A;width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{word}</div>
+                  <div style='flex:1;height:14px;background:#ECF0F1;border-radius:3px;overflow:hidden'>
+                    <div style='width:{pct}%;height:100%;background:#1C3D5A;border-radius:3px'></div>
+                  </div>
+                  <div style='font-size:10px;font-family:monospace;color:#95A5A6;width:18px'>{freq}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("**Aktor & Lembaga yang Disebut**")
+    if aktors:
+        max_aktor = aktors[0][1]
+        aktor_html = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">'
+        for aktor, freq in aktors:
+            size = 11 + (freq / max_aktor) * 5
+            aktor_html += f'<span style="font-size:{size:.0f}px;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:4px;padding:4px 10px;color:#3730A3;font-weight:500">{aktor} <span style=\'font-family:monospace;font-size:9px;opacity:0.7\'>({freq})</span></span>'
+        aktor_html += '</div>'
+        st.markdown(aktor_html, unsafe_allow_html=True)
+
+    # Export JSON
+    st.markdown("---")
+    st.markdown("**Export Data**")
+    col_exp1, col_exp2 = st.columns(2)
+    with col_exp1:
+        records = df.to_dict('records')
+        json_str = json.dumps({
+            "meta": meta,
+            "data": [{k: str(v) for k, v in r.items()} for r in records]
+        }, ensure_ascii=False, indent=2)
+        st.download_button(
+            "⬇️ Download JSON (untuk integrasi)",
+            data=json_str,
+            file_name=f"ais_data_{meta.get('isu','bpkp').replace(' ','_').lower()}.json",
+            mime="application/json",
+            use_container_width=True
+        )
+    with col_exp2:
+        csv_str = df[['No','Tanggal','Judul','IsuSubisu','Tone','Risiko','TindakLanjut','AktorLokasi']].to_csv(index=False)
+        st.download_button(
+            "⬇️ Download CSV (ringkasan)",
+            data=csv_str,
+            file_name=f"ais_ringkasan_{meta.get('isu','bpkp').replace(' ','_').lower()}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
