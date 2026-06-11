@@ -16,14 +16,6 @@ import io
 from collections import Counter
 from datetime import datetime
 
-# ── PAGE CONFIG ──────────────────────────────────────────────
-st.set_page_config(
-    page_title="AIS Dashboard — Pustrajakwas BPKP",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # ── CUSTOM CSS ───────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -70,19 +62,19 @@ st.markdown("""
 
   /* Stat cards */
   .stat-card {
-    background: white; border: 1px solid #D0DCE8;
+    background: var(--background-color, white); border: 1px solid rgba(128,128,128,0.25);
     border-radius: 8px; padding: 16px;
     text-align: center;
   }
   .stat-num {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 28px; font-weight: 700; color: #0D1B2A; line-height: 1;
+    font-size: 28px; font-weight: 700; color: inherit; line-height: 1;
   }
-  .stat-label { font-size: 11px; color: #5A6A7A; margin-top: 4px; }
+  .stat-label { font-size: 11px; color: inherit; opacity: 0.6; margin-top: 4px; }
 
   /* Issue card */
   .issue-card {
-    background: white; border: 1px solid #D0DCE8;
+    background: var(--background-color, white); border: 1px solid rgba(128,128,128,0.25);
     border-radius: 6px; padding: 14px 14px 14px 18px;
     margin-bottom: 8px; position: relative;
     overflow: hidden;
@@ -94,9 +86,9 @@ st.markdown("""
   .issue-card.negatif::before { background: #E74C3C; }
   .issue-card.netral::before { background: #95A5A6; }
   .issue-card.positif::before { background: #27AE60; }
-  .issue-title { font-size: 13px; font-weight: 600; color: #1A2A3A; line-height: 1.4; }
-  .issue-sub { font-size: 11px; color: #5A6A7A; margin-top: 2px; }
-  .issue-summary { font-size: 11px; color: #5A6A7A; line-height: 1.5; margin-top: 6px; }
+  .issue-title { font-size: 13px; font-weight: 600; color: inherit; line-height: 1.4; }
+  .issue-sub { font-size: 11px; color: inherit; opacity: 0.65; margin-top: 2px; }
+  .issue-summary { font-size: 11px; color: inherit; opacity: 0.65; line-height: 1.5; margin-top: 6px; }
 
   /* Badges */
   .badge {
@@ -115,18 +107,18 @@ st.markdown("""
   .detail-label {
     font-size: 10px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.08em;
-    color: #7F8C8D; margin-bottom: 4px;
+    color: inherit; opacity: 0.55; margin-bottom: 4px;
   }
-  .detail-text { font-size: 12px; color: #1A2A3A; line-height: 1.6; }
+  .detail-text { font-size: 12px; color: inherit; line-height: 1.6; }
   .implikasi-box {
     background: #FFF8F0; border: 1px solid #F5A623;
     border-radius: 5px; padding: 10px 12px;
-    font-size: 12px; color: #1A2A3A; line-height: 1.6;
+    font-size: 12px; color: inherit; line-height: 1.6;
   }
   .tindaklanjut-box {
     background: #F0F5FF; border: 1px solid #93B4E8;
     border-radius: 5px; padding: 10px 12px;
-    font-size: 12px; color: #1A2A3A; line-height: 1.6;
+    font-size: 12px; color: inherit; line-height: 1.6;
   }
 
   /* Tone pill */
@@ -270,10 +262,10 @@ if uploaded is None:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("""
-        <div style='text-align:center;padding:60px 20px;background:white;border-radius:12px;border:2px dashed #D0DCE8;'>
+        <div style='text-align:center;padding:60px 20px;background:var(--background-color,white);border-radius:12px;border:2px dashed rgba(128,128,128,0.3);'>
           <div style='font-size:40px;margin-bottom:12px'>📊</div>
-          <div style='font-size:16px;font-weight:600;color:#1A2A3A;margin-bottom:8px'>Upload File Excel AIS</div>
-          <div style='font-size:12px;color:#7F8C8D;line-height:1.6'>
+          <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Upload File Excel AIS</div>
+          <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6'>
             Upload file <code>.xlsx</code> hasil pipeline media crawl<br>
             melalui panel di sebelah kiri.<br><br>
             Dashboard akan otomatis render semua tab<br>
@@ -376,7 +368,7 @@ with tab1:
           <div style='width:{pt}%;background:#BDC3C7'></div>
           <div style='width:{pp}%;background:#27AE60'></div>
         </div>
-        <div style='display:flex;gap:16px;font-size:11px;color:#5A6A7A'>
+        <div style='display:flex;gap:16px;font-size:11px;color:inherit;opacity:0.7'>
           <span>🔴 Negatif {pn}%</span>
           <span>⚪ Netral {pt}%</span>
           <span>🟢 Positif {pp}%</span>
@@ -393,8 +385,8 @@ with tab1:
             pct = round(count/stats['total']*100) if stats['total'] else 0
             st.markdown(f"""
             <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-              <div style='font-size:11px;color:#5A6A7A;width:50px'>{label}</div>
-              <div style='flex:1;height:14px;background:#ECF0F1;border-radius:3px;overflow:hidden'>
+              <div style='font-size:11px;color:inherit;opacity:0.7;width:50px'>{label}</div>
+              <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
                 <div style='width:{pct}%;height:100%;background:{color};border-radius:3px'></div>
               </div>
               <div style='font-size:10px;font-family:monospace;color:#95A5A6;width:24px'>{count}</div>
@@ -413,11 +405,11 @@ with tab1:
             label = (subisu[:40]+'…') if len(subisu)>40 else subisu
             st.markdown(f"""
             <div style='display:flex;align-items:center;gap:8px;margin-bottom:7px'>
-              <div style='font-size:11px;color:#1A2A3A;width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' title='{subisu}'>{label}</div>
-              <div style='flex:1;height:14px;background:#ECF0F1;border-radius:3px;overflow:hidden'>
+              <div style='font-size:11px;color:inherit;opacity:0.85;width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' title='{subisu}'>{label}</div>
+              <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
                 <div style='width:{pct}%;height:100%;background:{tone_color};border-radius:3px'></div>
               </div>
-              <div style='font-size:10px;font-family:monospace;color:#95A5A6;width:18px'>{count}</div>
+              <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{count}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -465,8 +457,8 @@ with tab2:
             for i, (_, row) in enumerate(df_filtered.iterrows()):
                 tone_class = str(row['Tone']).lower()
                 is_selected = (i == selected_idx)
-                border_style = "border:2px solid #0D1B2A;" if is_selected else "border:1px solid #D0DCE8;"
-                bg_style = "background:#F0F5FA;" if is_selected else "background:white;"
+                border_style = "border:2px solid rgba(99,179,237,0.8);" if is_selected else "border:1px solid rgba(128,128,128,0.2);"
+                bg_style = "background:rgba(99,179,237,0.08);" if is_selected else "background:transparent;"
 
                 judul_short = str(row['Judul'])[:75]+'…' if len(str(row['Judul']))>75 else str(row['Judul'])
                 
@@ -480,7 +472,7 @@ with tab2:
                     </div>
                     <span class="badge badge-{tone_class}" style='flex-shrink:0'>{row['Tone']}</span>
                   </div>
-                  <div style='margin-top:6px;font-size:10px;color:#95A5A6;font-family:monospace'>
+                  <div style='margin-top:6px;font-size:10px;color:inherit;opacity:0.5;font-family:monospace'>
                     📅 {row['Tanggal']} &nbsp;·&nbsp; 🏢 {str(row['AktorLokasi'])[:40]}
                   </div>
                 </div>
@@ -497,9 +489,9 @@ with tab2:
                 tone_class = str(row['Tone']).lower()
 
                 st.markdown(f"""
-                <div style='background:white;border:1px solid #D0DCE8;border-radius:8px;padding:18px;position:sticky;top:0'>
+                <div style='background:var(--background-color,white);border:1px solid rgba(128,128,128,0.25);border-radius:8px;padding:18px;position:sticky;top:0'>
                   <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
-                    <div style='font-size:14px;font-weight:700;color:#0D1B2A;line-height:1.4;flex:1'>{row['Judul']}</div>
+                    <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{row['Judul']}</div>
                     <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
                   </div>
 
@@ -508,7 +500,7 @@ with tab2:
                     <span class="badge badge-aktor">{row['AktorLokasi']}</span>
                   </div>
 
-                  <hr style='border:none;border-top:1px solid #ECF0F1;margin:10px 0'>
+                  <hr style='border:none;border-top:1px solid rgba(128,128,128,0.2);margin:10px 0'>
 
                   <div class="detail-section">
                     <div class="detail-label">Ringkasan Isu</div>
@@ -525,8 +517,8 @@ with tab2:
                     <div class="tindaklanjut-box">{row['TindakLanjut']}</div>
                   </div>
 
-                  <hr style='border:none;border-top:1px solid #ECF0F1;margin:10px 0'>
-                  <div style='font-size:10px;color:#95A5A6'>
+                  <hr style='border:none;border-top:1px solid rgba(128,128,128,0.2);margin:10px 0'>
+                  <div style='font-size:10px;color:inherit;opacity:0.5'>
                     📅 {row['Tanggal']} &nbsp;·&nbsp;
                     🔗 <a href="{row['Link']}" target="_blank" style='color:#3B82F6'>Buka artikel asli</a>
                   </div>
@@ -560,12 +552,12 @@ with tab3:
             <div style='display:flex;align-items:center;justify-content:space-between;
                         padding:8px 10px;margin-bottom:4px;background:white;
                         border:1px solid #ECF0F1;border-radius:5px;border-left:3px solid {dom_color}'>
-              <div style='font-size:11px;font-weight:600;color:#1A2A3A;flex:1'>{label}</div>
+              <div style='font-size:11px;font-weight:600;color:inherit;flex:1'>{label}</div>
               <div style='display:flex;gap:10px;font-size:10px;font-family:monospace'>
                 <span style='color:#E74C3C'>N:{int(row_t['Negatif'])}</span>
                 <span style='color:#95A5A6'>T:{int(row_t['Netral'])}</span>
                 <span style='color:#27AE60'>P:{int(row_t['Positif'])}</span>
-                <span style='color:#0D1B2A;font-weight:700'>{int(row_t['Total'])}</span>
+                <span style='color:inherit;font-weight:700'>{int(row_t['Total'])}</span>
               </div>
             </div>
             """, unsafe_allow_html=True)
@@ -585,9 +577,9 @@ with tab3:
             <div style='margin-bottom:12px'>
               <div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px'>
                 <span style='font-weight:600;color:{color}'>{tone_val}</span>
-                <span style='font-family:monospace;color:#95A5A6'>{count} artikel ({pct}%)</span>
+                <span style='font-family:monospace;color:inherit;opacity:0.5'>{count} artikel ({pct}%)</span>
               </div>
-              <div style='height:20px;background:#ECF0F1;border-radius:4px;overflow:hidden'>
+              <div style='height:20px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden'>
                 <div style='width:{pct}%;height:100%;background:{color};border-radius:4px'></div>
               </div>
             </div>
@@ -612,14 +604,14 @@ with tab3:
         st.markdown(f"""
         <div style='background:#FDECEA;border-radius:6px;padding:12px;border-left:3px solid #E74C3C'>
           <div style='font-size:10px;font-weight:700;color:#E74C3C;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Dominan Negatif</div>
-          <div style='font-size:11px;color:#1A2A3A;line-height:1.6'>{"<br>".join(f"• {x}" for x in neg_issues) if neg_issues else "—"}</div>
+          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in neg_issues) if neg_issues else "—"}</div>
         </div>
         """, unsafe_allow_html=True)
     with col_b:
         st.markdown(f"""
         <div style='background:#FFF8F0;border-radius:6px;padding:12px;border-left:3px solid #F5A623'>
           <div style='font-size:10px;font-weight:700;color:#c47d0a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Volume Pemberitaan</div>
-          <div style='font-size:11px;color:#1A2A3A;line-height:1.6'>
+          <div style='font-size:11px;color:inherit;line-height:1.6'>
             Total <strong>{stats['total']}</strong> artikel dalam periode ini.<br>
             {stats['negatif']} negatif ({stats['pct_neg']}%) menunjukkan tekanan pemberitaan yang perlu diwaspadai.
           </div>
@@ -629,7 +621,7 @@ with tab3:
         st.markdown(f"""
         <div style='background:#E8F8EE;border-radius:6px;padding:12px;border-left:3px solid #27AE60'>
           <div style='font-size:10px;font-weight:700;color:#27AE60;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Bernada Positif</div>
-          <div style='font-size:11px;color:#1A2A3A;line-height:1.6'>{"<br>".join(f"• {x}" for x in pos_issues) if pos_issues else "—"}</div>
+          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in pos_issues) if pos_issues else "—"}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -651,7 +643,7 @@ with tab4:
             for word, freq in keywords:
                 size = 11 + (freq / max_freq) * 12
                 opacity = 0.4 + (freq / max_freq) * 0.6
-                cloud_html += f'<span style="font-size:{size:.0f}px;background:#E8F0F7;border:1px solid #D0DCE8;border-radius:3px;padding:3px 10px;color:#0D1B2A;opacity:{opacity:.2f};font-weight:500">{word}</span>'
+                cloud_html += f'<span style="font-size:{size:.0f}px;background:rgba(100,140,180,0.15);border:1px solid rgba(100,140,180,0.3);border-radius:3px;padding:3px 10px;color:inherit;opacity:{opacity:.2f};font-weight:500">{word}</span>'
             cloud_html += '</div>'
             st.markdown(cloud_html, unsafe_allow_html=True)
 
@@ -663,11 +655,11 @@ with tab4:
                 pct = round(freq / max_freq * 100)
                 st.markdown(f"""
                 <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-                  <div style='font-size:11px;color:#1A2A3A;width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{word}</div>
-                  <div style='flex:1;height:14px;background:#ECF0F1;border-radius:3px;overflow:hidden'>
+                  <div style='font-size:11px;color:inherit;opacity:0.85;width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{word}</div>
+                  <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
                     <div style='width:{pct}%;height:100%;background:#1C3D5A;border-radius:3px'></div>
                   </div>
-                  <div style='font-size:10px;font-family:monospace;color:#95A5A6;width:18px'>{freq}</div>
+                  <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{freq}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -678,7 +670,7 @@ with tab4:
         aktor_html = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">'
         for aktor, freq in aktors:
             size = 11 + (freq / max_aktor) * 5
-            aktor_html += f'<span style="font-size:{size:.0f}px;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:4px;padding:4px 10px;color:#3730A3;font-weight:500">{aktor} <span style=\'font-family:monospace;font-size:9px;opacity:0.7\'>({freq})</span></span>'
+            aktor_html += f'<span style="font-size:{size:.0f}px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:4px;padding:4px 10px;color:#818CF8;font-weight:500">{aktor} <span style=\'font-family:monospace;font-size:9px;opacity:0.7\'>({freq})</span></span>'
         aktor_html += '</div>'
         st.markdown(aktor_html, unsafe_allow_html=True)
 
