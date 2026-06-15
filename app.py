@@ -224,7 +224,7 @@ if page == "🔍 Crawl & Analisis":
       "aktor_lokasi"  : "Nama dan jabatan aktor utama / instansi / lokasi",
       "tone"          : "Positif" atau "Netral" atau "Negatif",
       "risiko_ais"    : "Risiko yang SPESIFIK sesuai kategori isu: jika EKSTERNAL, fokus pada risiko respons kebijakan dan dampak fiskal/sosial; jika PELAKSANAAN atau TATA KELOLA, fokus pada kelemahan pengendalian dan potensi penyimpangan",
-      "tindak_lanjut" : "Rekomendasi konkret sesuai kategori: jika isu eksternal, arahkan ke monitoring dampak atau review kesiapan mitigasi; jika tata kelola, arahkan ke audit atau reviu spesifik"
+      "area_perhatian" : "Area yang perlu mendapat perhatian pengawasan: jika isu eksternal, sebutkan aspek dampak yang perlu dipantau; jika tata kelola, sebutkan objek audit atau reviu yang relevan"
     }
 
     Aturan ketat:
@@ -261,7 +261,7 @@ if page == "🔍 Crawl & Analisis":
             return {
                 "ringkasan_isu": artikel.get("snippet", "-")[:300],
                 "isu_subisu": "-", "aktor_lokasi": "-",
-                "tone": "Netral", "risiko_ais": "-", "tindak_lanjut": "-",
+                "tone": "Netral", "risiko_ais": "-", "area_perhatian": "-",
             }
 
     # ── Excel builder ──────────────────────────────────────────────────────
@@ -306,7 +306,7 @@ if page == "🔍 Crawl & Analisis":
         HEADERS = [
             "No", "Tanggal", "Sumber", "Link/Bukti", "Judul/Post",
             "Ringkasan Isu", "Isu/Subisu", "Aktor/Lokasi",
-            "Tone Berita", "Risiko/Implikasi AIS", "Tindak Lanjut",
+            "Tone Berita", "Risiko/Implikasi AIS", "Area Perhatian",
         ]
         for col, h in enumerate(HEADERS, 1):
             c = ws.cell(row=4, column=col, value=h)
@@ -321,7 +321,7 @@ if page == "🔍 Crawl & Analisis":
                 d.get("link","-"), d.get("judul","-"),
                 d.get("ringkasan_isu","-"), d.get("isu_subisu","-"),
                 d.get("aktor_lokasi","-"), d.get("tone","Netral"),
-                d.get("risiko_ais","-"), d.get("tindak_lanjut","-"),
+                d.get("risiko_ais","-"), d.get("area_perhatian","-"),
             ]
             for col, val in enumerate(baris, 1):
                 c = ws.cell(row=r, column=col, value=val)
@@ -431,6 +431,10 @@ if page == "🔍 Crawl & Analisis":
 
         st.session_state["hasil"]     = hasil_list
         st.session_state["label_isu"] = label_isu.strip()
+        st.session_state["ais_ready"] = True  # flag untuk dashboard
+
+        # Banner navigasi ke dashboard
+        st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk melihat visualisasi lengkap — tanpa perlu upload ulang.")
 
     if "hasil" in st.session_state:
         hasil_list = st.session_state["hasil"]
@@ -481,7 +485,7 @@ if page == "🔍 Crawl & Analisis":
                 <div class="artikel-meta">📅 {h.get('tanggal','-')} &nbsp;·&nbsp; 📰 {h.get('sumber','-')} &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
                 <div class="artikel-risiko">⚠️ <b>Risiko:</b> {h.get('risiko_ais','-')}</div>
-                <div class="artikel-tindak">✅ <b>Tindak Lanjut:</b> {h.get('tindak_lanjut','-')}</div>
+                <div class="artikel-tindak">🔍 <b>Area Perhatian:</b> {h.get('area_perhatian','-')}</div>
             </div>""", unsafe_allow_html=True)
             with st.expander("🔗 Lihat link artikel"):
                 st.write(h.get("link", "-"))
