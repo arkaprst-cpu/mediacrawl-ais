@@ -1,5 +1,5 @@
 """
-Media Crawl AIS — Pustrajakwas BPKP
+Analisis Isu Strategis — Pusat Strategi Kebijakan Pengawasan BPKP
 Streamlit web app: input keyword → Groq query expansion → crawl → analisis → download Excel
 """
 
@@ -34,7 +34,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigasi",
-        options=["🔍 Crawl & Analisis", "📊 Dashboard AIS"],
+        options=["🔍 Mulai Crawl", "📊 Dashboard AIS"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -143,7 +143,7 @@ if page == "🔍 Crawl & Analisis":
     Keyword input: "{keyword}"
 
     Aturan:
-    - Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
+    - Variasikan dengan sinonim, singkatan, atau aspek berbeda dari isu yang sama
     - Gunakan bahasa Indonesia
     - Kembalikan HANYA array JSON berisi string query, tanpa teks lain
 
@@ -434,7 +434,7 @@ if page == "🔍 Crawl & Analisis":
         st.session_state["ais_ready"] = True  # flag untuk dashboard
 
         # Banner navigasi ke dashboard
-        st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk melihat visualisasi lengkap — tanpa perlu upload ulang.")
+        st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk melihat visualisasi lengkap")
 
     if "hasil" in st.session_state:
         hasil_list = st.session_state["hasil"]
