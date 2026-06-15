@@ -164,10 +164,36 @@ if page == "🔍 Crawl & Analisis":
             pass
         return [keyword]
 
+    # ── Filter konten video ───────────────────────────────────────────────
+    DOMAIN_VIDEO = {
+        "kompas.tv", "cnnindonesia.com", "metrotvnews.com",
+        "tvone.co.id", "rctiplus.com", "vidio.com",
+        "youtube.com", "youtu.be", "liputan6.com/tv",
+    }
+    JUDUL_VIDEO = [
+        "[full]", "[live]", "[video]", "[breaking]",
+        "live streaming", "siaran langsung", "tonton video",
+        "nonton:", "breaking news:", "full video",
+    ]
+
+    def is_video(judul: str, domain: str) -> bool:
+        judul_lower = judul.lower()
+        # Cek domain video
+        for dv in DOMAIN_VIDEO:
+            if dv in domain.lower():
+                return True
+        # Cek penanda video di judul
+        for marker in JUDUL_VIDEO:
+            if marker in judul_lower:
+                return True
+        # Cek snippet yang cuma pengulangan judul (konten kosong)
+        return False
+
     # ── Crawl Google News RSS ──────────────────────────────────────────────
     def crawl_google_news(queries: list, max_articles: int) -> list:
         articles = []
         seen = set()
+        skipped_video = 0
         headers = {"User-Agent": "Mozilla/5.0 (compatible; AIS-Crawler/1.0)"}
 
         for q in queries:
@@ -180,18 +206,31 @@ if page == "🔍 Crawl & Analisis":
                         continue
                     seen.add(link)
 
+                    judul  = entry.get("title", "-")
+                    domain = re.sub(r"https?://(www\.)?", "", link).split("/")[0]
+
+                    # Filter artikel video
+                    if is_video(judul, domain):
+                        skipped_video += 1
+                        continue
+
                     try:
                         tanggal = datetime(*entry.published_parsed[:3]).strftime("%d %b %Y")
                     except Exception:
                         pub = entry.get("published", "")
                         tanggal = pub[:10] if pub else "-"
 
-                    tier   = tier_sumber(link)
-                    domain = re.sub(r"https?://(www\.)?", "", link).split("/")[0]
+                    tier    = tier_sumber(link)
                     snippet = re.sub(r"<[^>]+>", "", entry.get("summary", ""))[:500]
 
+                    # Filter snippet yang isinya cuma pengulangan judul (konten kosong)
+                    snippet_bersih = snippet.replace(judul, "").strip()
+                    if len(snippet_bersih) < 30:
+                        skipped_video += 1
+                        continue
+
                     articles.append({
-                        "judul":   entry.get("title", "-"),
+                        "judul":   judul,
                         "link":    link,
                         "tanggal": tanggal,
                         "sumber":  domain,
@@ -199,10 +238,14 @@ if page == "🔍 Crawl & Analisis":
                         "tier":    tier,
                     })
                     if len(articles) >= max_articles:
+                        if skipped_video > 0:
+                            st.caption(f"ℹ️ {skipped_video} artikel video/konten kosong dilewati secara otomatis.")
                         return articles
             except Exception as e:
                 st.warning(f"Gagal crawl '{q}': {e}")
 
+        if skipped_video > 0:
+            st.caption(f"ℹ️ {skipped_video} artikel video/konten kosong dilewati secara otomatis.")
         return articles
 
     # ── PROMPT SISTEM ──────────────────────────────────────────────────────
