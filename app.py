@@ -217,19 +217,32 @@ if page == "🔍 Crawl & Analisis":
 
     2. Siapa yang punya kendali atas isu ini? Apakah pemerintah Indonesia dapat mengubah situasi ini secara langsung, atau hanya merespons?
 
+    3. Nilai kondisi GRC berdasarkan konten artikel:
+       - G (Governance): apakah ada kelemahan kebijakan, regulasi, atau pengambilan keputusan?
+         Nilai: "Tidak Memadai" / "Perlu Penguatan" / "Memadai" / "Tidak Dapat Dinilai"
+       - R (Risk): seberapa besar potensi dampak negatif terhadap keuangan negara, program, atau reputasi pemerintah?
+         Nilai: "Tinggi" / "Sedang" / "Rendah"
+       - C (Control): apakah pengendalian internal yang ada memadai, atau ada indikasi kelemahan?
+         Nilai: "Lemah" / "Perlu Penguatan" / "Memadai" / "Tidak Dapat Dinilai"
+
     Gunakan hasil identifikasi itu untuk mengisi JSON berikut (tanpa teks lain di luar JSON):
     {
-      "ringkasan_isu" : "2-3 kalimat: apa yang terjadi, apa pemicunya (sebutkan eksplisit jika faktor eksternal), dan mengapa relevan bagi pengawasan",
-      "isu_subisu"    : "Nama isu utama / subisu spesifik",
-      "aktor_lokasi"  : "Nama dan jabatan aktor utama / instansi / lokasi",
-      "tone"          : "Positif" atau "Netral" atau "Negatif",
-      "risiko_ais"    : "Risiko yang SPESIFIK sesuai kategori isu: jika EKSTERNAL, fokus pada risiko respons kebijakan dan dampak fiskal/sosial; jika PELAKSANAAN atau TATA KELOLA, fokus pada kelemahan pengendalian dan potensi penyimpangan",
-      "area_perhatian" : "Area yang perlu mendapat perhatian pengawasan: jika isu eksternal, sebutkan aspek dampak yang perlu dipantau; jika tata kelola, sebutkan objek audit atau reviu yang relevan"
+      "ringkasan_isu"  : "2-3 kalimat: apa yang terjadi, apa pemicunya (sebutkan eksplisit jika faktor eksternal), dan mengapa relevan bagi pengawasan",
+      "isu_subisu"     : "Nama isu utama / subisu spesifik",
+      "aktor_lokasi"   : "Nama dan jabatan aktor utama / instansi / lokasi",
+      "tone"           : "Positif" atau "Netral" atau "Negatif",
+      "grc_g"          : "Nilai Governance: Tidak Memadai / Perlu Penguatan / Memadai / Tidak Dapat Dinilai",
+      "grc_r"          : "Nilai Risk: Tinggi / Sedang / Rendah",
+      "grc_c"          : "Nilai Control: Lemah / Perlu Penguatan / Memadai / Tidak Dapat Dinilai",
+      "narasi_grc"     : "1-2 kalimat spesifik: apa yang lemah secara konkret dari sisi G, R, dan C — hindari framing generik",
+      "area_perhatian" : "Aspek spesifik yang perlu mendapat perhatian pengawasan BPKP berdasarkan kondisi GRC di atas"
     }
 
     Aturan ketat:
     - Tone HANYA salah satu dari: Positif, Netral, Negatif
-    - JANGAN gunakan framing generik seperti "perlu transparansi" atau "perlu keadilan" jika isu dipicu faktor di luar kendali pemerintah
+    - Nilai GRC HANYA dari pilihan yang tersedia di atas, tidak boleh mengarang nilai lain
+    - Narasi GRC harus menyebut kondisi konkret, BUKAN framing generik seperti "perlu transparansi" atau "perlu keadilan"
+    - Jika isu dipicu faktor eksternal, G dan C boleh "Tidak Dapat Dinilai" tapi R tetap harus dinilai
     - Bahasa Indonesia formal
     - Output HANYA JSON murni, tidak ada teks sebelum atau sesudah, tidak ada markdown fence"""
 
@@ -261,7 +274,7 @@ if page == "🔍 Crawl & Analisis":
             return {
                 "ringkasan_isu": artikel.get("snippet", "-")[:300],
                 "isu_subisu": "-", "aktor_lokasi": "-",
-                "tone": "Netral", "risiko_ais": "-", "area_perhatian": "-",
+                "tone": "Netral", "grc_g": "-", "grc_r": "-", "grc_c": "-", "narasi_grc": "-", "area_perhatian": "-",
             }
 
     # ── Excel builder ──────────────────────────────────────────────────────
@@ -273,7 +286,7 @@ if page == "🔍 Crawl & Analisis":
         C_NAVY = "1F3864"; C_WHITE = "FFFFFF"
         C_SUB  = "D9E1F2"; C_ODD   = "EEF2F7"; C_EVEN = "FFFFFF"
         TONE_C = {"Positif": "C6EFCE", "Netral": "FFEB9C", "Negatif": "FFC7CE"}
-        NCOL   = 11
+        NCOL   = 14
         s      = Side(style="thin", color="CCCCCC")
         BD     = Border(left=s, right=s, top=s, bottom=s)
 
@@ -306,7 +319,8 @@ if page == "🔍 Crawl & Analisis":
         HEADERS = [
             "No", "Tanggal", "Sumber", "Link/Bukti", "Judul/Post",
             "Ringkasan Isu", "Isu/Subisu", "Aktor/Lokasi",
-            "Tone Berita", "Risiko/Implikasi AIS", "Area Perhatian",
+            "Tone Berita", "G (Governance)", "R (Risk)", "C (Control)",
+            "Narasi GRC", "Area Perhatian",
         ]
         for col, h in enumerate(HEADERS, 1):
             c = ws.cell(row=4, column=col, value=h)
@@ -321,7 +335,8 @@ if page == "🔍 Crawl & Analisis":
                 d.get("link","-"), d.get("judul","-"),
                 d.get("ringkasan_isu","-"), d.get("isu_subisu","-"),
                 d.get("aktor_lokasi","-"), d.get("tone","Netral"),
-                d.get("risiko_ais","-"), d.get("area_perhatian","-"),
+                d.get("grc_g","-"), d.get("grc_r","-"), d.get("grc_c","-"),
+                d.get("narasi_grc","-"), d.get("area_perhatian","-"),
             ]
             for col, val in enumerate(baris, 1):
                 c = ws.cell(row=r, column=col, value=val)
@@ -329,9 +344,17 @@ if page == "🔍 Crawl & Analisis":
             tone_val  = d.get("tone", "Netral")
             tone_cell = ws.cell(row=r, column=9)
             tone_cell.fill = PatternFill("solid", fgColor=TONE_C.get(tone_val, "FFEB9C"))
+
+            # GRC cell coloring
+            GRC_G_C = {"Tidak Memadai": "FFC7CE", "Perlu Penguatan": "FFEB9C", "Memadai": "C6EFCE", "Tidak Dapat Dinilai": "F2F2F2"}
+            GRC_R_C = {"Tinggi": "FFC7CE", "Sedang": "FFEB9C", "Rendah": "C6EFCE"}
+            GRC_C_C = {"Lemah": "FFC7CE", "Perlu Penguatan": "FFEB9C", "Memadai": "C6EFCE", "Tidak Dapat Dinilai": "F2F2F2"}
+            ws.cell(row=r, column=10).fill = PatternFill("solid", fgColor=GRC_G_C.get(d.get("grc_g",""), "F2F2F2"))
+            ws.cell(row=r, column=11).fill = PatternFill("solid", fgColor=GRC_R_C.get(d.get("grc_r",""), "F2F2F2"))
+            ws.cell(row=r, column=12).fill = PatternFill("solid", fgColor=GRC_C_C.get(d.get("grc_c",""), "F2F2F2"))
             ws.row_dimensions[r].height = 60
 
-        col_widths = [5, 12, 18, 35, 40, 45, 25, 25, 12, 45, 40]
+        col_widths = [5, 12, 18, 35, 40, 45, 25, 25, 12, 18, 12, 18, 45, 40]
         for col, w in enumerate(col_widths, 1):
             ws.column_dimensions[get_column_letter(col)].width = w
 
@@ -484,7 +507,12 @@ if page == "🔍 Crawl & Analisis":
                 <div class="artikel-judul">{h.get('judul','-')}</div>
                 <div class="artikel-meta">📅 {h.get('tanggal','-')} &nbsp;·&nbsp; 📰 {h.get('sumber','-')} &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
-                <div class="artikel-risiko">⚠️ <b>Risiko:</b> {h.get('risiko_ais','-')}</div>
+                <div class="artikel-risiko">
+                    🔵 <b>G:</b> {h.get('grc_g','-')} &nbsp;|&nbsp;
+                    🔴 <b>R:</b> {h.get('grc_r','-')} &nbsp;|&nbsp;
+                    🟡 <b>C:</b> {h.get('grc_c','-')}<br>
+                    <span style="font-size:0.82rem">{h.get('narasi_grc','-')}</span>
+                </div>
                 <div class="artikel-tindak">🔍 <b>Area Perhatian:</b> {h.get('area_perhatian','-')}</div>
             </div>""", unsafe_allow_html=True)
             with st.expander("🔗 Lihat link artikel"):
