@@ -474,25 +474,28 @@ with tab1:
     if len(df_tinggi) == 0:
         df_tinggi = df[df['Tone']=='Negatif'].head(3)
 
-    cols = st.columns(min(3, len(df_tinggi)))
-    for i, (_, row) in enumerate(df_tinggi.iterrows()):
-        with cols[i]:
-            tone_class = str(row['Tone']).lower()
-            aktor_short = str(row['AktorLokasi'])[:40]
-            st.markdown(f"""
-            <div class="issue-card {tone_class}">
-              <div class="issue-title">{str(row['Judul'])[:80]}{'…' if len(str(row['Judul']))>80 else ''}</div>
-              <div class="issue-sub">{str(row['IsuSubisu'])}</div>
-              <div class="issue-summary">{str(row['Ringkasan'])[:140]}…</div>
-              <div style='margin-top:8px;font-size:10px;color:inherit;opacity:0.7'>
-                G: {str(row.get('GRC_G','-'))} · R: {str(row.get('GRC_R','-'))} · C: {str(row.get('GRC_C','-'))}
-              </div>
-              <div style='margin-top:6px'>
-                <span class="badge badge-{tone_class}">{row['Tone']}</span>
-                <span class="badge badge-aktor">{aktor_short}</span>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+    if len(df_tinggi) == 0:
+        st.info("Tidak ada artikel dengan risiko tinggi atau tone negatif pada periode ini.")
+    else:
+        cols = st.columns(min(3, len(df_tinggi)))
+        for i, (_, row) in enumerate(df_tinggi.iterrows()):
+            with cols[i]:
+                tone_class = str(row['Tone']).lower()
+                aktor_short = str(row['AktorLokasi'])[:40]
+                st.markdown(f"""
+                <div class="issue-card {tone_class}">
+                  <div class="issue-title">{str(row['Judul'])[:80]}{'…' if len(str(row['Judul']))>80 else ''}</div>
+                  <div class="issue-sub">{str(row['IsuSubisu'])}</div>
+                  <div class="issue-summary">{str(row['Ringkasan'])[:140]}…</div>
+                  <div style='margin-top:8px;font-size:10px;color:inherit;opacity:0.7'>
+                    G: {str(row.get('GRC_G','-'))} · R: {str(row.get('GRC_R','-'))} · C: {str(row.get('GRC_C','-'))}
+                  </div>
+                  <div style='margin-top:6px'>
+                    <span class="badge badge-{tone_class}">{row['Tone']}</span>
+                    <span class="badge badge-aktor">{aktor_short}</span>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════
