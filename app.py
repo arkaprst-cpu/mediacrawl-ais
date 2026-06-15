@@ -1,5 +1,5 @@
 """
-Analisis Isu Strategis — Pusat Strategi Kebijakan Pengawasan BPKP
+Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan BPKP
 Streamlit web app: input keyword → Groq query expansion → crawl → analisis → download Excel
 """
 
@@ -13,7 +13,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 st.set_page_config(
-    page_title="Media Crawl AIS — Pustrajakwas",
+    page_title="Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan",
     page_icon="📰",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -28,13 +28,13 @@ with st.sidebar:
                 border-radius:8px;padding:12px 16px;margin-bottom:12px;
                 border-bottom:2px solid #F5A623'>
       <div style='font-family:monospace;font-size:15px;font-weight:700;color:#F5A623'>AIS</div>
-      <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pustrajakwas BPKP</div>
+      <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
     </div>
     """, unsafe_allow_html=True)
 
     page = st.radio(
         "Navigasi",
-        options=["🔍 Mulai Crawl", "📊 Dashboard AIS"],
+        options=["🔍 Crawl & Analisis", "📊 Dashboard AIS"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -143,7 +143,7 @@ if page == "🔍 Crawl & Analisis":
     Keyword input: "{keyword}"
 
     Aturan:
-    - Variasikan dengan sinonim, singkatan, atau aspek berbeda dari isu yang sama
+    - Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
     - Gunakan bahasa Indonesia
     - Kembalikan HANYA array JSON berisi string query, tanpa teks lain
 
@@ -206,7 +206,7 @@ if page == "🔍 Crawl & Analisis":
         return articles
 
     # ── PROMPT SISTEM ──────────────────────────────────────────────────────
-    PROMPT_SISTEM = """Kamu adalah analis isu strategis pengawasan pemerintahan Indonesia, bekerja untuk BPKP Pustrajakwas.
+    PROMPT_SISTEM = """Kamu adalah analis isu strategis pengawasan pemerintahan Indonesia, bekerja untuk BPKP Pusat Strategi Kebijakan Pengawasan.
 
     Sebelum menulis analisis, lakukan identifikasi awal:
     1. Apa pemicu utama isu ini? Tentukan kategorinya:
@@ -297,7 +297,7 @@ if page == "🔍 Crawl & Analisis":
         c.value = (
             f"Isu: {label_isu}  |  "
             f"Generate: {datetime.now().strftime('%d %B %Y, %H:%M')}  |  "
-            f"Total: {len(data)} artikel  |  Pustrajakwas BPKP"
+            f"Total: {len(data)} artikel  |  Pusat Strategi Kebijakan Pengawasan BPKP"
         )
         style(c, C_SUB, sz=9)
         ws.row_dimensions[2].height = 16
@@ -343,7 +343,7 @@ if page == "🔍 Crawl & Analisis":
     # ── Sidebar konten crawl ───────────────────────────────────────────────
     with st.sidebar:
         st.markdown("### 📰 Media Crawl AIS")
-        st.caption("Pustrajakwas BPKP")
+        st.caption("Pusat Strategi Kebijakan Pengawasan BPKP")
         st.divider()
 
         groq_key_default = ""
@@ -373,13 +373,13 @@ if page == "🔍 Crawl & Analisis":
         max_art = st.slider("Maks. Artikel", min_value=5, max_value=50, value=20, step=5)
 
         st.divider()
-        run_btn = st.button("🔍 Mulai Crawl & Analisis", use_container_width=True)
+        run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
     # ── Main area crawl ────────────────────────────────────────────────────
     st.markdown("""
     <div class="main-header">
       <h1>📰 Analisis Isu Strategis Pengawasan</h1>
-      <p>Media Crawl otomatis · Query Expansion · Analisis Groq · Output Excel · Pustrajakwas BPKP</p>
+      <p>Media Crawl otomatis · Query Expansion · Analisis Groq · Output Excel · Pusat Strategi Kebijakan Pengawasan BPKP</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -434,7 +434,7 @@ if page == "🔍 Crawl & Analisis":
         st.session_state["ais_ready"] = True  # flag untuk dashboard
 
         # Banner navigasi ke dashboard
-        st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk melihat visualisasi lengkap")
+        st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk melihat visualisasi lengkap.")
 
     if "hasil" in st.session_state:
         hasil_list = st.session_state["hasil"]
