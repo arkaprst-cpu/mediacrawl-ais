@@ -247,8 +247,15 @@ with st.sidebar:
 
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
-if uploaded is None:
-    # Landing state
+# Prioritas sumber data:
+# 1. Upload manual via sidebar (override)
+# 2. Hasil crawl dari halaman 1 via session_state
+# 3. Tidak ada data → tampilkan landing
+
+has_session = st.session_state.get("ais_ready", False) and "hasil" in st.session_state
+
+if uploaded is None and not has_session:
+    # Landing state — belum ada data dari mana pun
     st.markdown("""
     <div class="ais-topbar">
       <div>
@@ -258,26 +265,58 @@ if uploaded is None:
       <div class="ais-badge">SIAP DIGUNAKAN</div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("""
         <div style='text-align:center;padding:60px 20px;background:rgba(128,128,128,0.06);border-radius:12px;border:2px dashed rgba(128,128,128,0.3);'>
           <div style='font-size:40px;margin-bottom:12px'>📊</div>
-          <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Upload File Excel AIS</div>
+          <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
           <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6'>
-            Upload file <code>.xlsx</code> hasil pipeline media crawl<br>
-            melalui panel di sebelah kiri.<br><br>
-            Dashboard akan otomatis render semua tab<br>
-            berdasarkan data hasil analisis.
+            Jalankan crawl di halaman <b>🔍 Crawl & Analisis</b> terlebih dahulu,<br>
+            atau upload file <code>.xlsx</code> hasil crawl sebelumnya<br>
+            melalui panel di sebelah kiri.
           </div>
         </div>
         """, unsafe_allow_html=True)
     st.stop()
 
 # ── LOAD & PROCESS DATA ──────────────────────────────────────
-df_raw, meta = load_from_excel(uploaded)
+if uploaded is not None:
+    # Upload manual — selalu override session_state
+    df_raw, meta = load_from_excel(uploaded)
+    sumber_data = "upload"
+
+else:
+    # Ambil dari hasil crawl halaman 1
+    hasil_list  = st.session_state["hasil"]
+    label_sesi  = st.session_state.get("label_isu", "Hasil Crawl")
+    df_raw = pd.DataFrame([{
+        'No':          i + 1,
+        'Tanggal':     h.get('tanggal', '-'),
+        'Sumber':      h.get('sumber', '-'),
+        'Link':        h.get('link', '-'),
+        'Judul':       h.get('judul', '-'),
+        'Ringkasan':   h.get('ringkasan_isu', '-'),
+        'IsuSubisu':   h.get('isu_subisu', '-'),
+        'AktorLokasi': h.get('aktor_lokasi', '-'),
+        'Tone':        h.get('tone', 'Netral'),
+        'Risiko':      h.get('risiko_ais', '-'),
+        'TindakLanjut': h.get('area_perhatian', '-'),
+    } for i, h in enumerate(hasil_list)])
+    meta = {
+        "isu":      label_sesi,
+        "generate": "dari sesi crawl aktif",
+        "total":    str(len(df_raw)),
+        "unit":     "Pustrajakwas BPKP"
+    }
+    sumber_data = "session"
+
 df, stats = compute_stats(df_raw)
+
+# Info banner sumber data
+if sumber_data == "session":
+    st.info(f"📡 Menampilkan hasil crawl sesi ini: **{meta.get('isu','—')}** · {meta.get('total','—')} artikel — Upload file Excel di sidebar untuk mengganti data.")
 
 # Apply filters
 df_filtered = df[
@@ -513,7 +552,7 @@ with tab2:
                   </div>
 
                   <div class="detail-section">
-                    <div class="detail-label">Tindak Lanjut yang Disarankan</div>
+                    <div class="detail-label">Area Perhatian</div>
                     <div class="tindaklanjut-box">{row['TindakLanjut']}</div>
                   </div>
 
