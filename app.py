@@ -522,22 +522,33 @@ if page == "🔍 Crawl & Analisis":
         prog_bar.progress(100, text="✅ Selesai!")
         status_tx.empty()
 
-        # Diagnosa jika ada error analisis
-        errors = [h.get("_error") for h in hasil_list if h.get("_error")]
-        if errors:
-            n_err = len(errors)
-            with st.expander(f"⚠️ {n_err} dari {len(hasil_list)} artikel gagal dianalisis — klik untuk detail"):
-                st.write("Penyebab paling umum: rate limit Groq (terlalu banyak request) atau respons JSON tidak valid.")
-                st.code(errors[0])
-                if "rate" in errors[0].lower() or "429" in errors[0]:
-                    st.warning("Terdeteksi rate limit Groq. Tunggu 1-2 menit, lalu coba crawl lagi dengan jumlah artikel lebih sedikit.")
-
         st.session_state["hasil"]     = hasil_list
         st.session_state["label_isu"] = label_isu.strip()
         st.session_state["ais_ready"] = True  # flag untuk dashboard
 
+        # Simpan error ke session agar tidak hilang saat re-run
+        errors = [h.get("_error") for h in hasil_list if h.get("_error")]
+        st.session_state["ais_errors"] = errors
+
         # Banner navigasi ke dashboard
         st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk melihat visualisasi lengkap.")
+
+    # Tampilkan error diagnostik (persisten — tidak hilang saat re-run/download)
+    if st.session_state.get("ais_errors"):
+        errs = st.session_state["ais_errors"]
+        total = len(st.session_state.get("hasil", []))
+        with st.expander(f"⚠️ {len(errs)} dari {total} artikel gagal dianalisis — klik untuk detail", expanded=True):
+            st.write("**Pesan error pertama:**")
+            st.code(errs[0])
+            low = errs[0].lower()
+            if "rate" in low or "429" in low or "limit" in low:
+                st.warning("🕐 Rate limit Groq. Tunggu 1-2 menit lalu coba lagi.")
+            elif "auth" in low or "401" in low or "api" in low and "key" in low:
+                st.warning("🔑 Masalah API Key Groq. Cek kembali key di Streamlit Secrets.")
+            elif "json" in low or "expecting" in low:
+                st.warning("📋 Groq mengembalikan respons non-JSON. Ini biasanya sementara — coba ulangi.")
+            else:
+                st.warning("Lihat pesan error di atas untuk diagnosa lebih lanjut.")
 
     if "hasil" in st.session_state:
         hasil_list = st.session_state["hasil"]
