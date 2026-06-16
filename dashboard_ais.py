@@ -153,7 +153,7 @@ def load_from_excel(uploaded_file):
 
     # Data mulai dari baris ke-4 (header di index 2, data mulai index 3)
     df = pd.read_excel(uploaded_file, sheet_name=0, header=3)
-    df.columns = ['No','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','GRC_G','GRC_R','GRC_C','NarasiGRC','TindakLanjut']
+    df.columns = ['No','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
     df = df.dropna(subset=['Judul'])
     df = df[df['No'] != 'No']
     df = df.reset_index(drop=True)
@@ -171,15 +171,17 @@ def compute_stats(df):
     pos = tone_counts.get('Positif', 0)
     
     # Hitung skor risiko sederhana berdasarkan tone + panjang teks risiko
-    # Level risiko langsung dari penilaian GRC_R oleh Groq
+    # Level risiko berbasis tone + panjang teks risiko
+    def skor_risiko(row):
+        base = {'Negatif': 7, 'Netral': 5, 'Positif': 3}.get(str(row['Tone']), 5)
+        bonus = min(2, len(str(row['Risiko'])) // 150)
+        return base + bonus
+
     df = df.copy()
-    def map_level(val):
-        v = str(val).strip()
-        if v == 'Tinggi':  return 'Tinggi'
-        if v == 'Rendah':  return 'Rendah'
-        return 'Sedang'  # default Sedang untuk Netral/kosong
-    df['level_risiko'] = df['GRC_R'].apply(map_level)
-    df['skor_risiko']  = df['level_risiko'].map({'Tinggi': 9, 'Sedang': 6, 'Rendah': 3})
+    df['skor_risiko'] = df.apply(skor_risiko, axis=1)
+    df['level_risiko'] = df['skor_risiko'].apply(
+        lambda s: 'Tinggi' if s >= 8 else ('Sedang' if s >= 6 else 'Rendah')
+    )
     
     return df, {
         'total': total,
@@ -300,10 +302,7 @@ else:
         'IsuSubisu':   h.get('isu_subisu', '-'),
         'AktorLokasi': h.get('aktor_lokasi', '-'),
         'Tone':        h.get('tone', 'Netral'),
-        'GRC_G':       h.get('grc_g', '-'),
-        'GRC_R':       h.get('grc_r', '-'),
-        'GRC_C':       h.get('grc_c', '-'),
-        'NarasiGRC':   h.get('narasi_grc', '-'),
+        'Risiko':      h.get('risiko_ais', '-'),
         'TindakLanjut': h.get('area_perhatian', '-'),
     } for i, h in enumerate(hasil_list)])
     meta = {
@@ -381,29 +380,17 @@ with tab1:
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
 
     # Spotlight — ambil artikel Negatif dengan teks risiko terpanjang
-    # Spotlight — prioritas: Risk Tinggi + Negatif, fallback: Risk Tinggi, fallback: Negatif
-    df_spot = df[(df['level_risiko']=='Tinggi') & (df['Tone']=='Negatif')]
-    if len(df_spot) == 0:
-        df_spot = df[df['level_risiko']=='Tinggi']
-    if len(df_spot) == 0:
-        df_spot = df[df['Tone']=='Negatif']
-    if len(df_spot) > 0:
-        spotlight = df_spot.iloc[0]
-        g_val = str(spotlight.get('GRC_G','-'))
-        r_val = str(spotlight.get('GRC_R','-'))
-        c_val = str(spotlight.get('GRC_C','-'))
+    # Spotlight — artikel Negatif dengan teks Risiko terpanjang
+    df_neg = df[df['Tone']=='Negatif'].copy()
+    df_neg['risiko_len'] = df_neg['Risiko'].astype(str).apply(len)
+    if len(df_neg) > 0:
+        spotlight = df_neg.loc[df_neg['risiko_len'].idxmax()]
         st.markdown(f"""
         <div class="spotlight-box">
           <div class="spotlight-eyebrow">⚡ Isu Prioritas — Risiko Tertinggi</div>
           <div class="spotlight-title">{spotlight['Judul']}</div>
-          <div class="spotlight-body">
-            {spotlight['Ringkasan']}<br><br>
-            <span style="opacity:0.85">
-              <strong style="color:rgba(255,255,255,0.9)">G:</strong> {g_val} &nbsp;·&nbsp;
-              <strong style="color:rgba(255,255,255,0.9)">R:</strong> {r_val} &nbsp;·&nbsp;
-              <strong style="color:rgba(255,255,255,0.9)">C:</strong> {c_val}
-            </span><br>
-            <span style="font-size:11px;opacity:0.75">{spotlight.get('NarasiGRC','-')}</span>
+          <div class="spotlight-body">{spotlight['Ringkasan']}<br><br>
+            <strong style="color:rgba(255,255,255,0.9)">Risiko:</strong> {spotlight['Risiko']}
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -486,10 +473,7 @@ with tab1:
                 <div class="issue-card {tone_class}">
                   <div class="issue-title">{str(row['Judul'])[:80]}{'…' if len(str(row['Judul']))>80 else ''}</div>
                   <div class="issue-sub">{str(row['IsuSubisu'])}</div>
-                  <div class="issue-summary">{str(row['Ringkasan'])[:140]}…</div>
-                  <div style='margin-top:8px;font-size:10px;color:inherit;opacity:0.7'>
-                    G: {str(row.get('GRC_G','-'))} · R: {str(row.get('GRC_R','-'))} · C: {str(row.get('GRC_C','-'))}
-                  </div>
+                  <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
                   <div style='margin-top:6px'>
                     <span class="badge badge-{tone_class}">{row['Tone']}</span>
                     <span class="badge badge-aktor">{aktor_short}</span>
@@ -568,22 +552,8 @@ with tab2:
                   </div>
 
                   <div class="detail-section">
-                    <div class="detail-label">Penilaian GRC</div>
-                    <div style='display:flex;gap:8px;margin-bottom:8px'>
-                      <div style='flex:1;text-align:center;background:rgba(128,128,128,0.08);border-radius:5px;padding:8px'>
-                        <div style='font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:0.55;margin-bottom:4px'>Governance</div>
-                        <div style='font-size:11px;font-weight:600'>{row.get('GRC_G','-')}</div>
-                      </div>
-                      <div style='flex:1;text-align:center;background:rgba(128,128,128,0.08);border-radius:5px;padding:8px'>
-                        <div style='font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:0.55;margin-bottom:4px'>Risk</div>
-                        <div style='font-size:11px;font-weight:600'>{row.get('GRC_R','-')}</div>
-                      </div>
-                      <div style='flex:1;text-align:center;background:rgba(128,128,128,0.08);border-radius:5px;padding:8px'>
-                        <div style='font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:0.55;margin-bottom:4px'>Control</div>
-                        <div style='font-size:11px;font-weight:600'>{row.get('GRC_C','-')}</div>
-                      </div>
-                    </div>
-                    <div class="implikasi-box">{row.get('NarasiGRC','-')}</div>
+                    <div class="detail-label">Risiko / Implikasi AIS</div>
+                    <div class="implikasi-box">{row['Risiko']}</div>
                   </div>
 
                   <div class="detail-section">
@@ -766,7 +736,7 @@ with tab4:
             use_container_width=True
         )
     with col_exp2:
-        csv_str = df[['No','Tanggal','Judul','IsuSubisu','Tone','GRC_G','GRC_R','GRC_C','NarasiGRC','TindakLanjut','AktorLokasi']].to_csv(index=False)
+        csv_str = df[['No','Tanggal','Judul','IsuSubisu','Tone','Risiko','TindakLanjut','AktorLokasi']].to_csv(index=False)
         st.download_button(
             "⬇️ Download CSV (ringkasan)",
             data=csv_str,
