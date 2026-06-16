@@ -186,11 +186,11 @@ if page == "🔍 Crawl & Analisis":
         return False
 
     # ── Fetch konten artikel via Jina AI Reader ──────────────────────────
-    def fetch_konten(url: str, timeout: int = 15) -> str:
+    def fetch_konten(url: str, timeout: int = 15) -> tuple:
         """
         Fetch konten artikel via Jina AI Reader (r.jina.ai).
-        Jina me-resolve redirect Google News, bypass bot protection ringan,
-        dan mengembalikan teks bersih siap analisis. Gratis, tanpa API key.
+        Return: tuple (teks_konten, url_asli)
+        url_asli dipakai untuk domain & tier classification yang akurat.
         """
         try:
             # Step 1: resolve redirect Google News → URL asli
@@ -220,7 +220,7 @@ if page == "🔍 Crawl & Analisis":
             )
 
             if r.status_code != 200:
-                return ""
+                return "", url_asli
 
             teks = r.text.strip()
 
@@ -232,34 +232,10 @@ if page == "🔍 Crawl & Analisis":
             lines_clean = [l for l in teks.splitlines() if l.strip()]
             teks = "\n".join(lines_clean).strip()
 
-            return teks[:2500]
+            return teks[:2500], url_asli
 
         except Exception:
-            return ""
-
-            html = r.text
-
-            # Step 2: ekstrak teks dari paragraf <p>
-            # Hapus tag script, style, nav, header, footer dulu
-            html = re.sub(r"<(script|style|nav|header|footer|aside)[^>]*>.*?</>",
-                          "", html, flags=re.DOTALL | re.IGNORECASE)
-
-            # Ambil semua teks dalam <p>
-            paragraphs = re.findall(r"<p[^>]*>(.*?)</p>",
-                                    html, flags=re.DOTALL | re.IGNORECASE)
-            teks_list = []
-            for p in paragraphs:
-                # Hapus HTML tags dalam paragraf
-                teks = re.sub(r"<[^>]+>", "", p).strip()
-                teks = re.sub(r"\s+", " ", teks)
-                if len(teks) > 40:   # abaikan paragraf sangat pendek
-                    teks_list.append(teks)
-
-            konten = " ".join(teks_list)[:2000]  # maksimal 2000 karakter ke Groq
-            return konten
-
-        except Exception:
-            return ""
+            return "", url
 
     # ── Crawl Google News RSS ──────────────────────────────────────────────
     def crawl_google_news(queries: list, max_articles: int) -> list:
@@ -294,12 +270,13 @@ if page == "🔍 Crawl & Analisis":
 
                     tier = tier_sumber(link)
 
-                    # Fetch konten artikel asli
-                    konten = fetch_konten(link)
+                    # Fetch konten artikel asli via Jina
+                    konten, url_asli = fetch_konten(link)
 
                     # Fallback ke snippet RSS jika fetch gagal
                     if not konten:
                         konten = re.sub(r"<[^>]+>", "", entry.get("summary", ""))[:500]
+                        url_asli = link
 
                     # Buang jika konten masih terlalu pendek (hanya judul)
                     konten_bersih = konten.replace(judul, "").strip()
@@ -307,20 +284,19 @@ if page == "🔍 Crawl & Analisis":
                         skipped += 1
                         continue
 
-                    # Update domain ke URL asli jika bisa di-resolve
-                    try:
-                        domain_asli = re.sub(r"https?://(www\.)?", "",
-                                             konten[:100]).split("/")[0]
-                    except Exception:
+                    # Gunakan domain & tier dari URL asli (bukan news.google.com)
+                    domain_asli = re.sub(r"https?://(www\.)?", "", url_asli).split("/")[0]
+                    if not domain_asli or "google.com" in domain_asli:
                         domain_asli = domain
+                    tier_asli = tier_sumber(url_asli)
 
                     articles.append({
                         "judul":   judul,
-                        "link":    link,
+                        "link":    url_asli,   # link ke artikel asli
                         "tanggal": tanggal,
-                        "sumber":  domain,
+                        "sumber":  domain_asli,
                         "snippet": konten,
-                        "tier":    tier,
+                        "tier":    tier_asli,
                     })
                     if len(articles) >= max_articles:
                         if skipped > 0:
