@@ -198,57 +198,26 @@ if page == "🔍 Crawl & Analisis":
                 return True
         return False
 
-    # ── Fetch konten artikel via Jina AI Reader ──────────────────────────
-    def fetch_konten(url: str, timeout: int = 15) -> tuple:
+    # ── Bersihkan snippet RSS ─────────────────────────────────────────────
+    def bersihkan_snippet(snippet: str, judul: str) -> str:
         """
-        Fetch konten artikel via Jina AI Reader (r.jina.ai).
-        Return: tuple (teks_konten, url_asli)
-        url_asli dipakai untuk domain & tier classification yang akurat.
+        Bersihkan snippet RSS dari HTML entities dan pengulangan judul.
+        Google News RSS hanya memberikan judul + nama media, bukan konten.
+        Return: string bersih, atau "" jika isinya hanya judul.
         """
-        try:
-            # Step 1: resolve redirect Google News → URL asli
-            r_red = requests.get(
-                url,
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=8,
-                allow_redirects=True
-            )
-            url_asli = r_red.url
+        # Decode HTML entities
+        teks = snippet.replace("&nbsp;", " ").replace("&amp;", "&")
+        teks = re.sub(r"&[a-z]+;", " ", teks)
+        teks = re.sub(r"<[^>]+>", "", teks)
+        teks = re.sub(r"\s+", " ", teks).strip()
 
-            # Kalau masih di google.com, cari URL asli di dalam HTML
-            if "google.com" in url_asli:
-                m = re.search(r'href="(https?://(?!google\.com)[^"&]+)"', r_red.text)
-                url_asli = m.group(1) if m else url
-
-            # Step 2: fetch via Jina AI Reader
-            jina_url = f"https://r.jina.ai/{url_asli}"
-            r = requests.get(
-                jina_url,
-                headers={
-                    "Accept": "text/plain",
-                    "X-Return-Format": "text",
-                    "X-Timeout": "10",
-                },
-                timeout=timeout
-            )
-
-            if r.status_code != 200:
-                return "", url_asli
-
-            teks = r.text.strip()
-
-            # Bersihkan baris metadata header Jina
-            teks = re.sub(
-                r"^(Title|URL|Published Date|Source|Description|Warning):.*$",
-                "", teks, flags=re.MULTILINE | re.IGNORECASE
-            )
-            lines_clean = [l for l in teks.splitlines() if l.strip()]
-            teks = "\n".join(lines_clean).strip()
-
-            return teks[:2500], url_asli
-
-        except Exception:
-            return "", url
+        # Buang jika isinya hanya pengulangan judul ± nama media
+        judul_bersih = re.sub(r"\s+", " ", judul).strip().lower()
+        teks_lower = teks.lower()
+        # Cek apakah teks dimulai dengan judul (pattern Google News RSS)
+        if teks_lower.startswith(judul_bersih[:40].lower()):
+            return ""
+        return teks
 
     # ── Crawl Google News RSS ──────────────────────────────────────────────
     def crawl_google_news(queries: list, max_articles: int) -> list:
@@ -281,28 +250,21 @@ if page == "🔍 Crawl & Analisis":
                         pub = entry.get("published", "")
                         tanggal = pub[:10] if pub else "-"
 
-                    # Fetch konten artikel asli via Jina
-                    konten, url_asli = fetch_konten(link)
-
-                    # Fallback ke snippet RSS jika fetch gagal
-                    if not konten:
-                        konten = re.sub(r"<[^>]+>", "", entry.get("summary", ""))[:500]
-
-                    # Buang jika konten masih terlalu pendek (hanya judul)
-                    konten_bersih = konten.replace(judul, "").strip()
-                    if len(konten_bersih) < 50:
-                        skipped += 1
-                        continue
+                    # Bersihkan snippet RSS
+                    snippet_raw = entry.get("summary", "")
+                    snippet_rss = re.sub(r"<[^>]+>", "", snippet_raw)
+                    konten = bersihkan_snippet(snippet_rss, judul)
+                    # konten bisa kosong — itu normal, Groq akan analisis dari judul
 
                     # Ekstrak nama sumber dari judul (paling reliable untuk Google News)
                     sumber_nama = extract_sumber_dari_judul(judul)
                     if not sumber_nama:
-                        sumber_nama = re.sub(r"https?://(www\.)?", "", url_asli).split("/")[0]
+                        sumber_nama = re.sub(r"https?://(www\.)?", "", link).split("/")[0]
                     tier_asli = tier_sumber(sumber_nama.lower())
 
                     articles.append({
                         "judul":   judul,
-                        "link":    url_asli if "google.com" not in url_asli else link,
+                        "link":    link,
                         "tanggal": tanggal,
                         "sumber":  sumber_nama,
                         "snippet": konten,
@@ -352,12 +314,17 @@ if page == "🔍 Crawl & Analisis":
 
     # ── Analisis per artikel ───────────────────────────────────────────────
     def analisis_artikel(client: Groq, artikel: dict) -> dict:
+        konten = artikel.get("snippet", "").strip()
+        konten_info = (
+            f"Konten  : {konten}" if konten
+            else "Konten  : [tidak tersedia — analisis berdasarkan judul dan topik crawl]"
+        )
         prompt = (
             f"Topik crawl: {artikel.get('label_isu', '-')}\n"
             f"Judul   : {artikel['judul']}\n"
             f"Sumber  : {artikel['sumber']}\n"
             f"Tanggal : {artikel['tanggal']}\n"
-            f"Konten  : {artikel['snippet']}\n\nHasilkan JSON analisis."
+            f"{konten_info}\n\nHasilkan JSON analisis."
         )
         try:
             resp = client.chat.completions.create(
