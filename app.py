@@ -136,6 +136,19 @@ if page == "🔍 Crawl & Analisis":
                 return "Tier 1"
         return "Tier 2"
 
+    def extract_sumber_dari_judul(judul: str) -> str:
+        """
+        Google News RSS format judul: 'Judul Artikel - NamaMedia'
+        Ekstrak NamaMedia dari bagian akhir judul.
+        Lebih reliable daripada resolve redirect Google News.
+        """
+        m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
+        if m:
+            sumber = m.group(1).strip()
+            sumber = re.sub(r"\s*\[.*?\]\s*$", "", sumber).strip()
+            return sumber if sumber else ""
+        return ""
+
     # ── Query expansion ────────────────────────────────────────────────────
     def ekspansi_keyword(client: Groq, keyword: str) -> list:
         prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
@@ -268,15 +281,12 @@ if page == "🔍 Crawl & Analisis":
                         pub = entry.get("published", "")
                         tanggal = pub[:10] if pub else "-"
 
-                    tier = tier_sumber(link)
-
                     # Fetch konten artikel asli via Jina
                     konten, url_asli = fetch_konten(link)
 
                     # Fallback ke snippet RSS jika fetch gagal
                     if not konten:
                         konten = re.sub(r"<[^>]+>", "", entry.get("summary", ""))[:500]
-                        url_asli = link
 
                     # Buang jika konten masih terlalu pendek (hanya judul)
                     konten_bersih = konten.replace(judul, "").strip()
@@ -284,17 +294,17 @@ if page == "🔍 Crawl & Analisis":
                         skipped += 1
                         continue
 
-                    # Gunakan domain & tier dari URL asli (bukan news.google.com)
-                    domain_asli = re.sub(r"https?://(www\.)?", "", url_asli).split("/")[0]
-                    if not domain_asli or "google.com" in domain_asli:
-                        domain_asli = domain
-                    tier_asli = tier_sumber(url_asli)
+                    # Ekstrak nama sumber dari judul (paling reliable untuk Google News)
+                    sumber_nama = extract_sumber_dari_judul(judul)
+                    if not sumber_nama:
+                        sumber_nama = re.sub(r"https?://(www\.)?", "", url_asli).split("/")[0]
+                    tier_asli = tier_sumber(sumber_nama.lower())
 
                     articles.append({
                         "judul":   judul,
-                        "link":    url_asli,   # link ke artikel asli
+                        "link":    url_asli if "google.com" not in url_asli else link,
                         "tanggal": tanggal,
-                        "sumber":  domain_asli,
+                        "sumber":  sumber_nama,
                         "snippet": konten,
                         "tier":    tier_asli,
                     })
@@ -336,6 +346,7 @@ if page == "🔍 Crawl & Analisis":
     - risiko_ais dan area_perhatian harus SPESIFIK — hindari framing generik seperti "perlu transparansi" atau "perlu akuntabilitas"
     - Jika isu eksternal, tetap sebutkan siapa yang bertanggung jawab merespons di sisi pemerintah Indonesia
     - JANGAN mengarang kepanjangan singkatan — gunakan singkatan apa adanya sesuai Topik crawl yang diberikan
+    - Jika konten terbatas, tetap isi semua field berdasarkan judul dan konteks topik crawl — JANGAN kosongkan field manapun
     - Bahasa Indonesia formal
     - Output HANYA JSON murni, tidak ada teks sebelum atau sesudah, tidak ada markdown fence"""
 
