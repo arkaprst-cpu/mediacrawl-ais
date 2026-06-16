@@ -359,12 +359,14 @@ if page == "🔍 Crawl & Analisis":
     - Tone HANYA salah satu dari: Positif, Netral, Negatif
     - risiko_ais dan area_perhatian harus SPESIFIK — hindari framing generik seperti "perlu transparansi" atau "perlu akuntabilitas"
     - Jika isu eksternal, tetap sebutkan siapa yang bertanggung jawab merespons di sisi pemerintah Indonesia
+    - JANGAN mengarang kepanjangan singkatan — gunakan singkatan apa adanya sesuai Topik crawl yang diberikan
     - Bahasa Indonesia formal
     - Output HANYA JSON murni, tidak ada teks sebelum atau sesudah, tidak ada markdown fence"""
 
     # ── Analisis per artikel ───────────────────────────────────────────────
     def analisis_artikel(client: Groq, artikel: dict) -> dict:
         prompt = (
+            f"Topik crawl: {artikel.get('label_isu', '-')}\n"
             f"Judul   : {artikel['judul']}\n"
             f"Sumber  : {artikel['sumber']}\n"
             f"Tanggal : {artikel['tanggal']}\n"
@@ -552,6 +554,7 @@ if page == "🔍 Crawl & Analisis":
             pct = int((idx + 1) / len(artikel_raw) * 100)
             prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
             time.sleep(0.15)
+            art['label_isu'] = label_isu.strip()  # inject konteks topik ke tiap artikel
             analisis = analisis_artikel(client, art)
             hasil_list.append({**art, **analisis})
 
