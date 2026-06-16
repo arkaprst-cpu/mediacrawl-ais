@@ -314,7 +314,7 @@ if page == "🔍 Crawl & Analisis":
 
     # ── Analisis per artikel ───────────────────────────────────────────────
     def analisis_artikel(client: Groq, artikel: dict) -> dict:
-        konten = artikel.get("snippet", "").strip()
+        konten = str(artikel.get("snippet", "") or "").strip()
         konten_info = (
             f"Konten  : {konten}" if konten
             else "Konten  : [tidak tersedia — analisis berdasarkan judul dan topik crawl]"
@@ -333,20 +333,27 @@ if page == "🔍 Crawl & Analisis":
                     {"role": "system", "content": PROMPT_SISTEM},
                     {"role": "user",   "content": prompt},
                 ],
-                temperature=0.2,
-                max_tokens=700,
+                temperature=0.3,
+                max_tokens=800,
             )
             teks = resp.choices[0].message.content.strip()
+            # Buang markdown fence
             teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+            # Ambil hanya bagian JSON (dari { pertama sampai } terakhir)
+            m = re.search(r"\{.*\}", teks, flags=re.DOTALL)
+            if m:
+                teks = m.group(0)
             hasil = json.loads(teks)
             if hasil.get("tone") not in ("Positif", "Netral", "Negatif"):
                 hasil["tone"] = "Netral"
             return hasil
-        except Exception:
+        except Exception as e:
+            # Simpan pesan error untuk diagnosa (muncul di expander hasil)
             return {
-                "ringkasan_isu": artikel.get("snippet", "-")[:300],
+                "ringkasan_isu": str(artikel.get("judul", "-")),
                 "isu_subisu": "-", "aktor_lokasi": "-",
                 "tone": "Netral", "risiko_ais": "-", "area_perhatian": "-",
+                "_error": str(e)[:200],
             }
 
     # ── Excel builder ──────────────────────────────────────────────────────
@@ -514,6 +521,16 @@ if page == "🔍 Crawl & Analisis":
 
         prog_bar.progress(100, text="✅ Selesai!")
         status_tx.empty()
+
+        # Diagnosa jika ada error analisis
+        errors = [h.get("_error") for h in hasil_list if h.get("_error")]
+        if errors:
+            n_err = len(errors)
+            with st.expander(f"⚠️ {n_err} dari {len(hasil_list)} artikel gagal dianalisis — klik untuk detail"):
+                st.write("Penyebab paling umum: rate limit Groq (terlalu banyak request) atau respons JSON tidak valid.")
+                st.code(errors[0])
+                if "rate" in errors[0].lower() or "429" in errors[0]:
+                    st.warning("Terdeteksi rate limit Groq. Tunggu 1-2 menit, lalu coba crawl lagi dengan jumlah artikel lebih sedikit.")
 
         st.session_state["hasil"]     = hasil_list
         st.session_state["label_isu"] = label_isu.strip()
