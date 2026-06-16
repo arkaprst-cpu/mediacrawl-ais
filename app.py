@@ -166,9 +166,8 @@ if page == "🔍 Crawl & Analisis":
 
     # ── Filter konten video ───────────────────────────────────────────────
     DOMAIN_VIDEO = {
-        "kompas.tv", "cnnindonesia.com", "metrotvnews.com",
-        "tvone.co.id", "rctiplus.com", "vidio.com",
-        "youtube.com", "youtu.be", "liputan6.com/tv",
+        "kompas.tv", "metrotvnews.com", "tvone.co.id",
+        "rctiplus.com", "vidio.com", "youtube.com", "youtu.be",
     }
     JUDUL_VIDEO = [
         "[full]", "[live]", "[video]", "[breaking]",
@@ -178,22 +177,95 @@ if page == "🔍 Crawl & Analisis":
 
     def is_video(judul: str, domain: str) -> bool:
         judul_lower = judul.lower()
-        # Cek domain video
         for dv in DOMAIN_VIDEO:
             if dv in domain.lower():
                 return True
-        # Cek penanda video di judul
         for marker in JUDUL_VIDEO:
             if marker in judul_lower:
                 return True
-        # Cek snippet yang cuma pengulangan judul (konten kosong)
         return False
+
+    # ── Fetch konten artikel via Jina AI Reader ──────────────────────────
+    def fetch_konten(url: str, timeout: int = 15) -> str:
+        """
+        Fetch konten artikel via Jina AI Reader (r.jina.ai).
+        Jina me-resolve redirect Google News, bypass bot protection ringan,
+        dan mengembalikan teks bersih siap analisis. Gratis, tanpa API key.
+        """
+        try:
+            # Step 1: resolve redirect Google News → URL asli
+            r_red = requests.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=8,
+                allow_redirects=True
+            )
+            url_asli = r_red.url
+
+            # Kalau masih di google.com, cari URL asli di dalam HTML
+            if "google.com" in url_asli:
+                m = re.search(r'href="(https?://(?!google\.com)[^"&]+)"', r_red.text)
+                url_asli = m.group(1) if m else url
+
+            # Step 2: fetch via Jina AI Reader
+            jina_url = f"https://r.jina.ai/{url_asli}"
+            r = requests.get(
+                jina_url,
+                headers={
+                    "Accept": "text/plain",
+                    "X-Return-Format": "text",
+                    "X-Timeout": "10",
+                },
+                timeout=timeout
+            )
+
+            if r.status_code != 200:
+                return ""
+
+            teks = r.text.strip()
+
+            # Bersihkan baris metadata header Jina
+            teks = re.sub(
+                r"^(Title|URL|Published Date|Source|Description|Warning):.*$",
+                "", teks, flags=re.MULTILINE | re.IGNORECASE
+            )
+            lines_clean = [l for l in teks.splitlines() if l.strip()]
+            teks = "\n".join(lines_clean).strip()
+
+            return teks[:2500]
+
+        except Exception:
+            return ""
+
+            html = r.text
+
+            # Step 2: ekstrak teks dari paragraf <p>
+            # Hapus tag script, style, nav, header, footer dulu
+            html = re.sub(r"<(script|style|nav|header|footer|aside)[^>]*>.*?</>",
+                          "", html, flags=re.DOTALL | re.IGNORECASE)
+
+            # Ambil semua teks dalam <p>
+            paragraphs = re.findall(r"<p[^>]*>(.*?)</p>",
+                                    html, flags=re.DOTALL | re.IGNORECASE)
+            teks_list = []
+            for p in paragraphs:
+                # Hapus HTML tags dalam paragraf
+                teks = re.sub(r"<[^>]+>", "", p).strip()
+                teks = re.sub(r"\s+", " ", teks)
+                if len(teks) > 40:   # abaikan paragraf sangat pendek
+                    teks_list.append(teks)
+
+            konten = " ".join(teks_list)[:2000]  # maksimal 2000 karakter ke Groq
+            return konten
+
+        except Exception:
+            return ""
 
     # ── Crawl Google News RSS ──────────────────────────────────────────────
     def crawl_google_news(queries: list, max_articles: int) -> list:
         articles = []
         seen = set()
-        skipped_video = 0
+        skipped = 0
         headers = {"User-Agent": "Mozilla/5.0 (compatible; AIS-Crawler/1.0)"}
 
         for q in queries:
@@ -211,7 +283,7 @@ if page == "🔍 Crawl & Analisis":
 
                     # Filter artikel video
                     if is_video(judul, domain):
-                        skipped_video += 1
+                        skipped += 1
                         continue
 
                     try:
@@ -220,32 +292,45 @@ if page == "🔍 Crawl & Analisis":
                         pub = entry.get("published", "")
                         tanggal = pub[:10] if pub else "-"
 
-                    tier    = tier_sumber(link)
-                    snippet = re.sub(r"<[^>]+>", "", entry.get("summary", ""))[:500]
+                    tier = tier_sumber(link)
 
-                    # Filter snippet yang isinya cuma pengulangan judul (konten kosong)
-                    snippet_bersih = snippet.replace(judul, "").strip()
-                    if len(snippet_bersih) < 30:
-                        skipped_video += 1
+                    # Fetch konten artikel asli
+                    konten = fetch_konten(link)
+
+                    # Fallback ke snippet RSS jika fetch gagal
+                    if not konten:
+                        konten = re.sub(r"<[^>]+>", "", entry.get("summary", ""))[:500]
+
+                    # Buang jika konten masih terlalu pendek (hanya judul)
+                    konten_bersih = konten.replace(judul, "").strip()
+                    if len(konten_bersih) < 50:
+                        skipped += 1
                         continue
+
+                    # Update domain ke URL asli jika bisa di-resolve
+                    try:
+                        domain_asli = re.sub(r"https?://(www\.)?", "",
+                                             konten[:100]).split("/")[0]
+                    except Exception:
+                        domain_asli = domain
 
                     articles.append({
                         "judul":   judul,
                         "link":    link,
                         "tanggal": tanggal,
                         "sumber":  domain,
-                        "snippet": snippet,
+                        "snippet": konten,
                         "tier":    tier,
                     })
                     if len(articles) >= max_articles:
-                        if skipped_video > 0:
-                            st.caption(f"ℹ️ {skipped_video} artikel video/konten kosong dilewati secara otomatis.")
+                        if skipped > 0:
+                            st.caption(f"ℹ️ {skipped} artikel video/konten kosong dilewati.")
                         return articles
             except Exception as e:
                 st.warning(f"Gagal crawl '{q}': {e}")
 
-        if skipped_video > 0:
-            st.caption(f"ℹ️ {skipped_video} artikel video/konten kosong dilewati secara otomatis.")
+        if skipped > 0:
+            st.caption(f"ℹ️ {skipped} artikel video/konten kosong dilewati.")
         return articles
 
     # ── PROMPT SISTEM ──────────────────────────────────────────────────────
