@@ -380,14 +380,32 @@ with tab1:
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
 
     # Spotlight — ambil artikel Negatif dengan teks risiko terpanjang
-    # Spotlight — artikel Negatif dengan teks Risiko terpanjang
-    df_neg = df[df['Tone']=='Negatif'].copy()
-    df_neg['risiko_len'] = df_neg['Risiko'].astype(str).apply(len)
-    if len(df_neg) > 0:
-        spotlight = df_neg.loc[df_neg['risiko_len'].idxmax()]
+    # Spotlight — artikel paling relevan dengan topik crawl
+    # Prioritas: (1) Negatif + judul relevan, (2) Negatif apapun, (3) artikel pertama
+    def skor_relevansi(row, topik: str) -> int:
+        """Hitung relevansi judul terhadap topik crawl."""
+        kata_topik = set(topik.lower().replace("-","").replace("_"," ").split())
+        kata_judul = set(str(row['Judul']).lower().split())
+        # Jumlah kata topik yang muncul di judul
+        match = len(kata_topik & kata_judul)
+        # Bonus jika Negatif
+        tone_bonus = 3 if str(row['Tone']) == 'Negatif' else 0
+        # Bonus panjang ringkasan (konten lebih kaya)
+        content_bonus = min(2, len(str(row['Ringkasan'])) // 100)
+        return match * 2 + tone_bonus + content_bonus
+
+    topik_crawl = meta.get('isu', '')
+    df_score = df.copy()
+    df_score['relevansi'] = df_score.apply(lambda r: skor_relevansi(r, topik_crawl), axis=1)
+    df_score = df_score.sort_values('relevansi', ascending=False)
+
+    if len(df_score) > 0:
+        spotlight = df_score.iloc[0]
+        tone_spotlight = str(spotlight['Tone'])
+        tone_color = {'Negatif': '#E74C3C', 'Netral': '#95A5A6', 'Positif': '#27AE60'}.get(tone_spotlight, '#95A5A6')
         st.markdown(f"""
         <div class="spotlight-box">
-          <div class="spotlight-eyebrow">⚡ Isu Prioritas — Risiko Tertinggi</div>
+          <div class="spotlight-eyebrow">⚡ Isu Prioritas — Paling Relevan & Signifikan</div>
           <div class="spotlight-title">{spotlight['Judul']}</div>
           <div class="spotlight-body">{spotlight['Ringkasan']}<br><br>
             <strong style="color:rgba(255,255,255,0.9)">Risiko:</strong> {spotlight['Risiko']}
