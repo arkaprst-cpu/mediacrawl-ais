@@ -453,20 +453,18 @@ with tab1:
             """, unsafe_allow_html=True)
 
     with col_right:
-        st.markdown("**Frekuensi per Subisu**")
-        subisu_counts = df['IsuSubisu'].value_counts().head(8)
-        max_val = subisu_counts.max() if len(subisu_counts) > 0 else 1
-        for subisu, count in subisu_counts.items():
+        st.markdown("**Kata Kunci Dominan**")
+        st.caption("Diekstrak dari Judul & Isu/Subisu seluruh artikel — bukan hitung literal subisu (yang teksnya hampir selalu unik per artikel)")
+        keyword_counts = extract_keywords(df)[:8]
+        max_val = keyword_counts[0][1] if keyword_counts else 1
+        for kw, count in keyword_counts:
             pct = round(count / max_val * 100)
-            tone_subisu = df[df['IsuSubisu']==subisu]['Tone'].mode()
-            tone_color = {'Negatif':'#E74C3C','Netral':'#BDC3C7','Positif':'#27AE60'}.get(
-                tone_subisu[0] if len(tone_subisu)>0 else 'Netral', '#BDC3C7')
-            label = (subisu[:40]+'…') if len(subisu)>40 else subisu
+            label = kw.capitalize()
             st.markdown(f"""
             <div style='display:flex;align-items:center;gap:8px;margin-bottom:7px'>
-              <div style='font-size:11px;color:inherit;opacity:0.85;width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' title='{subisu}'>{label}</div>
+              <div style='font-size:11px;color:inherit;opacity:0.85;width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' title='{label}'>{label}</div>
               <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                <div style='width:{pct}%;height:100%;background:{tone_color};border-radius:3px'></div>
+                <div style='width:{pct}%;height:100%;background:#F5A623;border-radius:3px'></div>
               </div>
               <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{count}</div>
             </div>
