@@ -588,55 +588,73 @@ with tab2:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # ── Sticky manual via JS ─────────────────────────────────
-                # st.markdown(unsafe_allow_html=True) tidak mengeksekusi
-                # tag <script> karena dirender via innerHTML. components.html
-                # jalan di dalam iframe terpisah tapi tetap bisa akses
-                # window.parent untuk memanipulasi DOM utama Streamlit.
-                # height=0 supaya iframe-nya sendiri tidak terlihat/makan tempat.
+                # ── Sticky manual via JS (percobaan ke-2, lebih agresif) ──
+                # Percobaan pertama gagal — kemungkinan window.parent tidak
+                # cukup karena Streamlit Cloud bisa nested-iframe, dan/atau
+                # event listener ke-detach saat Streamlit re-render DOM.
+                # Fix: traverse ke atas sampai ketemu document yang punya
+                # elemen target, dan pakai setInterval polling terus-menerus
+                # (bukan cuma scroll listener sekali pasang) supaya tetap
+                # nempel walau DOM di-replace oleh re-render Streamlit.
                 components.html("""
                 <script>
                 (function() {
                     const TOP_GAP = 16;
 
-                    function attachSticky() {
-                        const doc = window.parent.document;
+                    function findTargetDoc() {
+                        let w = window;
+                        for (let i = 0; i < 5; i++) {
+                            try {
+                                if (w.document.getElementById('ais-sticky-detail')) {
+                                    return w.document;
+                                }
+                            } catch (e) { /* cross-origin, skip */ }
+                            if (w.parent === w) break;
+                            w = w.parent;
+                        }
+                        return null;
+                    }
+
+                    function tick() {
+                        const doc = findTargetDoc();
+                        if (!doc) return;
+
                         const panel = doc.getElementById('ais-sticky-detail');
                         if (!panel) return;
 
                         const col = panel.closest('div[data-testid="column"]');
                         if (!col) return;
 
-                        function update() {
-                            const colRect = col.getBoundingClientRect();
-                            const viewportHeight = window.parent.innerHeight;
+                        const win = doc.defaultView;
+                        const colRect = col.getBoundingClientRect();
+                        const viewportHeight = win.innerHeight;
 
-                            if (colRect.top < TOP_GAP) {
-                                panel.style.position = 'fixed';
-                                panel.style.top = TOP_GAP + 'px';
-                                panel.style.left = colRect.left + 'px';
-                                panel.style.width = colRect.width + 'px';
-                                panel.style.maxHeight = (viewportHeight - TOP_GAP * 2) + 'px';
-                                panel.style.overflowY = 'auto';
-                                panel.style.zIndex = '999';
-                            } else {
-                                panel.style.position = 'static';
-                                panel.style.top = 'auto';
-                                panel.style.left = 'auto';
-                                panel.style.width = 'auto';
-                                panel.style.maxHeight = 'none';
-                                panel.style.overflowY = 'visible';
-                            }
+                        if (colRect.top < TOP_GAP) {
+                            panel.style.position = 'fixed';
+                            panel.style.top = TOP_GAP + 'px';
+                            panel.style.left = colRect.left + 'px';
+                            panel.style.width = colRect.width + 'px';
+                            panel.style.maxHeight = (viewportHeight - TOP_GAP * 2) + 'px';
+                            panel.style.overflowY = 'auto';
+                            panel.style.zIndex = '999';
+                        } else {
+                            panel.style.position = 'static';
+                            panel.style.top = 'auto';
+                            panel.style.left = 'auto';
+                            panel.style.width = 'auto';
+                            panel.style.maxHeight = 'none';
+                            panel.style.overflowY = 'visible';
                         }
-
-                        window.parent.removeEventListener('scroll', window.__aisStickyHandler, true);
-                        window.__aisStickyHandler = update;
-                        window.parent.addEventListener('scroll', update, true);
-                        window.parent.addEventListener('resize', update);
-                        update();
                     }
 
-                    setTimeout(attachSticky, 150);
+                    // Polling tiap 100ms — lebih berat dari scroll listener,
+                    // tapi kebal terhadap re-render DOM Streamlit yang
+                    // menghapus event listener lama tanpa pemberitahuan.
+                    if (window.__aisStickyInterval) {
+                        clearInterval(window.__aisStickyInterval);
+                    }
+                    window.__aisStickyInterval = setInterval(tick, 100);
+                    tick();
                 })();
                 </script>
                 """, height=0)
