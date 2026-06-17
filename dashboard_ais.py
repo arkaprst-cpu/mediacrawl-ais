@@ -10,6 +10,7 @@ Cara pakai:
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import json
 import io
@@ -22,23 +23,6 @@ st.markdown("""
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-  /* ── FIX: sticky detail panel di Tab Daftar Isu ──────────────
-     Streamlit membungkus st.columns() dalam stHorizontalBlock dengan
-     align-items:stretch secara default, sehingga kolom kanan ikut
-     "ditarik" setinggi kolom kiri dan position:sticky di dalamnya
-     tidak punya efek apa-apa karena dia memang sudah penuh dari awal.
-     Fix: marker div .ais-detail-marker disisipkan sebagai child pertama
-     di col_detail (lihat with col_detail: di bawah), lalu :has() dipakai
-     untuk menarget kolom Streamlit yang mengandung marker tersebut —
-     supaya hanya kolom detail ini yang jadi sticky, bukan semua
-     st.columns() lain di file ini.
-  */
-  div[data-testid="column"]:has(div.ais-detail-marker) {
-      align-self: flex-start !important;
-      position: sticky;
-      top: 0;
-  }
 
   /* Topbar */
   .ais-topbar {
@@ -319,7 +303,7 @@ else:
         'IsuSubisu':   h.get('isu_subisu', '-'),
         'AktorLokasi': h.get('aktor_lokasi', '-'),
         'Tone':        h.get('tone', 'Netral'),
-        'Risiko':      h.get('risiko_ais', '-'),
+        'Risiko':      h.get('risiko', '-'),
         'TindakLanjut': h.get('area_perhatian', '-'),
     } for i, h in enumerate(hasil_list)])
     meta = {
@@ -562,14 +546,13 @@ with tab2:
                     st.rerun()
 
         with col_detail:
-            st.markdown('<div class="ais-detail-marker"></div>', unsafe_allow_html=True)
             idx = st.session_state.get('selected_idx', 0)
             if idx < len(df_filtered):
                 row = df_filtered.iloc[idx]
                 tone_class = str(row['Tone']).lower()
 
                 st.markdown(f"""
-                <div style='background:rgba(128,128,128,0.06);border:1px solid rgba(128,128,128,0.2);border-radius:8px;padding:18px;position:sticky;top:0'>
+                <div id="ais-sticky-detail" style='background:rgba(128,128,128,0.06);border:1px solid rgba(128,128,128,0.2);border-radius:8px;padding:18px'>
                   <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
                     <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{row['Judul']}</div>
                     <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
@@ -588,7 +571,7 @@ with tab2:
                   </div>
 
                   <div class="detail-section">
-                    <div class="detail-label">Risiko / Implikasi AIS</div>
+                    <div class="detail-label">Risiko</div>
                     <div class="implikasi-box">{row['Risiko']}</div>
                   </div>
 
@@ -604,6 +587,59 @@ with tab2:
                   </div>
                 </div>
                 """, unsafe_allow_html=True)
+
+                # ── Sticky manual via JS ─────────────────────────────────
+                # st.markdown(unsafe_allow_html=True) tidak mengeksekusi
+                # tag <script> karena dirender via innerHTML. components.html
+                # jalan di dalam iframe terpisah tapi tetap bisa akses
+                # window.parent untuk memanipulasi DOM utama Streamlit.
+                # height=0 supaya iframe-nya sendiri tidak terlihat/makan tempat.
+                components.html("""
+                <script>
+                (function() {
+                    const TOP_GAP = 16;
+
+                    function attachSticky() {
+                        const doc = window.parent.document;
+                        const panel = doc.getElementById('ais-sticky-detail');
+                        if (!panel) return;
+
+                        const col = panel.closest('div[data-testid="column"]');
+                        if (!col) return;
+
+                        function update() {
+                            const colRect = col.getBoundingClientRect();
+                            const viewportHeight = window.parent.innerHeight;
+
+                            if (colRect.top < TOP_GAP) {
+                                panel.style.position = 'fixed';
+                                panel.style.top = TOP_GAP + 'px';
+                                panel.style.left = colRect.left + 'px';
+                                panel.style.width = colRect.width + 'px';
+                                panel.style.maxHeight = (viewportHeight - TOP_GAP * 2) + 'px';
+                                panel.style.overflowY = 'auto';
+                                panel.style.zIndex = '999';
+                            } else {
+                                panel.style.position = 'static';
+                                panel.style.top = 'auto';
+                                panel.style.left = 'auto';
+                                panel.style.width = 'auto';
+                                panel.style.maxHeight = 'none';
+                                panel.style.overflowY = 'visible';
+                            }
+                        }
+
+                        window.parent.removeEventListener('scroll', window.__aisStickyHandler, true);
+                        window.__aisStickyHandler = update;
+                        window.parent.addEventListener('scroll', update, true);
+                        window.parent.addEventListener('resize', update);
+                        update();
+                    }
+
+                    setTimeout(attachSticky, 150);
+                })();
+                </script>
+                """, height=0)
 
 
 # ════════════════════════════════════════════
