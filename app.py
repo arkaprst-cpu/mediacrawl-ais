@@ -21,6 +21,10 @@ def get_gemini_client(api_key: str):
     from google import genai
     return genai.Client(api_key=api_key)
 
+def get_deepseek_client(api_key: str):
+    from openai import OpenAI
+    return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
 st.set_page_config(
     page_title="Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan",
     page_icon="📰",
@@ -101,6 +105,7 @@ if page == "🔍 Crawl & Analisis":
     }
     .badge-groq   { background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; }
     .badge-gemini { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+    .badge-deepseek { background:#fdf4ff; color:#86198f; border:1px solid #f5d0fe; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -220,6 +225,33 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 contents=prompt,
             )
             teks = resp.text.strip()
+            teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+            queries = json.loads(teks)
+            if isinstance(queries, list):
+                return [keyword] + [q for q in queries if isinstance(q, str)]
+        except Exception:
+            pass
+        return [keyword]
+
+    def ekspansi_keyword_deepseek(client, keyword: str) -> list:
+        prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
+
+Keyword input: "{keyword}"
+
+Aturan:
+- Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
+- Gunakan bahasa Indonesia
+- Kembalikan HANYA array JSON berisi string query, tanpa teks lain
+
+Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
+        try:
+            resp = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=300,
+            )
+            teks = resp.choices[0].message.content.strip()
             teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
             queries = json.loads(teks)
             if isinstance(queries, list):
@@ -391,6 +423,49 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 
         return _fallback_error(artikel, "Rate limit Gemini — semua retry habis")
 
+    # ── Analisis: DeepSeek ─────────────────────────────────────────────────
+    def analisis_deepseek(client, artikel: dict, rate_status=None) -> dict:
+        konten = str(artikel.get("snippet","") or "").strip()
+        konten_info = f"Konten  : {konten}" if konten else "Konten  : [tidak tersedia — analisis berdasarkan judul dan topik crawl]"
+        prompt = (
+            f"Topik crawl: {artikel.get('label_isu','-')}\n"
+            f"Judul   : {artikel['judul']}\n"
+            f"Sumber  : {artikel['sumber']}\n"
+            f"Tanggal : {artikel['tanggal']}\n"
+            f"{konten_info}\n\nHasilkan JSON analisis."
+        )
+
+        MAX_RETRY  = 4
+        BASE_DELAY = 5
+
+        for attempt in range(MAX_RETRY):
+            try:
+                resp = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": PROMPT_SISTEM},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=800,
+                )
+                return _parse_json(resp.choices[0].message.content)
+
+            except Exception as e:
+                err_str = str(e).lower()
+                if "429" in err_str or "rate" in err_str:
+                    wait = BASE_DELAY * (2 ** attempt)
+                    if rate_status:
+                        rate_status.warning(f"⏳ Rate limit DeepSeek — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
+                    time.sleep(wait)
+                elif attempt < MAX_RETRY - 1:
+                    time.sleep(BASE_DELAY)
+                    continue
+                else:
+                    return _fallback_error(artikel, str(e)[:200])
+
+        return _fallback_error(artikel, "Rate limit DeepSeek — semua retry habis")
+
     # ── Helpers parse & fallback ───────────────────────────────────────────
     def _parse_json(teks: str) -> dict:
         teks = teks.strip()
@@ -471,9 +546,9 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         # ── Pilih provider ─────────────────────────────────────────────
         provider = st.radio(
             "🤖 Provider AI",
-            options=["Gemini (Google)", "Groq (Llama)"],
+            options=["Gemini (Google)", "Groq (Llama)", "DeepSeek"],
             index=0,
-            help="Gemini: free tier lebih lega. Groq: lebih cepat tapi rate limit ketat.",
+            help="Gemini: 10 req/menit, kuota harian lega. Groq: cepat tapi rate limit ketat. DeepSeek: berbayar, murah, tanpa free tier.",
         )
         st.divider()
 
@@ -485,6 +560,13 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 active_key = groq_key_default
             else:
                 active_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
+        elif provider == "DeepSeek":
+            deepseek_key_default = st.secrets.get("DEEPSEEK_API_KEY","") if hasattr(st,"secrets") else ""
+            if deepseek_key_default:
+                st.success("✅ DeepSeek API Key dari Secrets")
+                active_key = deepseek_key_default
+            else:
+                active_key = st.text_input("DeepSeek API Key", type="password", placeholder="sk-...")
         else:
             gemini_key_default = st.secrets.get("GEMINI_API_KEY","") if hasattr(st,"secrets") else ""
             if gemini_key_default:
@@ -506,11 +588,12 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
     # ── Main area ──────────────────────────────────────────────────────────
-    provider_badge = (
-        '<span class="provider-badge badge-gemini">Gemini 2.5 Flash</span>'
-        if "Gemini" in provider
-        else '<span class="provider-badge badge-groq">Groq · Llama 3.3 70B</span>'
-    )
+    if "Gemini" in provider:
+        provider_badge = '<span class="provider-badge badge-gemini">Gemini 2.5 Flash</span>'
+    elif "Groq" in provider:
+        provider_badge = '<span class="provider-badge badge-groq">Groq · Llama 3.3 70B</span>'
+    else:
+        provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek Chat</span>'
     st.markdown(f"""
     <div class="main-header">
       <h1>📰 Analisis Isu Strategis Pengawasan {provider_badge}</h1>
@@ -532,21 +615,24 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         keywords_input = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
 
         # Inisialisasi client sesuai provider
-        use_gemini = "Gemini" in provider
-        if use_gemini:
+        if "Gemini" in provider:
             ai_client = get_gemini_client(active_key)
-        else:
+        elif "Groq" in provider:
             ai_client = get_groq_client(active_key)
+        else:
+            ai_client = get_deepseek_client(active_key)
 
         st.subheader("⏳ Proses Crawl & Analisis")
 
         with st.spinner("Memperluas keyword..."):
             all_queries = []
             for kw in keywords_input:
-                if use_gemini:
+                if "Gemini" in provider:
                     expanded = ekspansi_keyword_gemini(ai_client, kw)
-                else:
+                elif "Groq" in provider:
                     expanded = ekspansi_keyword_groq(ai_client, kw)
+                else:
+                    expanded = ekspansi_keyword_deepseek(ai_client, kw)
                 all_queries.extend(expanded)
 
         query_lines = "<br>".join(f"🔍 {q}" for q in all_queries)
@@ -570,18 +656,25 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             pct = int((idx + 1) / len(artikel_raw) * 100)
             prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
 
-            # Delay adaptif — Gemini jauh lebih lega, Groq lebih konservatif
-            if use_gemini:
-                time.sleep(0.3 if idx < 20 else 0.8)
-            else:
+            # Delay adaptif sesuai rate limit nyata masing-masing provider:
+            # Gemini 2.5 Flash free tier: 10 RPM -> aman di 1 req/6.5s
+            # Groq free tier: 30 RPM tapi TPM ketat -> makin lambat makin lama
+            # DeepSeek berbayar, tanpa RPM ketat -> bisa cepat
+            if "Gemini" in provider:
+                time.sleep(6.5)
+            elif "Groq" in provider:
                 time.sleep(0.5 if idx < 10 else 1.2 if idx < 30 else 2.0)
+            else:
+                time.sleep(0.3)
 
             art["label_isu"] = label_isu.strip()
 
-            if use_gemini:
+            if "Gemini" in provider:
                 analisis = analisis_gemini(ai_client, art, rate_status)
-            else:
+            elif "Groq" in provider:
                 analisis = analisis_groq(ai_client, art, rate_status)
+            else:
+                analisis = analisis_deepseek(ai_client, art, rate_status)
 
             hasil_list.append({**art, **analisis})
 
