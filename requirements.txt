@@ -1,7 +1,5 @@
 streamlit
 feedparser
-groq
-google-genai
 openai
 openpyxl
 pygooglenews
