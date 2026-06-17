@@ -302,7 +302,7 @@ else:
         'IsuSubisu':   h.get('isu_subisu', '-'),
         'AktorLokasi': h.get('aktor_lokasi', '-'),
         'Tone':        h.get('tone', 'Netral'),
-        'Risiko':      h.get('risiko_ais', '-'),
+        'Risiko':      h.get('risiko', '-'),
         'TindakLanjut': h.get('area_perhatian', '-'),
     } for i, h in enumerate(hasil_list)])
     meta = {
