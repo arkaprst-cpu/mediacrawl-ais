@@ -23,6 +23,23 @@ st.markdown("""
 
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
+  /* ── FIX: sticky detail panel di Tab Daftar Isu ──────────────
+     Streamlit membungkus st.columns() dalam stHorizontalBlock dengan
+     align-items:stretch secara default, sehingga kolom kanan ikut
+     "ditarik" setinggi kolom kiri dan position:sticky di dalamnya
+     tidak punya efek apa-apa karena dia memang sudah penuh dari awal.
+     Fix: marker div .ais-detail-marker disisipkan sebagai child pertama
+     di col_detail (lihat with col_detail: di bawah), lalu :has() dipakai
+     untuk menarget kolom Streamlit yang mengandung marker tersebut —
+     supaya hanya kolom detail ini yang jadi sticky, bukan semua
+     st.columns() lain di file ini.
+  */
+  div[data-testid="column"]:has(div.ais-detail-marker) {
+      align-self: flex-start !important;
+      position: sticky;
+      top: 0;
+  }
+
   /* Topbar */
   .ais-topbar {
     background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
@@ -302,7 +319,7 @@ else:
         'IsuSubisu':   h.get('isu_subisu', '-'),
         'AktorLokasi': h.get('aktor_lokasi', '-'),
         'Tone':        h.get('tone', 'Netral'),
-        'Risiko':      h.get('risiko', '-'),
+        'Risiko':      h.get('risiko_ais', '-'),
         'TindakLanjut': h.get('area_perhatian', '-'),
     } for i, h in enumerate(hasil_list)])
     meta = {
@@ -545,6 +562,7 @@ with tab2:
                     st.rerun()
 
         with col_detail:
+            st.markdown('<div class="ais-detail-marker"></div>', unsafe_allow_html=True)
             idx = st.session_state.get('selected_idx', 0)
             if idx < len(df_filtered):
                 row = df_filtered.iloc[idx]
