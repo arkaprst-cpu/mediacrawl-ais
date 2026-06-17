@@ -220,6 +220,41 @@ def extract_aktors(df):
     return Counter(aktors).most_common(12)
 
 
+def risiko_per_aktor(df, top_n=8):
+    """Sebaran level risiko per Aktor/Lokasi — siapa yang paling sering
+    terkait artikel risiko Tinggi, bukan sekadar paling sering disebut.
+    Satu artikel dengan beberapa aktor (dipisah koma) dihitung untuk
+    masing-masing aktor."""
+    rows = []
+    for _, r in df.iterrows():
+        aktor_text = str(r['AktorLokasi'])
+        if aktor_text == 'nan' or not aktor_text.strip():
+            continue
+        for a in aktor_text.split(','):
+            a = a.strip()
+            if a and len(a) > 2:
+                rows.append({'aktor': a, 'level_risiko': r['level_risiko']})
+
+    if not rows:
+        return []
+
+    df_aktor = pd.DataFrame(rows)
+    pivot = df_aktor.groupby(['aktor', 'level_risiko']).size().unstack(fill_value=0)
+    for lvl in ['Tinggi', 'Sedang', 'Rendah']:
+        if lvl not in pivot.columns:
+            pivot[lvl] = 0
+    pivot['total'] = pivot[['Tinggi', 'Sedang', 'Rendah']].sum(axis=1)
+
+    # Urutkan: jumlah Tinggi dulu (desc), lalu total (desc) sebagai tie-breaker
+    pivot = pivot.sort_values(['Tinggi', 'total'], ascending=[False, False]).head(top_n)
+
+    return [
+        {'aktor': idx, 'tinggi': row['Tinggi'], 'sedang': row['Sedang'],
+         'rendah': row['Rendah'], 'total': row['total']}
+        for idx, row in pivot.iterrows()
+    ]
+
+
 # ── SIDEBAR ──────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 📂 Upload Data")
@@ -453,20 +488,35 @@ with tab1:
             """, unsafe_allow_html=True)
 
     with col_right:
-        st.markdown("**Kata Kunci Dominan**")
-        st.caption("Diekstrak dari Judul & Isu/Subisu seluruh artikel — bukan hitung literal subisu (yang teksnya hampir selalu unik per artikel)")
-        keyword_counts = extract_keywords(df)[:8]
-        max_val = keyword_counts[0][1] if keyword_counts else 1
-        for kw, count in keyword_counts:
-            pct = round(count / max_val * 100)
-            label = kw.capitalize()
-            st.markdown(f"""
-            <div style='display:flex;align-items:center;gap:8px;margin-bottom:7px'>
-              <div style='font-size:11px;color:inherit;opacity:0.85;width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis' title='{label}'>{label}</div>
-              <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                <div style='width:{pct}%;height:100%;background:#F5A623;border-radius:3px'></div>
-              </div>
-              <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{count}</div>
+        st.markdown("**Sebaran Risiko per Aktor/Lokasi**")
+        st.caption("Diurutkan berdasarkan jumlah artikel risiko Tinggi — menunjukkan instansi/aktor yang paling sering terkait isu berisiko")
+        aktor_risiko = risiko_per_aktor(df, top_n=8)
+
+        if not aktor_risiko:
+            st.info("Belum ada data Aktor/Lokasi yang bisa dianalisis.")
+        else:
+            max_total = max(a['total'] for a in aktor_risiko)
+            for a in aktor_risiko:
+                label = (a['aktor'][:32]+'…') if len(a['aktor'])>32 else a['aktor']
+                pct_tinggi = round(a['tinggi'] / max_total * 100)
+                pct_sedang = round(a['sedang'] / max_total * 100)
+                pct_rendah = round(a['rendah'] / max_total * 100)
+                st.markdown(f"""
+                <div style='margin-bottom:10px'>
+                  <div style='display:flex;justify-content:space-between;margin-bottom:3px'>
+                    <span style='font-size:11px;color:inherit;opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px' title='{a["aktor"]}'>{label}</span>
+                    <span style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5'>{a['total']} artikel</span>
+                  </div>
+                  <div style='display:flex;height:12px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
+                    <div style='width:{pct_tinggi}%;height:100%;background:#E74C3C' title='Tinggi: {a["tinggi"]}'></div>
+                    <div style='width:{pct_sedang}%;height:100%;background:#F5A623' title='Sedang: {a["sedang"]}'></div>
+                    <div style='width:{pct_rendah}%;height:100%;background:#27AE60' title='Rendah: {a["rendah"]}'></div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown("""
+            <div style='display:flex;gap:14px;margin-top:8px;font-size:10px;color:inherit;opacity:0.7'>
+              <span>🔴 Tinggi</span><span>🟡 Sedang</span><span>🟢 Rendah</span>
             </div>
             """, unsafe_allow_html=True)
 
