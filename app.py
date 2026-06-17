@@ -148,14 +148,24 @@ Sebutkan institusi/jabatan spesifik yang punya kewenangan atas isu ini.
 LANGKAH 4 — ISI JSON
 Gunakan hasil langkah 1–3. Wajib spesifik — DILARANG menulis frasa berikut: "perlu transparansi", "perlu akuntabilitas", "tata kelola yang baik", "penguatan pengawasan internal" (terlalu generik).
 
+PENTING — perbedaan risiko vs area_perhatian:
+- "risiko" menjawab: APA yang bisa terjadi jika kondisi ini tidak diintervensi (kerugian, kegagalan, penyimpangan). Ini adalah PERNYATAAN RISIKO, bukan rencana kerja. JANGAN diawali label kategori (TATA KELOLA/PELAKSANAAN/KEBIJAKAN/EKSTERNAL) — tulis langsung isinya.
+- "area_perhatian" menjawab: TITIK LEMAH atau CELAH KONKRET apa yang melatarbelakangi risiko tersebut — bukan jenis kegiatan pengawasan yang harus dilakukan. JANGAN menulis "audit terhadap...", "reviu terhadap...", "perlu dilakukan pemeriksaan...", atau kalimat lain yang berbentuk rekomendasi/rencana tindakan pengawasan. Tulis sebagai temuan/celah, bukan instruksi kerja. BPKP yang akan menentukan sendiri bentuk pengawasannya — tugasmu hanya menunjukkan DI MANA letak titik lemahnya.
+
+Contoh SALAH (area_perhatian berbentuk kegiatan pengawasan):
+"Audit kinerja dan keuangan terhadap pengelolaan dapur MBG oleh BGN"
+
+Contoh BENAR (area_perhatian berbentuk titik lemah):
+"Standar kebersihan dan kualitas bahan baku pada dapur penyedia MBG belum terverifikasi secara independen, sementara pengelolaan dapur melibatkan banyak penyedia pihak ketiga dengan pengawasan harian yang minim dari BGN"
+
 Output harus berupa JSON murni tanpa teks apapun di luar kurung kurawal:
 {
   "ringkasan_isu"  : "2-3 kalimat: apa yang terjadi (sebutkan nama program/institusi/angka jika ada di judul), apa pemicunya, mengapa relevan bagi pengawasan BPKP",
   "isu_subisu"     : "Nama isu utama / subisu spesifik (gunakan istilah dari judul, bukan abstraksi)",
   "aktor_lokasi"   : "Nama institusi atau jabatan yang disebut dalam judul / lokasi spesifik",
   "tone"           : "Positif" atau "Netral" atau "Negatif",
-  "risiko_ais"     : "Risiko konkret sesuai kategori — TATA KELOLA: jenis penyimpangan yang mungkin dan objeknya; PELAKSANAAN: risiko tidak tercapainya target atau pemborosan pada item apa; KEBIJAKAN: risiko implementasi atau dampak fiskal pada siapa; EKSTERNAL: dampak yang perlu diantisipasi oleh instansi mana",
-  "area_perhatian" : "Objek audit/reviu yang konkret — sebutkan: (1) apa yang perlu diperiksa, (2) pada instansi mana, (3) dengan mekanisme apa (audit kinerja, reviu pengadaan, verifikasi data, dll)"
+  "risiko"         : "Pernyataan risiko konkret — apa yang bisa terjadi/dirugikan, pada objek apa, tanpa label kategori di depannya",
+  "area_perhatian" : "Titik lemah atau celah konkret yang melatarbelakangi risiko tersebut — kondisi/struktur/mekanisme yang rentan, BUKAN jenis kegiatan audit/reviu yang harus dilakukan"
 }
 
 Aturan tambahan:
@@ -397,7 +407,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         return {
             "ringkasan_isu": artikel.get("judul","-"),
             "isu_subisu": "-", "aktor_lokasi": "-",
-            "tone": "Netral", "risiko_ais": "-", "area_perhatian": "-",
+            "tone": "Netral", "risiko": "-", "area_perhatian": "-",
             "_error": pesan,
         }
 
@@ -428,7 +438,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         c.value=f"Isu: {label_isu}  |  Generate: {datetime.now().strftime('%d %B %Y, %H:%M')}  |  Total: {len(data)} artikel  |  Pusat Strategi Kebijakan Pengawasan BPKP"
         style(c,C_SUB,sz=9); ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=5
 
-        HEADERS=["No","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko/Implikasi AIS","Area Perhatian"]
+        HEADERS=["No","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian"]
         for col,h in enumerate(HEADERS,1):
             c=ws.cell(row=4,column=col,value=h); style(c,C_NAVY,bold=True,sz=10,center=True,fc=C_WHITE)
         ws.row_dimensions[4].height=34
@@ -437,7 +447,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             r=5+i; bg=C_ODD if i%2==0 else C_EVEN
             baris=[i+1,d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
                    d.get("ringkasan_isu","-"),d.get("isu_subisu","-"),d.get("aktor_lokasi","-"),
-                   d.get("tone","Netral"),d.get("risiko_ais","-"),d.get("area_perhatian","-")]
+                   d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-")]
             for col,val in enumerate(baris,1):
                 c=ws.cell(row=r,column=col,value=val); style(c,bg)
             tone_val=d.get("tone","Netral")
@@ -637,7 +647,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 <div class="artikel-judul">{h.get('judul','-')}</div>
                 <div class="artikel-meta">📅 {h.get('tanggal','-')} &nbsp;·&nbsp; 📰 {h.get('sumber','-')} &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
-                <div class="artikel-risiko">⚠️ <b>Risiko:</b> {h.get('risiko_ais','-')}</div>
+                <div class="artikel-risiko">⚠️ <b>Risiko:</b> {h.get('risiko','-')}</div>
                 <div class="artikel-tindak">🔍 <b>Area Perhatian:</b> {h.get('area_perhatian','-')}</div>
             </div>""", unsafe_allow_html=True)
             with st.expander("🔗 Lihat link artikel"):
