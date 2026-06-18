@@ -136,9 +136,11 @@ st.markdown("""
 
 # ── DATA LOADER ──────────────────────────────────────────────
 def load_from_excel(uploaded_file):
-    """Parse Excel output dari pipeline AIS."""
+    """Parse Excel output dari pipeline AIS. Mendukung format lama
+    (11 kolom, tanpa Klaster) maupun format baru (12 kolom, dengan
+    kolom Klaster Isu di posisi ke-2)."""
     df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
-    
+
     # Baca metadata dari baris ke-2 (index 1)
     meta_str = str(df_raw.iloc[1, 0]) if df_raw.shape[0] > 1 else ""
     meta = {"raw": meta_str}
@@ -153,7 +155,14 @@ def load_from_excel(uploaded_file):
 
     # Data mulai dari baris ke-4 (header di index 2, data mulai index 3)
     df = pd.read_excel(uploaded_file, sheet_name=0, header=3)
-    df.columns = ['No','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
+    ada_klaster = "Klaster Isu" in df.columns or df.shape[1] == 12
+
+    if ada_klaster:
+        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
+    else:
+        df.columns = ['No','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
+        df['Klaster'] = '-'
+
     df = df.dropna(subset=['Judul'])
     df = df[df['No'] != 'No']
     df = df.reset_index(drop=True)
@@ -279,7 +288,7 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by Groq · llama-3.3-70b</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by DeepSeek</div>", unsafe_allow_html=True)
 
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
@@ -322,13 +331,16 @@ if uploaded is not None:
     # Upload manual — selalu override session_state
     df_raw, meta = load_from_excel(uploaded)
     sumber_data = "upload"
+    klaster_meta = []  # narasi klaster lengkap tidak tersedia dari Excel, hanya nama per baris
 
 else:
     # Ambil dari hasil crawl halaman 1
     hasil_list  = st.session_state["hasil"]
     label_sesi  = st.session_state.get("label_isu", "Hasil Crawl")
+    klaster_meta = st.session_state.get("klaster", [])
     df_raw = pd.DataFrame([{
         'No':          i + 1,
+        'Klaster':     h.get('klaster', '-'),
         'Tanggal':     h.get('tanggal', '-'),
         'Sumber':      h.get('sumber', '-'),
         'Link':        h.get('link', '-'),
@@ -564,14 +576,16 @@ with tab2:
             # Pilih artikel
             selected_idx = st.session_state.get('selected_idx', 0)
 
-            for i, (_, row) in enumerate(df_filtered.iterrows()):
+            ada_klaster = 'Klaster' in df_filtered.columns and (df_filtered['Klaster'] != '-').any()
+
+            def render_artikel_item(i, row):
                 tone_class = str(row['Tone']).lower()
                 is_selected = (i == selected_idx)
                 border_style = "border:2px solid rgba(99,179,237,0.8);" if is_selected else "border:1px solid rgba(128,128,128,0.2);"
                 bg_style = "background:rgba(99,179,237,0.08);" if is_selected else "background:transparent;"
 
                 judul_short = str(row['Judul'])[:75]+'…' if len(str(row['Judul']))>75 else str(row['Judul'])
-                
+
                 btn_key = f"artikel_{i}"
                 st.markdown(f"""
                 <div class="issue-card {tone_class}" style="{border_style}{bg_style}">
@@ -591,6 +605,51 @@ with tab2:
                 if st.button(f"Lihat detail →", key=btn_key, use_container_width=True):
                     st.session_state['selected_idx'] = i
                     st.rerun()
+
+            if not ada_klaster:
+                # Fallback: tampilan datar (Excel lama tanpa kolom Klaster)
+                for i, (_, row) in enumerate(df_filtered.iterrows()):
+                    render_artikel_item(i, row)
+            else:
+                # Bangun lookup narasi klaster (jika tersedia dari sesi crawl aktif)
+                narasi_klaster = {k.get('nama', '-'): k for k in klaster_meta} if klaster_meta else {}
+
+                df_filtered_idx = df_filtered.reset_index(drop=True)
+                klaster_order = [k.get('nama','-') for k in klaster_meta] if klaster_meta else None
+                nama_unik = df_filtered_idx['Klaster'].fillna('-').unique().tolist()
+                if klaster_order:
+                    nama_terurut = [n for n in klaster_order if n in nama_unik] + [n for n in nama_unik if n not in klaster_order]
+                else:
+                    nama_terurut = sorted(nama_unik, key=lambda n: -(df_filtered_idx['Klaster']==n).sum())
+
+                for nama in nama_terurut:
+                    sub_idx = df_filtered_idx[df_filtered_idx['Klaster'] == nama]
+                    jumlah = len(sub_idx)
+                    if jumlah == 0:
+                        continue
+
+                    tone_dom = sub_idx['Tone'].value_counts().idxmax() if jumlah else 'Netral'
+                    dom_color = {'Negatif':'#E74C3C','Netral':'#95A5A6','Positif':'#27AE60'}.get(tone_dom,'#95A5A6')
+
+                    label_expander = f"🗂️ {nama}  ·  {jumlah} artikel"
+                    with st.expander(label_expander, expanded=(nama == nama_terurut[0])):
+                        info_klaster = narasi_klaster.get(nama)
+                        if info_klaster:
+                            st.markdown(f"""
+                            <div style='border-left:3px solid {dom_color};padding:8px 12px;margin-bottom:10px;background:rgba(128,128,128,0.06);border-radius:0 6px 6px 0'>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Kondisi / Pemicu</div>
+                              <div style='font-size:11px;line-height:1.55;margin-bottom:8px'>{info_klaster.get('kondisi_pemicu','-')}</div>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Risiko</div>
+                              <div style='font-size:11px;line-height:1.55;margin-bottom:8px'>{info_klaster.get('risiko','-')}</div>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Area Perhatian</div>
+                              <div style='font-size:11px;line-height:1.55;margin-bottom:8px'>{info_klaster.get('area_perhatian','-')}</div>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Relevansi Pengawasan BPKP</div>
+                              <div style='font-size:11px;line-height:1.55'>{info_klaster.get('relevansi_pengawasan','-')}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        for i, row in sub_idx.iterrows():
+                            render_artikel_item(i, row)
 
         with col_detail:
             idx = st.session_state.get('selected_idx', 0)
