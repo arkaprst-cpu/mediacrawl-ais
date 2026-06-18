@@ -5,7 +5,7 @@ Provider: DeepSeek (deepseek-v4-flash)
 """
 
 import streamlit as st
-import feedparser, json, time, re, io
+import feedparser, json, time, re, io, os
 from datetime import datetime
 from urllib.parse import quote_plus
 from openpyxl import Workbook
@@ -364,6 +364,42 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             st.caption(f"ℹ️ {skipped} artikel video dilewati.")
         return articles
 
+    # ── Progres tersimpan (mitigasi sesi Streamlit putus di tengah jalan) ──
+    # Streamlit Cloud bisa memutus session_state kalau koneksi websocket
+    # sempat terputus (tab idle lama, jaringan goyah, dll) — ini bukan bug
+    # di kode, tapi keterbatasan platform. File ini menyimpan progres
+    # sebagian supaya tidak hilang total kalau itu terjadi.
+    PROGRES_FILE = "/tmp/ais_progres.json"
+
+    def simpan_progres(label_isu: str, hasil_list: list, total: int):
+        try:
+            with open(PROGRES_FILE, "w", encoding="utf-8") as f:
+                json.dump({
+                    "label_isu": label_isu,
+                    "total": total,
+                    "selesai": len(hasil_list),
+                    "hasil": hasil_list,
+                    "timestamp": datetime.now().isoformat(),
+                }, f, ensure_ascii=False)
+        except Exception:
+            pass  # progres gagal tersimpan tidak boleh menghentikan analisis
+
+    def baca_progres():
+        try:
+            if os.path.exists(PROGRES_FILE):
+                with open(PROGRES_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return None
+
+    def hapus_progres():
+        try:
+            if os.path.exists(PROGRES_FILE):
+                os.remove(PROGRES_FILE)
+        except Exception:
+            pass
+
     # ── Analisis: DeepSeek ─────────────────────────────────────────────────
     def analisis_deepseek(client, artikel: dict, rate_status=None) -> dict:
         konten = str(artikel.get("snippet","") or "").strip()
@@ -533,6 +569,30 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
     # ── Main area ──────────────────────────────────────────────────────────
+
+    # Deteksi progres tersimpan dari sesi yang terputus (websocket Streamlit
+    # putus, tab idle lama, dll). Hanya relevan kalau session_state saat ini
+    # kosong — kalau "hasil" sudah ada, berarti sesi masih hidup normal.
+    progres_tersimpan = baca_progres() if "hasil" not in st.session_state else None
+    if progres_tersimpan:
+        sel = progres_tersimpan.get("selesai", 0)
+        tot = progres_tersimpan.get("total", 0)
+        st.warning(f"⚠️ Ditemukan progres crawl yang belum selesai: **{progres_tersimpan.get('label_isu','-')}** — {sel}/{tot} artikel sudah dianalisis sebelum sesi terputus.")
+        c_pulih, c_buang = st.columns(2)
+        with c_pulih:
+            if st.button("📥 Pulihkan hasil sebagian ini", use_container_width=True):
+                st.session_state["hasil"]      = progres_tersimpan["hasil"]
+                st.session_state["klaster"]    = []
+                st.session_state["label_isu"]  = progres_tersimpan.get("label_isu", "Hasil Crawl")
+                st.session_state["ais_ready"]  = True
+                st.session_state["ais_errors"] = [h.get("_error") for h in progres_tersimpan["hasil"] if h.get("_error")]
+                st.rerun()
+        with c_buang:
+            if st.button("🗑️ Buang progres ini", use_container_width=True):
+                hapus_progres()
+                st.rerun()
+        st.divider()
+
     provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek V4 Flash</span>'
     st.markdown(f"""
     <div class="main-header">
@@ -610,6 +670,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             art["label_isu"] = label_isu.strip()
             analisis = analisis_deepseek(ai_client, art, rate_status)
             hasil_list.append({**art, **analisis})
+            simpan_progres(label_isu.strip(), hasil_list, len(artikel_raw))
 
         rate_status.empty()
         prog_bar.progress(100, text="✅ Analisis selesai. Mengelompokkan isu...")
@@ -634,6 +695,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         st.session_state["ais_ready"] = True
         st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
         st.session_state["crawl_selesai_at"] = time.time()
+        hapus_progres()  # crawl tuntas — progres sementara tidak diperlukan lagi
 
         if not klaster_list:
             st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia tanpa pengelompokan isu.")
