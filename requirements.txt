@@ -1,6 +1,8 @@
 streamlit
 feedparser
 openai
+groq
+google-genai
 openpyxl
 pygooglenews
 pillow>=11.0.0
