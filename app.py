@@ -376,8 +376,8 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             f"{konten_info}\n\nHasilkan JSON analisis."
         )
 
-        MAX_RETRY  = 4
-        BASE_DELAY = 5
+        MAX_RETRY  = 5
+        BASE_DELAY = 6
 
         for attempt in range(MAX_RETRY):
             try:
@@ -390,7 +390,20 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     temperature=0.3,
                     max_tokens=800,
                 )
-                return _parse_json(resp.choices[0].message.content)
+                konten_resp = (resp.choices[0].message.content or "").strip()
+
+                # DeepSeek diketahui kadang membalas string KOSONG saat
+                # rate limit tersembunyi terpicu (bukan error 429 eksplisit).
+                # Ini harus ditangani sama seperti rate limit: backoff & retry,
+                # bukan langsung gagal sebagai "JSON tidak valid".
+                if not konten_resp:
+                    wait = BASE_DELAY * (2 ** attempt)
+                    if rate_status:
+                        rate_status.warning(f"⏳ DeepSeek membalas kosong (indikasi rate limit) — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
+                    time.sleep(wait)
+                    continue
+
+                return _parse_json(konten_resp)
 
             except Exception as e:
                 err_str = str(e).lower()
@@ -405,7 +418,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 else:
                     return _fallback_error(artikel, str(e)[:200])
 
-        return _fallback_error(artikel, "Rate limit DeepSeek — semua retry habis")
+        return _fallback_error(artikel, "DeepSeek terus membalas kosong — kemungkinan rate limit tersembunyi, semua retry habis")
 
     # ── Helpers parse & fallback ───────────────────────────────────────────
     def _parse_json(teks: str) -> dict:
@@ -505,7 +518,8 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             height=130,
         )
         label_isu = st.text_input("Label Isu (nama file Excel)", placeholder="Contoh: Pertamax BBM Juni 2026")
-        max_art   = st.slider("Maks. Artikel", min_value=5, max_value=50, value=20, step=5)
+        max_art   = st.slider("Maks. Artikel", min_value=5, max_value=25, value=20, step=5)
+        st.caption("⚠️ Di atas 25 artikel, DeepSeek lebih sering membalas kosong (rate limit tersembunyi) — 20 artikel umumnya paling stabil.")
         st.divider()
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
@@ -562,8 +576,11 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             pct = int((idx + 1) / len(artikel_raw) * 100)
             prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
 
-            # DeepSeek berbayar, tanpa RPM ketat -> delay ringan cukup
-            time.sleep(0.3)
+            # DeepSeek bisa membalas kosong (rate limit tersembunyi) di volume
+            # tinggi (20-30 artikel beruntun) — delay sedikit lebih longgar
+            # untuk mengurangi kemungkinan ini, di luar retry/backoff yang
+            # sudah ada di analisis_deepseek().
+            time.sleep(0.8)
 
             art["label_isu"] = label_isu.strip()
             analisis = analisis_deepseek(ai_client, art, rate_status)
@@ -603,8 +620,8 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         with st.expander(f"⚠️ {len(errs)} dari {total} artikel gagal dianalisis", expanded=True):
             st.code(errs[0])
             low = errs[0].lower()
-            if "rate" in low or "429" in low or "quota" in low:
-                st.warning("🕐 Rate limit — retry otomatis sudah berjalan. Jika masih banyak yang kosong, tunggu 1–2 menit lalu ulangi.")
+            if "kosong" in low or "rate" in low or "429" in low or "quota" in low:
+                st.warning("🕐 DeepSeek membalas kosong/rate limit di volume tinggi — retry otomatis dengan backoff sudah berjalan. Jika masih banyak yang gagal, tunggu 2–3 menit lalu ulangi, atau kecilkan jumlah Maks. Artikel per crawl.")
             elif "auth" in low or "401" in low:
                 st.warning("🔑 Masalah API Key. Cek kembali key di Streamlit Secrets.")
             elif "json" in low or "expecting" in low:
