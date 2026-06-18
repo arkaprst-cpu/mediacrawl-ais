@@ -289,7 +289,7 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by Groq · llama-3.3-70b</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by DeepSeek</div>", unsafe_allow_html=True)
 
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
