@@ -1,7 +1,7 @@
 """
 Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan BPKP
 Streamlit web app: input keyword → query expansion → crawl → analisis → download Excel
-Providers: Groq (llama-3.3-70b-versatile) | Gemini (gemini-2.5-flash)
+Provider: DeepSeek (deepseek-v4-flash)
 """
 
 import streamlit as st
@@ -218,7 +218,7 @@ Format output:
         for attempt in range(MAX_RETRY):
             try:
                 resp = client.chat.completions.create(
-                    model="deepseek-chat",
+                    model="deepseek-v4-flash",
                     messages=[
                         {"role": "system", "content": PROMPT_KLASTER},
                         {"role": "user",   "content": prompt},
@@ -281,7 +281,7 @@ Aturan:
 Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         try:
             resp = client.chat.completions.create(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
                 max_tokens=300,
@@ -382,7 +382,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         for attempt in range(MAX_RETRY):
             try:
                 resp = client.chat.completions.create(
-                    model="deepseek-chat",
+                    model="deepseek-v4-flash",
                     messages=[
                         {"role": "system", "content": PROMPT_SISTEM},
                         {"role": "user",   "content": prompt},
@@ -510,11 +510,11 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
     # ── Main area ──────────────────────────────────────────────────────────
-    provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek Chat</span>'
+    provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek V4 Flash</span>'
     st.markdown(f"""
     <div class="main-header">
       <h1>📰 Analisis Isu Strategis Pengawasan {provider_badge}</h1>
-      <p>Media Crawl otomatis · Query Expansion · Analisis AI · Output Excel · Pusat Strategi Kebijakan Pengawasan BPKP</p>
+      <p>Media Crawl · Query Expansion · Analisis AI</p>
     </div>
     """, unsafe_allow_html=True)
 
