@@ -170,6 +170,103 @@ Aturan tambahan:
 - Bahasa Indonesia formal
 - Output HANYA JSON murni"""
 
+    # ── PROMPT KLASTER ─────────────────────────────────────────────────────
+    PROMPT_KLASTER = """Kamu adalah analis isu strategis pengawasan BPKP Pusat Strategi Kebijakan Pengawasan.
+
+Kamu akan menerima daftar artikel (no, judul, ringkasan_isu, isu_subisu) hasil crawl SATU keyword/topik yang sama.
+Meski semua artikel membahas topik yang sama, arah/akar persoalannya bisa berbeda-beda.
+
+TUGAS: kelompokkan artikel-artikel ini ke dalam klaster isu utama berdasarkan KESAMAAN AKAR PERSOALAN DAN ARAH ISU — bukan sekadar kesamaan kata kunci permukaan.
+
+ATURAN:
+1. Jumlah klaster FLEKSIBEL sesuai data — boleh 2, boleh 6, sesuaikan dengan keragaman isu yang benar-benar ada. Jangan memaksakan jumlah tertentu.
+2. Setiap artikel HARUS masuk tepat satu klaster (tidak ada yang terlewat, tidak ada duplikasi).
+3. Jangan membuat klaster "Lain-lain" kecuali benar-benar tidak ada kesamaan sama sekali dengan klaster lain.
+4. Setiap klaster wajib diberi:
+   - "nama": nama klaster singkat (maks 8 kata), mencerminkan isu utama bukan sekadar topik umum
+   - "kondisi_pemicu": 1-2 kalimat kondisi/pemicu konkret yang menyatukan artikel-artikel ini
+   - "akar_persoalan": akar tata kelola/kebijakan/pelaksanaan yang melatarbelakangi (bukan rekomendasi tindakan)
+   - "risiko_utama": risiko paling signifikan jika tidak diintervensi
+   - "relevansi_pengawasan": mengapa klaster ini relevan/tidak terlalu prioritas bagi pengawasan BPKP
+   - "anggota": array berisi nomor (No) artikel yang masuk klaster ini
+
+5. Urutkan array klaster dari yang paling kritikal/prioritas bagi pengawasan BPKP ke yang paling rendah prioritas.
+6. Balas HANYA dalam format JSON murni, TANPA teks lain, TANPA markdown code fence, TANPA penjelasan di luar JSON.
+
+Format output:
+{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "akar_persoalan": "...", "risiko_utama": "...", "relevansi_pengawasan": "...", "anggota": [1,2,3]}]}
+"""
+
+    def klasterisasi_isu_deepseek(client, hasil_list: list) -> list:
+        """Kirim seluruh ringkasan isu ke DeepSeek untuk dikelompokkan jadi
+        beberapa klaster isu utama. Mengembalikan list klaster (bisa kosong
+        jika gagal — pemanggil wajib menangani fallback)."""
+        ringkasan_list = [
+            {
+                "no": i + 1,
+                "judul": h.get("judul", "-"),
+                "ringkasan_isu": h.get("ringkasan_isu", "-"),
+                "isu_subisu": h.get("isu_subisu", "-"),
+            }
+            for i, h in enumerate(hasil_list)
+        ]
+        prompt = json.dumps(ringkasan_list, ensure_ascii=False)
+
+        MAX_RETRY  = 3
+        BASE_DELAY = 5
+
+        for attempt in range(MAX_RETRY):
+            try:
+                resp = client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": PROMPT_KLASTER},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=3000,
+                )
+                teks = resp.choices[0].message.content.strip()
+                teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+                m = re.search(r"\{.*\}", teks, flags=re.DOTALL)
+                if m:
+                    teks = m.group(0)
+                parsed = json.loads(teks)
+                klaster_list = parsed.get("klaster", [])
+
+                # Validasi: pastikan setiap anggota klaster adalah int yang valid
+                total_artikel = len(hasil_list)
+                anggota_terpakai = set()
+                klaster_valid = []
+                for kl in klaster_list:
+                    anggota = [a for a in kl.get("anggota", []) if isinstance(a, int) and 1 <= a <= total_artikel]
+                    if not anggota:
+                        continue
+                    anggota_terpakai.update(anggota)
+                    klaster_valid.append({**kl, "anggota": anggota})
+
+                # Artikel yang tidak masuk klaster manapun -> klaster "Isu Lainnya"
+                sisa = [n for n in range(1, total_artikel + 1) if n not in anggota_terpakai]
+                if sisa:
+                    klaster_valid.append({
+                        "nama": "Isu Lainnya",
+                        "kondisi_pemicu": "Artikel dengan arah isu yang tidak terkelompok ke klaster utama.",
+                        "akar_persoalan": "-",
+                        "risiko_utama": "-",
+                        "relevansi_pengawasan": "Perlu ditelaah manual — tidak teridentifikasi pola yang jelas.",
+                        "anggota": sisa,
+                    })
+
+                return klaster_valid
+
+            except Exception:
+                if attempt < MAX_RETRY - 1:
+                    time.sleep(BASE_DELAY)
+                    continue
+                return []  # fallback: dashboard/Excel akan tampil tanpa klaster
+
+        return []
+
     # ── Query expansion ────────────────────────────────────────────────────
     def ekspansi_keyword_deepseek(client, keyword: str) -> list:
         prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
@@ -338,7 +435,8 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 
         C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
         TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
-        NCOL=11
+        HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian"]
+        NCOL=len(HEADERS)
         s=Side(style="thin",color="CCCCCC")
         BD=Border(left=s,right=s,top=s,bottom=s)
 
@@ -357,23 +455,22 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         c.value=f"Isu: {label_isu}  |  Generate: {datetime.now().strftime('%d %B %Y, %H:%M')}  |  Total: {len(data)} artikel  |  Pusat Strategi Kebijakan Pengawasan BPKP"
         style(c,C_SUB,sz=9); ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=5
 
-        HEADERS=["No","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian"]
         for col,h in enumerate(HEADERS,1):
             c=ws.cell(row=4,column=col,value=h); style(c,C_NAVY,bold=True,sz=10,center=True,fc=C_WHITE)
         ws.row_dimensions[4].height=34
 
         for i,d in enumerate(data):
             r=5+i; bg=C_ODD if i%2==0 else C_EVEN
-            baris=[i+1,d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
+            baris=[i+1,d.get("klaster","-"),d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
                    d.get("ringkasan_isu","-"),d.get("isu_subisu","-"),d.get("aktor_lokasi","-"),
                    d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-")]
             for col,val in enumerate(baris,1):
                 c=ws.cell(row=r,column=col,value=val); style(c,bg)
             tone_val=d.get("tone","Netral")
-            ws.cell(row=r,column=9).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
+            ws.cell(row=r,column=10).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
             ws.row_dimensions[r].height=60
 
-        for col,w in enumerate([5,12,18,35,40,45,25,25,12,45,40],1):
+        for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40],1):
             ws.column_dimensions[get_column_letter(col)].width=w
 
         buf=io.BytesIO(); wb.save(buf); buf.seek(0)
@@ -473,14 +570,30 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             hasil_list.append({**art, **analisis})
 
         rate_status.empty()
+        prog_bar.progress(100, text="✅ Analisis selesai. Mengelompokkan isu...")
+
+        with st.spinner("Mengelompokkan artikel menjadi klaster isu utama..."):
+            klaster_list = klasterisasi_isu_deepseek(ai_client, hasil_list)
+
+        # Tempel nama klaster ke setiap artikel (untuk Excel & tabel datar)
+        klaster_per_no = {}
+        for kl in klaster_list:
+            for no in kl.get("anggota", []):
+                klaster_per_no[no] = kl.get("nama", "-")
+        for i, h in enumerate(hasil_list):
+            h["klaster"] = klaster_per_no.get(i + 1, "-")
+
         prog_bar.progress(100, text="✅ Selesai!")
         status_tx.empty()
 
         st.session_state["hasil"]     = hasil_list
+        st.session_state["klaster"]   = klaster_list
         st.session_state["label_isu"] = label_isu.strip()
         st.session_state["ais_ready"] = True
         st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
 
+        if not klaster_list:
+            st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia tanpa pengelompokan isu.")
         st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk visualisasi lengkap.")
 
     # ── Error diagnostik ───────────────────────────────────────────────────
