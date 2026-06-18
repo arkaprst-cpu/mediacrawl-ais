@@ -1,11 +1,11 @@
 """
 Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan BPKP
 Streamlit web app: input keyword → query expansion → crawl → analisis → download Excel
-Provider: DeepSeek (deepseek-v4-flash)
+Providers: Groq (llama-3.3-70b-versatile) | Gemini (gemini-2.5-flash)
 """
 
 import streamlit as st
-import feedparser, json, time, re, io, os
+import feedparser, json, time, re, io
 from datetime import datetime
 from urllib.parse import quote_plus
 from openpyxl import Workbook
@@ -16,14 +16,6 @@ from openpyxl.utils import get_column_letter
 def get_deepseek_client(api_key: str):
     from openai import OpenAI
     return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-
-def get_groq_client(api_key: str):
-    from groq import Groq
-    return Groq(api_key=api_key)
-
-def get_gemini_client(api_key: str):
-    from google import genai
-    return genai.Client(api_key=api_key)
 
 st.set_page_config(
     page_title="Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan",
@@ -104,8 +96,6 @@ if page == "🔍 Crawl & Analisis":
         font-size:0.72rem; font-weight:600; margin-left:6px;
     }
     .badge-deepseek { background:#fdf4ff; color:#86198f; border:1px solid #f5d0fe; }
-    .badge-groq { background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; }
-    .badge-gemini { background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -180,123 +170,6 @@ Aturan tambahan:
 - Bahasa Indonesia formal
 - Output HANYA JSON murni"""
 
-    # ── PROMPT KLASTER ─────────────────────────────────────────────────────
-    PROMPT_KLASTER = """Kamu adalah analis isu strategis pengawasan BPKP Pusat Strategi Kebijakan Pengawasan.
-
-Kamu akan menerima daftar artikel (no, judul, ringkasan_isu, isu_subisu) hasil crawl SATU keyword/topik yang sama.
-Meski semua artikel membahas topik yang sama, arah/akar persoalannya bisa berbeda-beda.
-
-TUGAS: kelompokkan artikel-artikel ini ke dalam klaster isu utama berdasarkan KESAMAAN AKAR PERSOALAN DAN ARAH ISU — bukan sekadar kesamaan kata kunci permukaan.
-
-ATURAN:
-1. Jumlah klaster FLEKSIBEL sesuai data — boleh 2, boleh 6, sesuaikan dengan keragaman isu yang benar-benar ada. Jangan memaksakan jumlah tertentu.
-2. Setiap artikel HARUS masuk tepat satu klaster (tidak ada yang terlewat, tidak ada duplikasi).
-3. Jangan membuat klaster "Lain-lain" kecuali benar-benar tidak ada kesamaan sama sekali dengan klaster lain.
-4. Setiap klaster wajib diberi:
-   - "nama": nama klaster singkat (maks 8 kata), mencerminkan isu utama bukan sekadar topik umum
-   - "kondisi_pemicu": 1-2 kalimat kondisi/pemicu konkret yang menyatukan artikel-artikel ini
-   - "akar_persoalan": akar tata kelola/kebijakan/pelaksanaan yang melatarbelakangi (bukan rekomendasi tindakan)
-   - "risiko_utama": risiko paling signifikan jika tidak diintervensi
-   - "relevansi_pengawasan": mengapa klaster ini relevan/tidak terlalu prioritas bagi pengawasan BPKP
-   - "anggota": array berisi nomor (No) artikel yang masuk klaster ini
-
-5. Urutkan array klaster dari yang paling kritikal/prioritas bagi pengawasan BPKP ke yang paling rendah prioritas.
-6. Balas HANYA dalam format JSON murni, TANPA teks lain, TANPA markdown code fence, TANPA penjelasan di luar JSON.
-
-Format output:
-{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "akar_persoalan": "...", "risiko_utama": "...", "relevansi_pengawasan": "...", "anggota": [1,2,3]}]}
-"""
-
-    def klasterisasi_isu_ai(client, hasil_list: list, provider: str) -> list:
-        """Kirim seluruh ringkasan isu ke AI untuk dikelompokkan jadi
-        beberapa klaster isu utama. Mendukung DeepSeek, Groq, dan Gemini —
-        cukup ubah cara panggil API, validasi & fallback sama untuk ketiganya.
-        Mengembalikan list klaster (bisa kosong jika gagal)."""
-        ringkasan_list = [
-            {
-                "no": i + 1,
-                "judul": h.get("judul", "-"),
-                "ringkasan_isu": h.get("ringkasan_isu", "-"),
-                "isu_subisu": h.get("isu_subisu", "-"),
-            }
-            for i, h in enumerate(hasil_list)
-        ]
-        prompt = json.dumps(ringkasan_list, ensure_ascii=False)
-
-        MAX_RETRY  = 3
-        BASE_DELAY = 5
-
-        for attempt in range(MAX_RETRY):
-            try:
-                if provider == "DeepSeek":
-                    resp = client.chat.completions.create(
-                        model="deepseek-v4-flash",
-                        messages=[
-                            {"role": "system", "content": PROMPT_KLASTER},
-                            {"role": "user",   "content": prompt},
-                        ],
-                        temperature=0.2,
-                        max_tokens=3000,
-                    )
-                    teks = resp.choices[0].message.content.strip()
-                elif provider == "Groq (Llama)":
-                    resp = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[
-                            {"role": "system", "content": PROMPT_KLASTER},
-                            {"role": "user",   "content": prompt},
-                        ],
-                        temperature=0.2,
-                        max_tokens=3000,
-                    )
-                    teks = resp.choices[0].message.content.strip()
-                else:  # Gemini
-                    resp = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=f"{PROMPT_KLASTER}\n\n{prompt}",
-                    )
-                    teks = (resp.text or "").strip()
-
-                teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
-                m = re.search(r"\{.*\}", teks, flags=re.DOTALL)
-                if m:
-                    teks = m.group(0)
-                parsed = json.loads(teks)
-                klaster_list = parsed.get("klaster", [])
-
-                # Validasi: pastikan setiap anggota klaster adalah int yang valid
-                total_artikel = len(hasil_list)
-                anggota_terpakai = set()
-                klaster_valid = []
-                for kl in klaster_list:
-                    anggota = [a for a in kl.get("anggota", []) if isinstance(a, int) and 1 <= a <= total_artikel]
-                    if not anggota:
-                        continue
-                    anggota_terpakai.update(anggota)
-                    klaster_valid.append({**kl, "anggota": anggota})
-
-                # Artikel yang tidak masuk klaster manapun -> klaster "Isu Lainnya"
-                sisa = [n for n in range(1, total_artikel + 1) if n not in anggota_terpakai]
-                if sisa:
-                    klaster_valid.append({
-                        "nama": "Isu Lainnya",
-                        "kondisi_pemicu": "Artikel dengan arah isu yang tidak terkelompok ke klaster utama.",
-                        "akar_persoalan": "-",
-                        "risiko_utama": "-",
-                        "relevansi_pengawasan": "Perlu ditelaah manual — tidak teridentifikasi pola yang jelas.",
-                        "anggota": sisa,
-                    })
-
-                return klaster_valid
-
-            except Exception:
-                if attempt < MAX_RETRY - 1:
-                    time.sleep(BASE_DELAY)
-                    continue
-                return []  # fallback: dashboard/Excel akan tampil tanpa klaster
-
-        return []
-
     # ── Query expansion ────────────────────────────────────────────────────
     def ekspansi_keyword_deepseek(client, keyword: str) -> list:
         prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
@@ -311,64 +184,12 @@ Aturan:
 Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         try:
             resp = client.chat.completions.create(
-                model="deepseek-v4-flash",
+                model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
                 max_tokens=300,
             )
             teks = resp.choices[0].message.content.strip()
-            teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
-            queries = json.loads(teks)
-            if isinstance(queries, list):
-                return [keyword] + [q for q in queries if isinstance(q, str)]
-        except Exception:
-            pass
-        return [keyword]
-
-    def ekspansi_keyword_groq(client, keyword: str) -> list:
-        prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
-
-Keyword input: "{keyword}"
-
-Aturan:
-- Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
-- Gunakan bahasa Indonesia
-- Kembalikan HANYA array JSON berisi string query, tanpa teks lain
-
-Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
-        try:
-            resp = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.4,
-                max_tokens=300,
-            )
-            teks = resp.choices[0].message.content.strip()
-            teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
-            queries = json.loads(teks)
-            if isinstance(queries, list):
-                return [keyword] + [q for q in queries if isinstance(q, str)]
-        except Exception:
-            pass
-        return [keyword]
-
-    def ekspansi_keyword_gemini(client, keyword: str) -> list:
-        prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
-
-Keyword input: "{keyword}"
-
-Aturan:
-- Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
-- Gunakan bahasa Indonesia
-- Kembalikan HANYA array JSON berisi string query, tanpa teks lain
-
-Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
-        try:
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-            )
-            teks = (resp.text or "").strip()
             teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
             queries = json.loads(teks)
             if isinstance(queries, list):
@@ -446,42 +267,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             st.caption(f"ℹ️ {skipped} artikel video dilewati.")
         return articles
 
-    # ── Progres tersimpan (mitigasi sesi Streamlit putus di tengah jalan) ──
-    # Streamlit Cloud bisa memutus session_state kalau koneksi websocket
-    # sempat terputus (tab idle lama, jaringan goyah, dll) — ini bukan bug
-    # di kode, tapi keterbatasan platform. File ini menyimpan progres
-    # sebagian supaya tidak hilang total kalau itu terjadi.
-    PROGRES_FILE = "/tmp/ais_progres.json"
-
-    def simpan_progres(label_isu: str, hasil_list: list, total: int):
-        try:
-            with open(PROGRES_FILE, "w", encoding="utf-8") as f:
-                json.dump({
-                    "label_isu": label_isu,
-                    "total": total,
-                    "selesai": len(hasil_list),
-                    "hasil": hasil_list,
-                    "timestamp": datetime.now().isoformat(),
-                }, f, ensure_ascii=False)
-        except Exception:
-            pass  # progres gagal tersimpan tidak boleh menghentikan analisis
-
-    def baca_progres():
-        try:
-            if os.path.exists(PROGRES_FILE):
-                with open(PROGRES_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception:
-            pass
-        return None
-
-    def hapus_progres():
-        try:
-            if os.path.exists(PROGRES_FILE):
-                os.remove(PROGRES_FILE)
-        except Exception:
-            pass
-
     # ── Analisis: DeepSeek ─────────────────────────────────────────────────
     def analisis_deepseek(client, artikel: dict, rate_status=None) -> dict:
         konten = str(artikel.get("snippet","") or "").strip()
@@ -494,13 +279,13 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             f"{konten_info}\n\nHasilkan JSON analisis."
         )
 
-        MAX_RETRY  = 5
-        BASE_DELAY = 6
+        MAX_RETRY  = 4
+        BASE_DELAY = 5
 
         for attempt in range(MAX_RETRY):
             try:
                 resp = client.chat.completions.create(
-                    model="deepseek-v4-flash",
+                    model="deepseek-chat",
                     messages=[
                         {"role": "system", "content": PROMPT_SISTEM},
                         {"role": "user",   "content": prompt},
@@ -508,20 +293,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     temperature=0.3,
                     max_tokens=800,
                 )
-                konten_resp = (resp.choices[0].message.content or "").strip()
-
-                # DeepSeek diketahui kadang membalas string KOSONG saat
-                # rate limit tersembunyi terpicu (bukan error 429 eksplisit).
-                # Ini harus ditangani sama seperti rate limit: backoff & retry,
-                # bukan langsung gagal sebagai "JSON tidak valid".
-                if not konten_resp:
-                    wait = BASE_DELAY * (2 ** attempt)
-                    if rate_status:
-                        rate_status.warning(f"⏳ DeepSeek membalas kosong (indikasi rate limit) — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
-                    time.sleep(wait)
-                    continue
-
-                return _parse_json(konten_resp)
+                return _parse_json(resp.choices[0].message.content)
 
             except Exception as e:
                 err_str = str(e).lower()
@@ -536,107 +308,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 else:
                     return _fallback_error(artikel, str(e)[:200])
 
-        return _fallback_error(artikel, "DeepSeek terus membalas kosong — kemungkinan rate limit tersembunyi, semua retry habis")
-
-    # ── Analisis: Groq ───────────────────────────────────────────────────
-    def analisis_groq(client, artikel: dict, rate_status=None) -> dict:
-        konten = str(artikel.get("snippet","") or "").strip()
-        konten_info = f"Konten  : {konten}" if konten else "Konten  : [tidak tersedia — analisis berdasarkan judul dan topik crawl]"
-        prompt = (
-            f"Topik crawl: {artikel.get('label_isu','-')}\n"
-            f"Judul   : {artikel['judul']}\n"
-            f"Sumber  : {artikel['sumber']}\n"
-            f"Tanggal : {artikel['tanggal']}\n"
-            f"{konten_info}\n\nHasilkan JSON analisis."
-        )
-
-        MAX_RETRY  = 5
-        BASE_DELAY = 8  # Groq free tier limit harian ketat (1000 req/hari) — backoff lebih konservatif
-
-        for attempt in range(MAX_RETRY):
-            try:
-                resp = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {"role": "system", "content": PROMPT_SISTEM},
-                        {"role": "user",   "content": prompt},
-                    ],
-                    temperature=0.3,
-                    max_tokens=800,
-                )
-                konten_resp = (resp.choices[0].message.content or "").strip()
-
-                if not konten_resp:
-                    wait = BASE_DELAY * (2 ** attempt)
-                    if rate_status:
-                        rate_status.warning(f"⏳ Groq membalas kosong (indikasi rate limit) — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
-                    time.sleep(wait)
-                    continue
-
-                return _parse_json(konten_resp)
-
-            except Exception as e:
-                err_str = str(e).lower()
-                if "429" in err_str or "rate" in err_str:
-                    wait = BASE_DELAY * (2 ** attempt)
-                    if rate_status:
-                        rate_status.warning(f"⏳ Rate limit Groq — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
-                    time.sleep(wait)
-                elif attempt < MAX_RETRY - 1:
-                    time.sleep(BASE_DELAY)
-                    continue
-                else:
-                    return _fallback_error(artikel, str(e)[:200])
-
-        return _fallback_error(artikel, "Rate limit Groq — semua retry habis")
-
-    # ── Analisis: Gemini ─────────────────────────────────────────────────
-    def analisis_gemini(client, artikel: dict, rate_status=None) -> dict:
-        konten = str(artikel.get("snippet","") or "").strip()
-        konten_info = f"Konten  : {konten}" if konten else "Konten  : [tidak tersedia — analisis berdasarkan judul dan topik crawl]"
-        prompt = (
-            f"{PROMPT_SISTEM}\n\n"
-            f"Topik crawl: {artikel.get('label_isu','-')}\n"
-            f"Judul   : {artikel['judul']}\n"
-            f"Sumber  : {artikel['sumber']}\n"
-            f"Tanggal : {artikel['tanggal']}\n"
-            f"{konten_info}\n\nHasilkan JSON analisis."
-        )
-
-        MAX_RETRY  = 5
-        BASE_DELAY = 10  # Gemini free tier 10 RPM — backoff paling konservatif dari ketiga provider
-
-        for attempt in range(MAX_RETRY):
-            try:
-                resp = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                )
-                konten_resp = (resp.text or "").strip()
-
-                if not konten_resp:
-                    wait = BASE_DELAY * (2 ** attempt)
-                    if rate_status:
-                        rate_status.warning(f"⏳ Gemini membalas kosong (indikasi rate limit) — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
-                    time.sleep(wait)
-                    continue
-
-                return _parse_json(konten_resp)
-
-            except Exception as e:
-                err_str = str(e).lower()
-                if "429" in err_str or "rate" in err_str or "resource_exhausted" in err_str or "quota" in err_str:
-                    wait = BASE_DELAY * (2 ** attempt)
-                    if rate_status:
-                        rate_status.warning(f"⏳ Rate limit Gemini — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
-                    time.sleep(wait)
-                elif attempt < MAX_RETRY - 1:
-                    time.sleep(BASE_DELAY)
-                    continue
-                else:
-                    return _fallback_error(artikel, str(e)[:200])
-
-        return _fallback_error(artikel, "Rate limit Gemini — semua retry habis")
+        return _fallback_error(artikel, "Rate limit DeepSeek — semua retry habis")
 
     # ── Helpers parse & fallback ───────────────────────────────────────────
     def _parse_json(teks: str) -> dict:
@@ -666,8 +338,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 
         C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
         TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
-        HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian"]
-        NCOL=len(HEADERS)
+        NCOL=11
         s=Side(style="thin",color="CCCCCC")
         BD=Border(left=s,right=s,top=s,bottom=s)
 
@@ -686,22 +357,23 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         c.value=f"Isu: {label_isu}  |  Generate: {datetime.now().strftime('%d %B %Y, %H:%M')}  |  Total: {len(data)} artikel  |  Pusat Strategi Kebijakan Pengawasan BPKP"
         style(c,C_SUB,sz=9); ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=5
 
+        HEADERS=["No","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian"]
         for col,h in enumerate(HEADERS,1):
             c=ws.cell(row=4,column=col,value=h); style(c,C_NAVY,bold=True,sz=10,center=True,fc=C_WHITE)
         ws.row_dimensions[4].height=34
 
         for i,d in enumerate(data):
             r=5+i; bg=C_ODD if i%2==0 else C_EVEN
-            baris=[i+1,d.get("klaster","-"),d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
+            baris=[i+1,d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
                    d.get("ringkasan_isu","-"),d.get("isu_subisu","-"),d.get("aktor_lokasi","-"),
                    d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-")]
             for col,val in enumerate(baris,1):
                 c=ws.cell(row=r,column=col,value=val); style(c,bg)
             tone_val=d.get("tone","Netral")
-            ws.cell(row=r,column=10).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
+            ws.cell(row=r,column=9).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
             ws.row_dimensions[r].height=60
 
-        for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40],1):
+        for col,w in enumerate([5,12,18,35,40,45,25,25,12,45,40],1):
             ws.column_dimensions[get_column_letter(col)].width=w
 
         buf=io.BytesIO(); wb.save(buf); buf.seek(0)
@@ -715,37 +387,18 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         st.caption("Pusat Strategi Kebijakan Pengawasan BPKP")
         st.divider()
 
-        # ── Pilih Provider AI ──────────────────────────────────────────
-        # DeepSeek tetap default (murah & cepat), tapi Groq & Gemini
-        # tersedia sebagai cadangan saat DeepSeek sedang rate limit ketat.
-        provider = st.radio(
-            "🤖 Provider AI",
-            options=["DeepSeek", "Groq (Llama)", "Gemini"],
-            index=0,
-            help="DeepSeek: berbayar, murah, biasanya paling stabil. Groq: gratis tapi limit harian ketat (1.000 req/hari). Gemini: gratis tapi limit per-menit ketat (10 RPM free tier).",
-        )
-
-        if provider == "DeepSeek":
-            deepseek_key_default = st.secrets.get("DEEPSEEK_API_KEY","") if hasattr(st,"secrets") else ""
-            if deepseek_key_default:
-                st.success("✅ DeepSeek API Key dari Secrets")
-                active_key = deepseek_key_default
-            else:
-                active_key = st.text_input("DeepSeek API Key", type="password", placeholder="sk-...")
-        elif provider == "Groq (Llama)":
-            groq_key_default = st.secrets.get("GROQ_API_KEY","") if hasattr(st,"secrets") else ""
-            if groq_key_default:
-                st.success("✅ Groq API Key dari Secrets")
-                active_key = groq_key_default
-            else:
-                active_key = st.text_input("Groq API Key", type="password", placeholder="gsk_...")
+        # ── API Key DeepSeek ─────────────────────────────────────────────
+        # Provider tunggal: DeepSeek. Gemini & Groq sudah dicoba dan
+        # tidak dipakai lagi — Gemini terlalu lambat (delay 6.5s/artikel
+        # untuk hindari rate limit 10 RPM), Groq sering kosong di volume
+        # tinggi karena rate limit ketat. DeepSeek terbukti cepat, murah
+        # (<$0.01 per 20 artikel), dan hasil analisisnya konsisten.
+        deepseek_key_default = st.secrets.get("DEEPSEEK_API_KEY","") if hasattr(st,"secrets") else ""
+        if deepseek_key_default:
+            st.success("✅ DeepSeek API Key dari Secrets")
+            active_key = deepseek_key_default
         else:
-            gemini_key_default = st.secrets.get("GEMINI_API_KEY","") if hasattr(st,"secrets") else ""
-            if gemini_key_default:
-                st.success("✅ Gemini API Key dari Secrets")
-                active_key = gemini_key_default
-            else:
-                active_key = st.text_input("Gemini API Key", type="password", placeholder="AIza...")
+            active_key = st.text_input("DeepSeek API Key", type="password", placeholder="sk-...")
 
         st.divider()
 
@@ -755,56 +408,16 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             height=130,
         )
         label_isu = st.text_input("Label Isu (nama file Excel)", placeholder="Contoh: Pertamax BBM Juni 2026")
-        max_art   = st.slider("Maks. Artikel", min_value=5, max_value=20, value=20, step=5)
-
-        # Tampilkan status cooldown jika masih dalam jeda
-        COOLDOWN_DETIK = 180
-        waktu_terakhir = st.session_state.get("crawl_selesai_at")
-        if waktu_terakhir:
-            selisih = time.time() - waktu_terakhir
-            if selisih < COOLDOWN_DETIK:
-                sisa = int(COOLDOWN_DETIK - selisih)
-                st.warning(f"⏳ Cooldown: {sisa}s tersisa sebelum crawl baru bisa dimulai.")
-
+        max_art   = st.slider("Maks. Artikel", min_value=5, max_value=50, value=20, step=5)
         st.divider()
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
     # ── Main area ──────────────────────────────────────────────────────────
-
-    # Deteksi progres tersimpan dari sesi yang terputus (websocket Streamlit
-    # putus, tab idle lama, dll). Hanya relevan kalau session_state saat ini
-    # kosong — kalau "hasil" sudah ada, berarti sesi masih hidup normal.
-    progres_tersimpan = baca_progres() if "hasil" not in st.session_state else None
-    if progres_tersimpan:
-        sel = progres_tersimpan.get("selesai", 0)
-        tot = progres_tersimpan.get("total", 0)
-        st.warning(f"⚠️ Ditemukan progres crawl yang belum selesai: **{progres_tersimpan.get('label_isu','-')}** — {sel}/{tot} artikel sudah dianalisis sebelum sesi terputus.")
-        c_pulih, c_buang = st.columns(2)
-        with c_pulih:
-            if st.button("📥 Pulihkan hasil sebagian ini", use_container_width=True):
-                st.session_state["hasil"]      = progres_tersimpan["hasil"]
-                st.session_state["klaster"]    = []
-                st.session_state["label_isu"]  = progres_tersimpan.get("label_isu", "Hasil Crawl")
-                st.session_state["ais_ready"]  = True
-                st.session_state["ais_errors"] = [h.get("_error") for h in progres_tersimpan["hasil"] if h.get("_error")]
-                st.rerun()
-        with c_buang:
-            if st.button("🗑️ Buang progres ini", use_container_width=True):
-                hapus_progres()
-                st.rerun()
-        st.divider()
-
-    BADGE_PER_PROVIDER = {
-        "DeepSeek":     ('badge-deepseek', 'DeepSeek V4 Flash'),
-        "Groq (Llama)": ('badge-groq', 'Groq Llama 3.3 70B'),
-        "Gemini":       ('badge-gemini', 'Gemini 2.5 Flash'),
-    }
-    badge_class, badge_label = BADGE_PER_PROVIDER.get(provider, BADGE_PER_PROVIDER["DeepSeek"])
-    provider_badge = f'<span class="provider-badge {badge_class}">{badge_label}</span>'
+    provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek Chat</span>'
     st.markdown(f"""
     <div class="main-header">
       <h1>📰 Analisis Isu Strategis Pengawasan {provider_badge}</h1>
-      <p>Media Crawl · Query Expansion · Analisis AI</p>
+      <p>Media Crawl otomatis · Query Expansion · Analisis AI · Output Excel · Pusat Strategi Kebijakan Pengawasan BPKP</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -819,40 +432,16 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             st.error("Isi Label Isu untuk nama file Excel.")
             st.stop()
 
-        # ── Cooldown antar-crawl ──────────────────────────────────────
-        # Crawl beruntun tanpa jeda (mis. The Fed lalu langsung MBG)
-        # membuat DeepSeek menganggap akun ini "burst" — limit dinamisnya
-        # berdasarkan riwayat penggunaan jangka pendek, bukan cuma volume
-        # 1 crawl saja. Cooldown ini memberi akun waktu "mendingin".
-        COOLDOWN_DETIK = 180  # 3 menit
-        waktu_terakhir = st.session_state.get("crawl_selesai_at")
-        if waktu_terakhir:
-            selisih = time.time() - waktu_terakhir
-            if selisih < COOLDOWN_DETIK:
-                sisa = int(COOLDOWN_DETIK - selisih)
-                st.error(f"⏳ Tunggu {sisa} detik lagi sebelum crawl baru. Crawl beruntun tanpa jeda memicu rate limit DeepSeek lebih cepat — cooldown ini melindungi sesi crawl Anda sendiri.")
-                st.stop()
-
         keywords_input = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
 
-        if provider == "DeepSeek":
-            ai_client = get_deepseek_client(active_key)
-        elif provider == "Groq (Llama)":
-            ai_client = get_groq_client(active_key)
-        else:
-            ai_client = get_gemini_client(active_key)
+        ai_client = get_deepseek_client(active_key)
 
         st.subheader("⏳ Proses Crawl & Analisis")
 
         with st.spinner("Memperluas keyword..."):
             all_queries = []
             for kw in keywords_input:
-                if provider == "DeepSeek":
-                    expanded = ekspansi_keyword_deepseek(ai_client, kw)
-                elif provider == "Groq (Llama)":
-                    expanded = ekspansi_keyword_groq(ai_client, kw)
-                else:
-                    expanded = ekspansi_keyword_gemini(ai_client, kw)
+                expanded = ekspansi_keyword_deepseek(ai_client, kw)
                 all_queries.extend(expanded)
 
         query_lines = "<br>".join(f"🔍 {q}" for q in all_queries)
@@ -872,56 +461,26 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         hasil_list  = []
         rate_status = st.empty()
 
-        # Delay dasar per provider — proaktif mencegah burst, bukan cuma
-        # reaksi setelah gagal. DeepSeek 3s (dinamis, mahal kalau burst).
-        # Groq 4s (limit harian 1000 req, TPM ketat di volume tinggi).
-        # Gemini 7s (free tier hanya ~10 RPM, paling ketat dari ketiganya).
-        DELAY_PER_PROVIDER = {"DeepSeek": 3.0, "Groq (Llama)": 4.0, "Gemini": 7.0}
-        delay_dasar = DELAY_PER_PROVIDER.get(provider, 3.0)
-
         for idx, art in enumerate(artikel_raw):
             pct = int((idx + 1) / len(artikel_raw) * 100)
             prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
 
-            time.sleep(delay_dasar)
+            # DeepSeek berbayar, tanpa RPM ketat -> delay ringan cukup
+            time.sleep(0.3)
 
             art["label_isu"] = label_isu.strip()
-            if provider == "DeepSeek":
-                analisis = analisis_deepseek(ai_client, art, rate_status)
-            elif provider == "Groq (Llama)":
-                analisis = analisis_groq(ai_client, art, rate_status)
-            else:
-                analisis = analisis_gemini(ai_client, art, rate_status)
+            analisis = analisis_deepseek(ai_client, art, rate_status)
             hasil_list.append({**art, **analisis})
-            simpan_progres(label_isu.strip(), hasil_list, len(artikel_raw))
 
         rate_status.empty()
-        prog_bar.progress(100, text="✅ Analisis selesai. Mengelompokkan isu...")
-
-        with st.spinner("Mengelompokkan artikel menjadi klaster isu utama..."):
-            klaster_list = klasterisasi_isu_ai(ai_client, hasil_list, provider)
-
-        # Tempel nama klaster ke setiap artikel (untuk Excel & tabel datar)
-        klaster_per_no = {}
-        for kl in klaster_list:
-            for no in kl.get("anggota", []):
-                klaster_per_no[no] = kl.get("nama", "-")
-        for i, h in enumerate(hasil_list):
-            h["klaster"] = klaster_per_no.get(i + 1, "-")
-
         prog_bar.progress(100, text="✅ Selesai!")
         status_tx.empty()
 
         st.session_state["hasil"]     = hasil_list
-        st.session_state["klaster"]   = klaster_list
         st.session_state["label_isu"] = label_isu.strip()
         st.session_state["ais_ready"] = True
         st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
-        st.session_state["crawl_selesai_at"] = time.time()
-        hapus_progres()  # crawl tuntas — progres sementara tidak diperlukan lagi
 
-        if not klaster_list:
-            st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia tanpa pengelompokan isu.")
         st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk visualisasi lengkap.")
 
     # ── Error diagnostik ───────────────────────────────────────────────────
@@ -931,8 +490,8 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         with st.expander(f"⚠️ {len(errs)} dari {total} artikel gagal dianalisis", expanded=True):
             st.code(errs[0])
             low = errs[0].lower()
-            if "kosong" in low or "rate" in low or "429" in low or "quota" in low:
-                st.warning("🕐 DeepSeek membalas kosong/rate limit di volume tinggi — retry otomatis dengan backoff sudah berjalan. Jika masih banyak yang gagal, tunggu 2–3 menit lalu ulangi, atau kecilkan jumlah Maks. Artikel per crawl.")
+            if "rate" in low or "429" in low or "quota" in low:
+                st.warning("🕐 Rate limit — retry otomatis sudah berjalan. Jika masih banyak yang kosong, tunggu 1–2 menit lalu ulangi.")
             elif "auth" in low or "401" in low:
                 st.warning("🔑 Masalah API Key. Cek kembali key di Streamlit Secrets.")
             elif "json" in low or "expecting" in low:
