@@ -518,8 +518,17 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             height=130,
         )
         label_isu = st.text_input("Label Isu (nama file Excel)", placeholder="Contoh: Pertamax BBM Juni 2026")
-        max_art   = st.slider("Maks. Artikel", min_value=5, max_value=25, value=20, step=5)
-        st.caption("⚠️ Di atas 25 artikel, DeepSeek lebih sering membalas kosong (rate limit tersembunyi) — 20 artikel umumnya paling stabil.")
+        max_art   = st.slider("Maks. Artikel", min_value=5, max_value=20, value=20, step=5)
+
+        # Tampilkan status cooldown jika masih dalam jeda
+        COOLDOWN_DETIK = 180
+        waktu_terakhir = st.session_state.get("crawl_selesai_at")
+        if waktu_terakhir:
+            selisih = time.time() - waktu_terakhir
+            if selisih < COOLDOWN_DETIK:
+                sisa = int(COOLDOWN_DETIK - selisih)
+                st.warning(f"⏳ Cooldown: {sisa}s tersisa sebelum crawl baru bisa dimulai.")
+
         st.divider()
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
@@ -542,6 +551,20 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         if not label_isu.strip():
             st.error("Isi Label Isu untuk nama file Excel.")
             st.stop()
+
+        # ── Cooldown antar-crawl ──────────────────────────────────────
+        # Crawl beruntun tanpa jeda (mis. The Fed lalu langsung MBG)
+        # membuat DeepSeek menganggap akun ini "burst" — limit dinamisnya
+        # berdasarkan riwayat penggunaan jangka pendek, bukan cuma volume
+        # 1 crawl saja. Cooldown ini memberi akun waktu "mendingin".
+        COOLDOWN_DETIK = 180  # 3 menit
+        waktu_terakhir = st.session_state.get("crawl_selesai_at")
+        if waktu_terakhir:
+            selisih = time.time() - waktu_terakhir
+            if selisih < COOLDOWN_DETIK:
+                sisa = int(COOLDOWN_DETIK - selisih)
+                st.error(f"⏳ Tunggu {sisa} detik lagi sebelum crawl baru. Crawl beruntun tanpa jeda memicu rate limit DeepSeek lebih cepat — cooldown ini melindungi sesi crawl Anda sendiri.")
+                st.stop()
 
         keywords_input = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
 
@@ -576,11 +599,13 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             pct = int((idx + 1) / len(artikel_raw) * 100)
             prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
 
-            # DeepSeek bisa membalas kosong (rate limit tersembunyi) di volume
-            # tinggi (20-30 artikel beruntun) — delay sedikit lebih longgar
-            # untuk mengurangi kemungkinan ini, di luar retry/backoff yang
-            # sudah ada di analisis_deepseek().
-            time.sleep(0.8)
+            # DeepSeek menerapkan rate limit DINAMIS berbasis tekanan trafik
+            # & pola burst (bukan RPM tetap yang dipublikasikan). Mengirim
+            # 20+ request beruntun cepat lebih mudah memicu throttling
+            # dibanding menyebar volume yang sama lebih lambat. Delay dasar
+            # dinaikkan signifikan (3s) — ini PENCEGAHAN, bukan cuma reaksi
+            # setelah gagal seperti backoff di analisis_deepseek().
+            time.sleep(3.0)
 
             art["label_isu"] = label_isu.strip()
             analisis = analisis_deepseek(ai_client, art, rate_status)
@@ -608,6 +633,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         st.session_state["label_isu"] = label_isu.strip()
         st.session_state["ais_ready"] = True
         st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
+        st.session_state["crawl_selesai_at"] = time.time()
 
         if not klaster_list:
             st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia tanpa pengelompokan isu.")
