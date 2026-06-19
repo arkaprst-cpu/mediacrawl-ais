@@ -136,9 +136,11 @@ st.markdown("""
 
 # ── DATA LOADER ──────────────────────────────────────────────
 def load_from_excel(uploaded_file):
-    """Parse Excel output dari pipeline AIS. Mendukung format lama
-    (11 kolom, tanpa Klaster) maupun format baru (12 kolom, dengan
-    kolom Klaster Isu di posisi ke-2)."""
+    """Parse Excel output dari pipeline AIS. Mendukung tiga format:
+    - 11 kolom (lama, tanpa Klaster)
+    - 12 kolom (dengan Klaster Isu, tanpa Kondisi/Pemicu & Relevansi)
+    - 14 kolom (lengkap, dengan Kondisi/Pemicu Klaster & Relevansi Pengawasan)
+    """
     df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
 
     # Baca metadata dari baris ke-2 (index 1)
@@ -155,13 +157,20 @@ def load_from_excel(uploaded_file):
 
     # Data mulai dari baris ke-4 (header di index 2, data mulai index 3)
     df = pd.read_excel(uploaded_file, sheet_name=0, header=3)
-    ada_klaster = "Klaster Isu" in df.columns or df.shape[1] == 12
+    n_kolom = df.shape[1]
 
-    if ada_klaster:
+    if n_kolom >= 14:
+        df = df.iloc[:, :14]
+        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
+    elif n_kolom == 12 or "Klaster Isu" in df.columns:
         df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
+        df['KondisiPemicu'] = '-'
+        df['RelevansiPengawasan'] = '-'
     else:
         df.columns = ['No','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
         df['Klaster'] = '-'
+        df['KondisiPemicu'] = '-'
+        df['RelevansiPengawasan'] = '-'
 
     df = df.dropna(subset=['Judul'])
     df = df[df['No'] != 'No']
@@ -351,6 +360,8 @@ else:
         'Tone':        h.get('tone', 'Netral'),
         'Risiko':      h.get('risiko', '-'),
         'TindakLanjut': h.get('area_perhatian', '-'),
+        'KondisiPemicu': h.get('kondisi_pemicu', '-'),
+        'RelevansiPengawasan': h.get('relevansi_pengawasan', '-'),
     } for i, h in enumerate(hasil_list)])
     meta = {
         "isu":      label_sesi,
@@ -636,20 +647,27 @@ with tab2:
                         info_klaster = narasi_klaster.get(nama)
 
                         # Fallback: kalau narasi lengkap klaster tidak tersedia
-                        # (mis. data berasal dari upload Excel, bukan sesi
-                        # crawl aktif — Excel tidak menyimpan kondisi_pemicu
-                        # & relevansi_pengawasan), rekonstruksi Risiko & Area
-                        # Perhatian dari data artikel itu sendiri (nilainya
-                        # identik di semua anggota klaster, karena diwarisi
-                        # dari analisis tingkat klaster saat crawl pertama).
+                        # dari sesi crawl aktif (mis. data berasal dari upload
+                        # Excel), rekonstruksi keempat field dari data artikel
+                        # itu sendiri — nilainya identik di semua anggota
+                        # klaster, karena diwarisi dari analisis tingkat
+                        # klaster saat crawl pertama. Untuk file Excel lama
+                        # (sebelum kolom Kondisi/Pemicu & Relevansi ditambahkan),
+                        # kedua field itu akan tampil "-" karena memang tidak
+                        # pernah tersimpan di format lama.
                         if not info_klaster:
-                            risiko_sub = sub_idx['Risiko'].dropna()
-                            area_sub = sub_idx['TindakLanjut'].dropna()
+                            def _ambil_unik(kolom):
+                                if kolom not in sub_idx.columns:
+                                    return "-"
+                                nilai = sub_idx[kolom].dropna()
+                                nilai = nilai[nilai != "-"]
+                                return nilai.iloc[0] if len(nilai) else "-"
+
                             info_klaster = {
-                                "kondisi_pemicu": "_Tidak tersimpan di file Excel — hanya tersedia saat melihat hasil dari sesi crawl yang masih aktif._",
-                                "risiko": risiko_sub.iloc[0] if len(risiko_sub) else "-",
-                                "area_perhatian": area_sub.iloc[0] if len(area_sub) else "-",
-                                "relevansi_pengawasan": "_Tidak tersimpan di file Excel — hanya tersedia saat melihat hasil dari sesi crawl yang masih aktif._",
+                                "kondisi_pemicu":       _ambil_unik('KondisiPemicu'),
+                                "risiko":               _ambil_unik('Risiko'),
+                                "area_perhatian":       _ambil_unik('TindakLanjut'),
+                                "relevansi_pengawasan": _ambil_unik('RelevansiPengawasan'),
                             }
 
                         st.markdown(f"""
