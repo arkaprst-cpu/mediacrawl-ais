@@ -496,7 +496,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 
         C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
         TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
-        HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian"]
+        HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian","Kondisi/Pemicu Klaster","Relevansi Pengawasan"]
         NCOL=len(HEADERS)
         s=Side(style="thin",color="CCCCCC")
         BD=Border(left=s,right=s,top=s,bottom=s)
@@ -524,14 +524,15 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             r=5+i; bg=C_ODD if i%2==0 else C_EVEN
             baris=[i+1,d.get("klaster","-"),d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
                    d.get("ringkasan_isu","-"),d.get("isu_subisu","-"),d.get("aktor_lokasi","-"),
-                   d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-")]
+                   d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-"),
+                   d.get("kondisi_pemicu","-"),d.get("relevansi_pengawasan","-")]
             for col,val in enumerate(baris,1):
                 c=ws.cell(row=r,column=col,value=val); style(c,bg)
             tone_val=d.get("tone","Netral")
             ws.cell(row=r,column=10).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
             ws.row_dimensions[r].height=60
 
-        for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40],1):
+        for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40],1):
             ws.column_dimensions[get_column_letter(col)].width=w
 
         buf=io.BytesIO(); wb.save(buf); buf.seek(0)
@@ -636,10 +637,11 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         with st.spinner("Mengelompokkan isu & menganalisis risiko per klaster..."):
             klaster_list = klasterisasi_isu_deepseek(ai_client, hasil_list)
 
-        # Sebarkan nama klaster, risiko, dan area_perhatian dari hasil
-        # klasterisasi ke setiap artikel anggotanya — risiko/area_perhatian
-        # TIDAK lagi dianalisis per-artikel, melainkan diwarisi dari analisis
-        # tingkat klaster (lebih kaya konteks, lebih sedikit panggilan AI).
+        # Sebarkan nama klaster, risiko, area_perhatian, kondisi_pemicu, dan
+        # relevansi_pengawasan dari hasil klasterisasi ke setiap artikel
+        # anggotanya — semua field ini TIDAK lagi dianalisis per-artikel,
+        # melainkan diwarisi dari analisis tingkat klaster (lebih kaya
+        # konteks, lebih sedikit panggilan AI).
         klaster_per_no = {}
         for kl in klaster_list:
             for no in kl.get("anggota", []):
@@ -647,13 +649,17 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         for i, h in enumerate(hasil_list):
             kl = klaster_per_no.get(i + 1)
             if kl:
-                h["klaster"]        = kl.get("nama", "-")
-                h["risiko"]         = kl.get("risiko", "-")
-                h["area_perhatian"] = kl.get("area_perhatian", "-")
+                h["klaster"]               = kl.get("nama", "-")
+                h["risiko"]                = kl.get("risiko", "-")
+                h["area_perhatian"]        = kl.get("area_perhatian", "-")
+                h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
+                h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
             else:
-                h["klaster"]        = "-"
-                h["risiko"]         = "-"
-                h["area_perhatian"] = "-"
+                h["klaster"]               = "-"
+                h["risiko"]                = "-"
+                h["area_perhatian"]        = "-"
+                h["kondisi_pemicu"]        = "-"
+                h["relevansi_pengawasan"]  = "-"
 
         prog_bar.progress(100, text="✅ Selesai!")
         status_tx.empty()
