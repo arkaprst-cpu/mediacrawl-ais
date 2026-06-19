@@ -136,10 +136,10 @@ st.markdown("""
 
 # ── DATA LOADER ──────────────────────────────────────────────
 def load_from_excel(uploaded_file):
-    """Parse Excel output dari pipeline AIS. Mendukung tiga format:
-    - 11 kolom (lama, tanpa Klaster)
+    """Parse Excel output dari pipeline AIS. Mendukung dua format:
     - 12 kolom (dengan Klaster Isu, tanpa Kondisi/Pemicu & Relevansi)
     - 14 kolom (lengkap, dengan Kondisi/Pemicu Klaster & Relevansi Pengawasan)
+    Format lama 11 kolom (tanpa Klaster) tidak lagi didukung.
     """
     df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
 
@@ -162,13 +162,8 @@ def load_from_excel(uploaded_file):
     if n_kolom >= 14:
         df = df.iloc[:, :14]
         df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
-    elif n_kolom == 12 or "Klaster Isu" in df.columns:
-        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
-        df['KondisiPemicu'] = '-'
-        df['RelevansiPengawasan'] = '-'
     else:
-        df.columns = ['No','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
-        df['Klaster'] = '-'
+        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
         df['KondisiPemicu'] = '-'
         df['RelevansiPengawasan'] = '-'
 
@@ -743,16 +738,6 @@ with tab2:
                   <div class="detail-section">
                     <div class="detail-label">Ringkasan Isu</div>
                     <div class="detail-text">{row['Ringkasan']}</div>
-                  </div>
-
-                  <div class="detail-section">
-                    <div class="detail-label">Risiko</div>
-                    <div class="implikasi-box">{row['Risiko']}</div>
-                  </div>
-
-                  <div class="detail-section">
-                    <div class="detail-label">Area Perhatian</div>
-                    <div class="tindaklanjut-box">{row['TindakLanjut']}</div>
                   </div>
 
                   <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
