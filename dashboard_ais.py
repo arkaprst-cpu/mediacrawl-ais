@@ -636,20 +636,38 @@ with tab2:
                         info_klaster = narasi_klaster.get(nama)
                         if info_klaster:
                             st.markdown(f"""
-                            <div style='border-left:3px solid {dom_color};padding:8px 12px;margin-bottom:10px;background:rgba(128,128,128,0.06);border-radius:0 6px 6px 0'>
-                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Kondisi / Pemicu</div>
-                              <div style='font-size:11px;line-height:1.55;margin-bottom:8px'>{info_klaster.get('kondisi_pemicu','-')}</div>
-                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Risiko</div>
-                              <div style='font-size:11px;line-height:1.55;margin-bottom:8px'>{info_klaster.get('risiko','-')}</div>
-                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Area Perhatian</div>
-                              <div style='font-size:11px;line-height:1.55;margin-bottom:8px'>{info_klaster.get('area_perhatian','-')}</div>
-                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:3px'>Relevansi Pengawasan BPKP</div>
-                              <div style='font-size:11px;line-height:1.55'>{info_klaster.get('relevansi_pengawasan','-')}</div>
+                            <div style='
+                                border-left:6px solid #F5A623;
+                                border-radius:0 10px 10px 0;
+                                background:linear-gradient(135deg, rgba(245,166,35,0.10), rgba(245,166,35,0.03));
+                                padding:16px 20px;
+                                margin-bottom:4px;
+                                box-shadow:0 2px 8px rgba(0,0,0,0.15);
+                            '>
+                              <div style='display:flex;align-items:center;gap:6px;margin-bottom:12px'>
+                                <span style='font-size:10px;font-weight:800;letter-spacing:.1em;color:#F5A623;text-transform:uppercase;font-family:monospace'>📁 INDUK KLASTER</span>
+                                <span style='font-size:10px;opacity:0.4'>·</span>
+                                <span style='font-size:10px;opacity:0.55'>{jumlah} artikel anggota</span>
+                              </div>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Kondisi / Pemicu</div>
+                              <div style='font-size:13px;line-height:1.6;margin-bottom:10px;font-weight:500'>{info_klaster.get('kondisi_pemicu','-')}</div>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Risiko</div>
+                              <div style='font-size:13px;line-height:1.6;margin-bottom:10px;font-weight:500'>{info_klaster.get('risiko','-')}</div>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Area Perhatian</div>
+                              <div style='font-size:13px;line-height:1.6;margin-bottom:10px;font-weight:500'>{info_klaster.get('area_perhatian','-')}</div>
+                              <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Relevansi Pengawasan BPKP</div>
+                              <div style='font-size:13px;line-height:1.6;font-weight:500'>{info_klaster.get('relevansi_pengawasan','-')}</div>
+                            </div>
+                            <div style='display:flex;align-items:center;gap:10px;margin:14px 0 10px 4px'>
+                              <span style='font-size:10px;font-weight:700;letter-spacing:.08em;opacity:0.45;text-transform:uppercase;white-space:nowrap'>↳ Artikel Anggota</span>
+                              <div style='flex:1;height:1px;background:rgba(128,128,128,0.25)'></div>
                             </div>
                             """, unsafe_allow_html=True)
 
+                        st.markdown("<div style='margin-left:14px;border-left:1px dashed rgba(128,128,128,0.25);padding-left:14px'>", unsafe_allow_html=True)
                         for i, row in sub_idx.iterrows():
                             render_artikel_item(i, row)
+                        st.markdown("</div>", unsafe_allow_html=True)
 
         with col_detail:
             idx = st.session_state.get('selected_idx', 0)
