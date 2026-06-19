@@ -24,6 +24,45 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── GERBANG PASSWORD ─────────────────────────────────────────────────────
+# Password tunggal dibagikan ke tim — bukan akun per-orang. Tujuannya
+# mencegah orang di luar tim (yang mungkin menemukan URL publik Streamlit
+# Cloud) ikut memakai kuota API DeepSeek. Dicek SEBELUM apa pun lain
+# dirender (termasuk sidebar & dashboard, karena dashboard_ais.py dipanggil
+# lewat exec() di dalam app.py — jadi satu gate ini melindungi keduanya).
+def cek_password():
+    if st.session_state.get("ais_authenticated", False):
+        return True
+
+    st.markdown("""
+    <div style='max-width:420px;margin:80px auto 0;text-align:center'>
+      <div style='font-family:monospace;font-size:22px;font-weight:700;color:#F5A623'>AIS</div>
+      <div style='font-size:13px;color:#888;margin-top:4px;margin-bottom:24px'>
+        Analisis Isu Strategis Pengawasan — Pusat Strategi Kebijakan Pengawasan BPKP
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c2:
+        pw_input = st.text_input("Password Akses Tim", type="password", key="pw_gate_input")
+        masuk = st.button("Masuk", use_container_width=True)
+
+        if masuk:
+            pw_benar = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
+            if not pw_benar:
+                st.error("APP_PASSWORD belum dikonfigurasi di Streamlit Secrets. Hubungi pengelola aplikasi.")
+            elif pw_input == pw_benar:
+                st.session_state["ais_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Password salah.")
+
+    return False
+
+if not cek_password():
+    st.stop()
+
 # ── NAVIGASI ───────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
