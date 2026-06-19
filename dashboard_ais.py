@@ -15,6 +15,7 @@ import json
 import io
 from collections import Counter
 from datetime import datetime
+from struktur_app import STRUKTUR_APP
 
 # ── CUSTOM CSS ───────────────────────────────────────────────
 st.markdown("""
@@ -293,6 +294,46 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by DeepSeek</div>", unsafe_allow_html=True)
+
+    # ── UPDATE EXCEL (Langkah Kerja 3) ─────────────────────────────
+    # Hanya tersedia untuk data dari sesi crawl aktif — perlu hasil_list
+    # mentah untuk digabung dengan review_klaster, bukan dataframe yang
+    # sudah diproses dari upload manual.
+    if uploaded is None and st.session_state.get("ais_ready", False) and "hasil" in st.session_state:
+        review_klaster = st.session_state.get("review_klaster", {})
+        jml_direview = len(review_klaster)
+        st.markdown("---")
+        st.markdown("### 📥 Update Excel")
+        if jml_direview == 0:
+            st.caption("Belum ada klaster yang ditelaah. Isi form telaah di Tab Daftar Isu, lalu kembali ke sini.")
+        else:
+            st.caption(f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel.")
+        if st.button("📊 Generate Excel Terbaru", use_container_width=True):
+            hasil_terbaru = []
+            for h in st.session_state["hasil"]:
+                h2 = dict(h)
+                nama_klaster = h2.get("klaster", "-")
+                review = review_klaster.get(nama_klaster)
+                if review:
+                    h2["sektor"] = review.get("sektor", "-")
+                    h2["tema"] = review.get("tema", "-")
+                    h2["topik"] = review.get("topik", "-")
+                    h2["dampak_implikasi_final"] = review.get("dampak_implikasi_final", "-")
+                    h2["gap_pengawasan"] = review.get("gap_pengawasan", "-")
+                    h2["usulan_pengawasan"] = review.get("usulan_pengawasan", "-")
+                    h2["status_review"] = review.get("status_review", "Belum Direview")
+                hasil_terbaru.append(h2)
+
+            # buat_excel didefinisikan di app.py (scope yang sama karena
+            # dashboard_ais.py dieksekusi via exec() di dalam app.py)
+            excel_bytes = buat_excel(hasil_terbaru, st.session_state.get("label_isu", "Hasil Crawl"))
+            st.download_button(
+                "⬇️ Download Excel",
+                data=excel_bytes,
+                file_name=f"MediaCrawl_AIS_{st.session_state.get('label_isu','hasil').replace(' ','_')}_telaah.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
@@ -688,11 +729,63 @@ with tab2:
                           <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Relevansi Pengawasan BPKP</div>
                           <div style='font-size:13px;line-height:1.6;font-weight:500'>{info_klaster.get('relevansi_pengawasan','-')}</div>
                         </div>
-                        <div style='display:flex;align-items:center;gap:10px;margin:14px 0 10px 4px'>
-                          <span style='font-size:10px;font-weight:700;letter-spacing:.08em;opacity:0.45;text-transform:uppercase;white-space:nowrap'>↳ Artikel Anggota</span>
-                          <div style='flex:1;height:1px;background:rgba(128,128,128,0.25)'></div>
-                        </div>
                         """, unsafe_allow_html=True)
+
+                        # ── FORM INTERVENSI MANUSIA (Langkah Kerja 3) ──────
+                        # Analis BPKP menyempurnakan hasil AI: pilih Sektor/
+                        # Tema/Topik baku (APP 2026), lalu tulis ulang Dampak/
+                        # Implikasi (menggantikan Risiko AI), Gap Pengawasan,
+                        # dan Usulan Pengawasan. Tersimpan ke session_state,
+                        # baru tertulis ke Excel saat tombol "Update Excel"
+                        # di sidebar ditekan.
+                        review_key = f"review_{nama}"
+                        review_tersimpan = st.session_state.get("review_klaster", {}).get(nama, {})
+                        sudah_direview = bool(review_tersimpan.get("status_review") == "Sudah Direview")
+
+                        badge_review = "🟢 Sudah Direview" if sudah_direview else "⚪ Belum Direview"
+                        st.markdown(f"<div style='font-size:11px;font-weight:700;opacity:0.7;margin:4px 0 8px 4px'>{badge_review}</div>", unsafe_allow_html=True)
+
+                        with st.expander("✏️ Telaah Analis — Sektor/Tema/Topik & Penyempurnaan Analisis", expanded=False):
+                            sektor_list = list(STRUKTUR_APP.keys())
+                            sektor_default = review_tersimpan.get("sektor", sektor_list[0])
+                            sektor_idx = sektor_list.index(sektor_default) if sektor_default in sektor_list else 0
+                            sektor_pilih = st.selectbox("Sektor", sektor_list, index=sektor_idx, key=f"{review_key}_sektor")
+
+                            tema_list = list(STRUKTUR_APP.get(sektor_pilih, {}).keys())
+                            tema_default = review_tersimpan.get("tema", tema_list[0] if tema_list else None)
+                            tema_idx = tema_list.index(tema_default) if tema_default in tema_list else 0
+                            tema_pilih = st.selectbox("Tema", tema_list, index=tema_idx, key=f"{review_key}_tema") if tema_list else None
+
+                            topik_list = STRUKTUR_APP.get(sektor_pilih, {}).get(tema_pilih, []) if tema_pilih else []
+                            topik_default = review_tersimpan.get("topik", topik_list[0] if topik_list else None)
+                            topik_idx = topik_list.index(topik_default) if topik_default in topik_list else 0
+                            topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
+
+                            dampak_default = review_tersimpan.get("dampak_implikasi_final") or info_klaster.get("risiko", "")
+                            dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf AI di bawah)", value=dampak_default, key=f"{review_key}_dampak", height=100)
+
+                            gap_pilih = st.text_area("Gap Pengawasan", value=review_tersimpan.get("gap_pengawasan", ""), key=f"{review_key}_gap", height=80,
+                                                       placeholder="Apa yang belum tercakup dalam pengawasan eksisting BPKP terhadap isu ini?")
+
+                            usulan_pilih = st.text_area("Usulan Pengawasan", value=review_tersimpan.get("usulan_pengawasan", ""), key=f"{review_key}_usulan", height=80,
+                                                          placeholder="Usulan lingkup/metodologi pengawasan untuk mengakomodir isu ini")
+
+                            if st.button("💾 Submit Telaah", key=f"{review_key}_submit", use_container_width=True):
+                                if "review_klaster" not in st.session_state:
+                                    st.session_state["review_klaster"] = {}
+                                st.session_state["review_klaster"][nama] = {
+                                    "sektor": sektor_pilih,
+                                    "tema": tema_pilih or "-",
+                                    "topik": topik_pilih or "-",
+                                    "dampak_implikasi_final": dampak_pilih,
+                                    "gap_pengawasan": gap_pilih,
+                                    "usulan_pengawasan": usulan_pilih,
+                                    "status_review": "Sudah Direview",
+                                }
+                                st.success(f"Telaah untuk klaster '{nama}' tersimpan. Klik 'Update Excel' di sidebar untuk menulis ke file.")
+                                st.rerun()
+
+                        st.markdown("<div style='display:flex;align-items:center;gap:10px;margin:14px 0 10px 4px'><span style='font-size:10px;font-weight:700;letter-spacing:.08em;opacity:0.45;text-transform:uppercase;white-space:nowrap'>↳ Artikel Anggota</span><div style='flex:1;height:1px;background:rgba(128,128,128,0.25)'></div></div>", unsafe_allow_html=True)
 
                         st.markdown("<div style='margin-left:14px;border-left:1px dashed rgba(128,128,128,0.25);padding-left:14px'>", unsafe_allow_html=True)
                         for i, row in sub_idx.iterrows():
