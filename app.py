@@ -81,6 +81,65 @@ with st.sidebar:
     )
     st.divider()
 
+# ── Excel builder (top-level — dipakai oleh halaman Crawl & Analisis
+# maupun halaman Dashboard AIS untuk regenerate Excel setelah telaah
+# manusia di Langkah Kerja 3) ────────────────────────────────────────────
+def buat_excel(data: list, label_isu: str) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Identifikasi Isu"
+
+    C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
+    TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
+    HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian","Kondisi/Pemicu Klaster","Relevansi Pengawasan",
+             "Sektor","Tema","Topik","Dampak/Implikasi (Final)","Gap Pengawasan","Usulan Pengawasan","Status Review"]
+    NCOL=len(HEADERS)
+    s=Side(style="thin",color="CCCCCC")
+    BD=Border(left=s,right=s,top=s,bottom=s)
+
+    def style(c,bg,bold=False,sz=9,center=False,fc=C_NAVY):
+        c.font=Font(name="Arial",size=sz,bold=bold,color=fc)
+        c.fill=PatternFill("solid",fgColor=bg)
+        c.alignment=Alignment(horizontal="center" if center else "left",vertical="top",wrap_text=True)
+        c.border=BD
+
+    ws.merge_cells(f"A1:{get_column_letter(NCOL)}1")
+    c=ws["A1"]; c.value="IDENTIFIKASI ISU HARIAN — ANALISIS ISU STRATEGIS PENGAWASAN"
+    style(c,C_NAVY,bold=True,sz=13,center=True,fc=C_WHITE); ws.row_dimensions[1].height=28
+
+    ws.merge_cells(f"A2:{get_column_letter(NCOL)}2")
+    c=ws["A2"]
+    c.value=f"Isu: {label_isu}  |  Generate: {datetime.now().strftime('%d %B %Y, %H:%M')}  |  Total: {len(data)} artikel  |  Pusat Strategi Kebijakan Pengawasan BPKP"
+    style(c,C_SUB,sz=9); ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=5
+
+    for col,h in enumerate(HEADERS,1):
+        c=ws.cell(row=4,column=col,value=h); style(c,C_NAVY,bold=True,sz=10,center=True,fc=C_WHITE)
+    ws.row_dimensions[4].height=34
+
+    for i,d in enumerate(data):
+        r=5+i; bg=C_ODD if i%2==0 else C_EVEN
+        baris=[i+1,d.get("klaster","-"),d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
+               d.get("ringkasan_isu","-"),d.get("isu_subisu","-"),d.get("aktor_lokasi","-"),
+               d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-"),
+               d.get("kondisi_pemicu","-"),d.get("relevansi_pengawasan","-"),
+               d.get("sektor","-"),d.get("tema","-"),d.get("topik","-"),
+               d.get("dampak_implikasi_final","-"),d.get("gap_pengawasan","-"),d.get("usulan_pengawasan","-"),
+               d.get("status_review","Belum Direview")]
+        for col,val in enumerate(baris,1):
+            c=ws.cell(row=r,column=col,value=val); style(c,bg)
+        tone_val=d.get("tone","Netral")
+        ws.cell(row=r,column=10).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
+        status_val=d.get("status_review","Belum Direview")
+        STATUS_C={"Sudah Direview":"C6EFCE","Belum Direview":"F2F2F2"}
+        ws.cell(row=r,column=NCOL).fill=PatternFill("solid",fgColor=STATUS_C.get(status_val,"F2F2F2"))
+        ws.row_dimensions[r].height=60
+
+    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16],1):
+        ws.column_dimensions[get_column_letter(col)].width=w
+
+    buf=io.BytesIO(); wb.save(buf); buf.seek(0)
+    return buf.read()
+
 # ══════════════════════════════════════════════════════════════════════════
 # HALAMAN 1 — CRAWL & ANALISIS
 # ══════════════════════════════════════════════════════════════════════════
@@ -488,55 +547,9 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             "_error": pesan,
         }
 
-    # ── Excel builder ──────────────────────────────────────────────────────
-    def buat_excel(data: list, label_isu: str) -> bytes:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Identifikasi Isu"
-
-        C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
-        TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
-        HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian","Kondisi/Pemicu Klaster","Relevansi Pengawasan"]
-        NCOL=len(HEADERS)
-        s=Side(style="thin",color="CCCCCC")
-        BD=Border(left=s,right=s,top=s,bottom=s)
-
-        def style(c,bg,bold=False,sz=9,center=False,fc=C_NAVY):
-            c.font=Font(name="Arial",size=sz,bold=bold,color=fc)
-            c.fill=PatternFill("solid",fgColor=bg)
-            c.alignment=Alignment(horizontal="center" if center else "left",vertical="top",wrap_text=True)
-            c.border=BD
-
-        ws.merge_cells(f"A1:{get_column_letter(NCOL)}1")
-        c=ws["A1"]; c.value="IDENTIFIKASI ISU HARIAN — ANALISIS ISU STRATEGIS PENGAWASAN"
-        style(c,C_NAVY,bold=True,sz=13,center=True,fc=C_WHITE); ws.row_dimensions[1].height=28
-
-        ws.merge_cells(f"A2:{get_column_letter(NCOL)}2")
-        c=ws["A2"]
-        c.value=f"Isu: {label_isu}  |  Generate: {datetime.now().strftime('%d %B %Y, %H:%M')}  |  Total: {len(data)} artikel  |  Pusat Strategi Kebijakan Pengawasan BPKP"
-        style(c,C_SUB,sz=9); ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=5
-
-        for col,h in enumerate(HEADERS,1):
-            c=ws.cell(row=4,column=col,value=h); style(c,C_NAVY,bold=True,sz=10,center=True,fc=C_WHITE)
-        ws.row_dimensions[4].height=34
-
-        for i,d in enumerate(data):
-            r=5+i; bg=C_ODD if i%2==0 else C_EVEN
-            baris=[i+1,d.get("klaster","-"),d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
-                   d.get("ringkasan_isu","-"),d.get("isu_subisu","-"),d.get("aktor_lokasi","-"),
-                   d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-"),
-                   d.get("kondisi_pemicu","-"),d.get("relevansi_pengawasan","-")]
-            for col,val in enumerate(baris,1):
-                c=ws.cell(row=r,column=col,value=val); style(c,bg)
-            tone_val=d.get("tone","Netral")
-            ws.cell(row=r,column=10).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
-            ws.row_dimensions[r].height=60
-
-        for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40],1):
-            ws.column_dimensions[get_column_letter(col)].width=w
-
-        buf=io.BytesIO(); wb.save(buf); buf.seek(0)
-        return buf.read()
+    # ── Excel builder didefinisikan di top-level (lihat atas file) agar
+    # bisa diakses dari halaman Dashboard AIS untuk regenerate Excel
+    # setelah telaah manusia — lihat fungsi buat_excel() di awal file.
 
     # ══════════════════════════════════════════════════════════════════════
     # SIDEBAR — konfigurasi provider & input
