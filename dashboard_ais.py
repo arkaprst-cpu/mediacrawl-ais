@@ -707,6 +707,10 @@ with tab2:
 
                 st.markdown(f"""
                 <div id="ais-sticky-detail" style='
+                    position:sticky;
+                    top:12px;
+                    max-height:calc(100vh - 100px);
+                    overflow-y:auto;
                     background:rgba(245,166,35,0.05);
                     border:1px solid rgba(245,166,35,0.35);
                     border-top:4px solid #F5A623;
