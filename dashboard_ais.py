@@ -707,16 +707,19 @@ with tab2:
 
                 st.markdown(f"""
                 <div id="ais-sticky-detail" style='
-                    position:sticky;
-                    top:12px;
-                    max-height:calc(100vh - 100px);
+                    position:fixed;
+                    top:90px;
+                    right:24px;
+                    width:min(38vw, 460px);
+                    max-height:calc(100vh - 120px);
                     overflow-y:auto;
-                    background:rgba(245,166,35,0.05);
+                    z-index:999;
+                    background:rgba(13,27,42,0.97);
                     border:1px solid rgba(245,166,35,0.35);
                     border-top:4px solid #F5A623;
                     border-radius:10px;
                     padding:20px;
-                    box-shadow:0 4px 24px rgba(0,0,0,0.18);
+                    box-shadow:0 8px 32px rgba(0,0,0,0.4);
                 '>
                   <div style='
                       display:flex;align-items:center;gap:6px;margin-bottom:14px;
