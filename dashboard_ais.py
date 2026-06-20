@@ -317,46 +317,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by DeepSeek</div>", unsafe_allow_html=True)
 
-    # ── UPDATE EXCEL (Langkah Kerja 3) ─────────────────────────────
-    # Hanya tersedia untuk data dari sesi crawl aktif — perlu hasil_list
-    # mentah untuk digabung dengan review_klaster, bukan dataframe yang
-    # sudah diproses dari upload manual.
-    if uploaded is None and st.session_state.get("ais_ready", False) and "hasil" in st.session_state:
-        review_klaster = st.session_state.get("review_klaster", {})
-        jml_direview = len(review_klaster)
-        st.markdown("---")
-        st.markdown("### 📥 Update Excel")
-        if jml_direview == 0:
-            st.caption("Belum ada klaster yang ditelaah. Isi form telaah di Tab Daftar Isu, lalu kembali ke sini.")
-        else:
-            st.caption(f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel.")
-        if st.button("📊 Generate Excel Terbaru", use_container_width=True):
-            hasil_terbaru = []
-            for h in st.session_state["hasil"]:
-                h2 = dict(h)
-                nama_klaster = h2.get("klaster", "-")
-                review = review_klaster.get(nama_klaster)
-                if review:
-                    h2["sektor"] = review.get("sektor", "-")
-                    h2["tema"] = review.get("tema", "-")
-                    h2["topik"] = review.get("topik", "-")
-                    h2["dampak_implikasi_final"] = review.get("dampak_implikasi_final", "-")
-                    h2["gap_pengawasan"] = review.get("gap_pengawasan", "-")
-                    h2["usulan_pengawasan"] = review.get("usulan_pengawasan", "-")
-                    h2["status_review"] = review.get("status_review", "Belum Direview")
-                hasil_terbaru.append(h2)
-
-            # buat_excel didefinisikan di app.py (scope yang sama karena
-            # dashboard_ais.py dieksekusi via exec() di dalam app.py)
-            excel_bytes = buat_excel(hasil_terbaru, st.session_state.get("label_isu", "Hasil Crawl"))
-            st.download_button(
-                "⬇️ Download Excel",
-                data=excel_bytes,
-                file_name=f"MediaCrawl_AIS_{st.session_state.get('label_isu','hasil').replace(' ','_')}_telaah.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
 # Prioritas sumber data:
@@ -430,6 +390,75 @@ else:
     sumber_data = "session"
 
 df, stats = compute_stats(df_raw)
+
+# ── UPDATE EXCEL (Langkah Kerja 3) ───────────────────────────
+# Ditempatkan DI SINI (bukan di blok sidebar atas) karena perlu df_raw
+# dan meta yang baru ter-resolve setelah upload/session_state diproses.
+# st.sidebar bisa dipanggil ulang di Streamlit — tombol ini tetap
+# tampil visual di sidebar meski posisi kodenya di bawah.
+with st.sidebar:
+    review_klaster = st.session_state.get("review_klaster", {})
+    jml_direview = len(review_klaster)
+    st.markdown("---")
+    st.markdown("### 📥 Update Excel")
+    if jml_direview == 0:
+        st.caption("Belum ada klaster yang ditelaah. Isi form telaah di Tab Daftar Isu, lalu kembali ke sini.")
+    else:
+        st.caption(f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel.")
+    if st.button("📊 Generate Excel Terbaru", use_container_width=True):
+        if uploaded is None:
+            # Sumber: sesi crawl aktif — hasil_list mentah sudah dalam
+            # format dict yang dipahami buat_excel.
+            sumber_baris = st.session_state["hasil"]
+            label_file = st.session_state.get("label_isu", "Hasil Crawl")
+        else:
+            # Sumber: upload Excel manual — konversi dataframe (df_raw,
+            # hasil load_from_excel) balik ke format dict per baris.
+            sumber_baris = [
+                {
+                    "klaster": r.get("Klaster", "-"),
+                    "tanggal": r.get("Tanggal", "-"),
+                    "sumber": r.get("Sumber", "-"),
+                    "link": r.get("Link", "-"),
+                    "judul": r.get("Judul", "-"),
+                    "ringkasan_isu": r.get("Ringkasan", "-"),
+                    "isu_subisu": r.get("IsuSubisu", "-"),
+                    "aktor_lokasi": r.get("AktorLokasi", "-"),
+                    "tone": r.get("Tone", "Netral"),
+                    "risiko": r.get("Risiko", "-"),
+                    "area_perhatian": r.get("TindakLanjut", "-"),
+                    "kondisi_pemicu": r.get("KondisiPemicu", "-"),
+                    "relevansi_pengawasan": r.get("RelevansiPengawasan", "-"),
+                }
+                for r in df_raw.to_dict("records")
+            ]
+            label_file = meta.get("isu", "Hasil Upload")
+
+        hasil_terbaru = []
+        for h in sumber_baris:
+            h2 = dict(h)
+            nama_klaster = h2.get("klaster", "-")
+            review = review_klaster.get(nama_klaster)
+            if review:
+                h2["sektor"] = review.get("sektor", "-")
+                h2["tema"] = review.get("tema", "-")
+                h2["topik"] = review.get("topik", "-")
+                h2["dampak_implikasi_final"] = review.get("dampak_implikasi_final", "-")
+                h2["gap_pengawasan"] = review.get("gap_pengawasan", "-")
+                h2["usulan_pengawasan"] = review.get("usulan_pengawasan", "-")
+                h2["status_review"] = review.get("status_review", "Belum Direview")
+            hasil_terbaru.append(h2)
+
+        # buat_excel didefinisikan di app.py (scope yang sama karena
+        # dashboard_ais.py dieksekusi via exec() di dalam app.py)
+        excel_bytes = buat_excel(hasil_terbaru, label_file)
+        st.download_button(
+            "⬇️ Download Excel",
+            data=excel_bytes,
+            file_name=f"MediaCrawl_AIS_{str(label_file).replace(' ','_')}_telaah.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
 
 # Info banner sumber data
 if sumber_data == "session":
