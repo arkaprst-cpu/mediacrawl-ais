@@ -300,19 +300,12 @@ with st.sidebar:
         "Pilih file Excel", type=["xlsx"],
         label_visibility="collapsed"
     )
-    
-    st.markdown("---")
-    st.markdown("### 🔍 Filter")
-    filter_tone = st.multiselect(
-        "Filter Tone",
-        options=["Negatif", "Netral", "Positif"],
-        default=["Negatif", "Netral", "Positif"]
-    )
-    filter_risiko = st.multiselect(
-        "Filter Level Risiko",
-        options=["Tinggi", "Sedang", "Rendah"],
-        default=["Tinggi", "Sedang", "Rendah"]
-    )
+
+    # Filter Tone & Level Risiko dihapus dari sidebar — jarang dipakai dan
+    # memakan banyak ruang vertikal. df_filtered tetap dipertahankan tanpa
+    # filter aktif (semua tone & level risiko ditampilkan).
+    filter_tone = ["Negatif", "Netral", "Positif"]
+    filter_risiko = ["Tinggi", "Sedang", "Rendah"]
 
     st.markdown("---")
     st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by DeepSeek</div>", unsafe_allow_html=True)
@@ -393,19 +386,32 @@ df, stats = compute_stats(df_raw)
 
 # ── UPDATE EXCEL (Langkah Kerja 3) ───────────────────────────
 # Ditempatkan DI SINI (bukan di blok sidebar atas) karena perlu df_raw
-# dan meta yang baru ter-resolve setelah upload/session_state diproses.
-# st.sidebar bisa dipanggil ulang di Streamlit — tombol ini tetap
-# tampil visual di sidebar meski posisi kodenya di bawah.
+# dan meta yang baru ter-resolve setelah upload/session_state diproses —
+# memindahkan posisi kode ini ke atas akan mengembalikan bug NameError
+# yang pernah terjadi. Sebagai gantinya, blok ini dibuat menonjol secara
+# visual (warna amber kontras) supaya tetap menarik perhatian meski
+# render-nya berada di bawah blok Upload Data.
 with st.sidebar:
     review_klaster = st.session_state.get("review_klaster", {})
     jml_direview = len(review_klaster)
-    st.markdown("---")
-    st.markdown("### 📥 Update Excel")
-    if jml_direview == 0:
-        st.caption("Belum ada klaster yang ditelaah. Isi form telaah di Tab Daftar Isu, lalu kembali ke sini.")
-    else:
-        st.caption(f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel.")
-    if st.button("📊 Generate Excel Terbaru", use_container_width=True):
+
+    st.markdown(f"""
+    <div style='
+        border:1px solid rgba(245,166,35,0.4);
+        border-left:4px solid #F5A623;
+        border-radius:8px;
+        background:rgba(245,166,35,0.08);
+        padding:12px 14px;
+        margin:14px 0 10px 0;
+    '>
+      <div style='font-size:13px;font-weight:700;color:#F5A623;margin-bottom:4px'>📥 Update Excel</div>
+      <div style='font-size:11px;opacity:0.75;line-height:1.4'>
+        {f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel." if jml_direview > 0 else "Belum ada klaster yang ditelaah. Isi form telaah di Tab Daftar Isu."}
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("📊 Generate Excel Terbaru", use_container_width=True, type="primary"):
         if uploaded is None:
             # Sumber: sesi crawl aktif — hasil_list mentah sudah dalam
             # format dict yang dipahami buat_excel.
