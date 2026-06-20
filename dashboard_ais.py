@@ -24,6 +24,28 @@ st.markdown("""
 
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
+  /* Panel kanan (Detail Analisis / Telaah Klaster) — fixed mengikuti
+     viewport, dipasang lewat st.container(key="panel_kanan") karena
+     widget Streamlit interaktif (selectbox, text_area, button) tidak
+     bisa dibungkus position:fixed lewat string HTML markdown biasa.
+     Class .st-key-panel_kanan ditempatkan oleh Streamlit di DALAM
+     wrapper-nya, jadi kita styling parent terdekatnya juga. */
+  .st-key-panel_kanan {
+    position: fixed !important;
+    top: 90px !important;
+    right: 24px !important;
+    width: min(38vw, 460px) !important;
+    max-height: calc(100vh - 120px) !important;
+    overflow-y: auto !important;
+    z-index: 999 !important;
+    background: rgba(13,27,42,0.97) !important;
+    border: 1px solid rgba(245,166,35,0.35) !important;
+    border-top: 4px solid #F5A623 !important;
+    border-radius: 10px !important;
+    padding: 16px 18px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+  }
+
   /* Topbar */
   .ais-topbar {
     background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
@@ -653,6 +675,8 @@ with tab2:
                     st.session_state['selected_idx'] = i
                     st.rerun()
 
+            narasi_klaster = {}  # selalu didefinisikan, diisi jika ada_klaster True
+
             if not ada_klaster:
                 # Fallback: tampilan datar (Excel lama tanpa kolom Klaster)
                 for i, (_, row) in enumerate(df_filtered.iterrows()):
@@ -731,58 +755,23 @@ with tab2:
                         </div>
                         """, unsafe_allow_html=True)
 
-                        # ── FORM INTERVENSI MANUSIA (Langkah Kerja 3) ──────
-                        # Analis BPKP menyempurnakan hasil AI: pilih Sektor/
-                        # Tema/Topik baku (APP 2026), lalu tulis ulang Dampak/
-                        # Implikasi (menggantikan Risiko AI), Gap Pengawasan,
-                        # dan Usulan Pengawasan. Tersimpan ke session_state,
-                        # baru tertulis ke Excel saat tombol "Update Excel"
-                        # di sidebar ditekan.
-                        review_key = f"review_{nama}"
+                        # ── TOMBOL BUKA TELAAH (Langkah Kerja 3) ───────────
+                        # Form telaah lengkap (dropdown Sektor/Tema/Topik +
+                        # text area) DIPINDAH ke panel kanan (col_detail) agar
+                        # tidak membuat kolom kiri sesak. Klik tombol ini
+                        # mengganti mode panel kanan jadi "telaah" untuk
+                        # klaster ini.
                         review_tersimpan = st.session_state.get("review_klaster", {}).get(nama, {})
                         sudah_direview = bool(review_tersimpan.get("status_review") == "Sudah Direview")
-
                         badge_review = "🟢 Sudah Direview" if sudah_direview else "⚪ Belum Direview"
-                        st.markdown(f"<div style='font-size:11px;font-weight:700;opacity:0.7;margin:4px 0 8px 4px'>{badge_review}</div>", unsafe_allow_html=True)
 
-                        with st.expander("✏️ Telaah Analis — Sektor/Tema/Topik & Penyempurnaan Analisis", expanded=False):
-                            sektor_list = list(STRUKTUR_APP.keys())
-                            sektor_default = review_tersimpan.get("sektor", sektor_list[0])
-                            sektor_idx = sektor_list.index(sektor_default) if sektor_default in sektor_list else 0
-                            sektor_pilih = st.selectbox("Sektor", sektor_list, index=sektor_idx, key=f"{review_key}_sektor")
-
-                            tema_list = list(STRUKTUR_APP.get(sektor_pilih, {}).keys())
-                            tema_default = review_tersimpan.get("tema", tema_list[0] if tema_list else None)
-                            tema_idx = tema_list.index(tema_default) if tema_default in tema_list else 0
-                            tema_pilih = st.selectbox("Tema", tema_list, index=tema_idx, key=f"{review_key}_tema") if tema_list else None
-
-                            topik_list = STRUKTUR_APP.get(sektor_pilih, {}).get(tema_pilih, []) if tema_pilih else []
-                            topik_default = review_tersimpan.get("topik", topik_list[0] if topik_list else None)
-                            topik_idx = topik_list.index(topik_default) if topik_default in topik_list else 0
-                            topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
-
-                            dampak_default = review_tersimpan.get("dampak_implikasi_final") or info_klaster.get("risiko", "")
-                            dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf AI di bawah)", value=dampak_default, key=f"{review_key}_dampak", height=100)
-
-                            gap_pilih = st.text_area("Gap Pengawasan", value=review_tersimpan.get("gap_pengawasan", ""), key=f"{review_key}_gap", height=80,
-                                                       placeholder="Apa yang belum tercakup dalam pengawasan eksisting BPKP terhadap isu ini?")
-
-                            usulan_pilih = st.text_area("Usulan Pengawasan", value=review_tersimpan.get("usulan_pengawasan", ""), key=f"{review_key}_usulan", height=80,
-                                                          placeholder="Usulan lingkup/metodologi pengawasan untuk mengakomodir isu ini")
-
-                            if st.button("💾 Submit Telaah", key=f"{review_key}_submit", use_container_width=True):
-                                if "review_klaster" not in st.session_state:
-                                    st.session_state["review_klaster"] = {}
-                                st.session_state["review_klaster"][nama] = {
-                                    "sektor": sektor_pilih,
-                                    "tema": tema_pilih or "-",
-                                    "topik": topik_pilih or "-",
-                                    "dampak_implikasi_final": dampak_pilih,
-                                    "gap_pengawasan": gap_pilih,
-                                    "usulan_pengawasan": usulan_pilih,
-                                    "status_review": "Sudah Direview",
-                                }
-                                st.success(f"Telaah untuk klaster '{nama}' tersimpan. Klik 'Update Excel' di sidebar untuk menulis ke file.")
+                        c_badge, c_btn = st.columns([2, 1.6])
+                        with c_badge:
+                            st.markdown(f"<div style='font-size:11px;font-weight:700;opacity:0.7;padding-top:8px'>{badge_review}</div>", unsafe_allow_html=True)
+                        with c_btn:
+                            if st.button("✏️ Telaah klaster ini →", key=f"buka_telaah_{nama}", use_container_width=True):
+                                st.session_state["panel_mode"] = "telaah"
+                                st.session_state["selected_klaster"] = nama
                                 st.rerun()
 
                         st.markdown("<div style='display:flex;align-items:center;gap:10px;margin:14px 0 10px 4px'><span style='font-size:10px;font-weight:700;letter-spacing:.08em;opacity:0.45;text-transform:uppercase;white-space:nowrap'>↳ Artikel Anggota</span><div style='flex:1;height:1px;background:rgba(128,128,128,0.25)'></div></div>", unsafe_allow_html=True)
@@ -793,60 +782,117 @@ with tab2:
                         st.markdown("</div>", unsafe_allow_html=True)
 
         with col_detail:
-            idx = st.session_state.get('selected_idx', 0)
-            if idx < len(df_filtered):
-                row = df_filtered.iloc[idx]
-                tone_class = str(row['Tone']).lower()
+            panel_mode = st.session_state.get("panel_mode", "detail")
 
-                st.markdown(f"""
-                <div id="ais-sticky-detail" style='
-                    position:fixed;
-                    top:90px;
-                    right:24px;
-                    width:min(38vw, 460px);
-                    max-height:calc(100vh - 120px);
-                    overflow-y:auto;
-                    z-index:999;
-                    background:rgba(13,27,42,0.97);
-                    border:1px solid rgba(245,166,35,0.35);
-                    border-top:4px solid #F5A623;
-                    border-radius:10px;
-                    padding:20px;
-                    box-shadow:0 8px 32px rgba(0,0,0,0.4);
-                '>
-                  <div style='
-                      display:flex;align-items:center;gap:6px;margin-bottom:14px;
-                      font-family:"JetBrains Mono",monospace;font-size:10px;
-                      letter-spacing:0.08em;color:#F5A623;font-weight:700;
-                      text-transform:uppercase;
-                  '>
-                    📋 Detail Analisis
-                  </div>
+            with st.container(key="panel_kanan"):
+                if panel_mode == "telaah" and st.session_state.get("selected_klaster"):
+                    nama_aktif = st.session_state["selected_klaster"]
+                    review_key = f"review_{nama_aktif}"
+                    review_tersimpan = st.session_state.get("review_klaster", {}).get(nama_aktif, {})
 
-                  <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
-                    <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{row['Judul']}</div>
-                    <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
-                  </div>
+                    # Ambil draft risiko AI untuk klaster ini sebagai starting
+                    # point Dampak/Implikasi, dari narasi_klaster jika tersedia
+                    risiko_draft = narasi_klaster.get(nama_aktif, {}).get("risiko", "")
+                    if not risiko_draft:
+                        sub_match = df_filtered[df_filtered['Klaster'] == nama_aktif]
+                        risiko_vals = sub_match['Risiko'].dropna() if 'Risiko' in sub_match.columns else pd.Series([])
+                        risiko_draft = risiko_vals.iloc[0] if len(risiko_vals) else ""
 
-                  <div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px'>
-                    <span class="badge badge-aktor">{row['IsuSubisu']}</span>
-                    <span class="badge badge-aktor">{row['AktorLokasi']}</span>
-                  </div>
+                    st.markdown(f"""
+                    <div style='display:flex;align-items:center;gap:6px;margin-bottom:10px;
+                        font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:0.08em;
+                        color:#F5A623;font-weight:700;text-transform:uppercase;'>
+                      ✏️ TELAAH KLASTER
+                    </div>
+                    <div style='font-size:14px;font-weight:700;margin-bottom:12px;line-height:1.4'>{nama_aktif}</div>
+                    """, unsafe_allow_html=True)
 
-                  <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
+                    if st.button("← Tutup telaah, lihat detail artikel", key="tutup_telaah", use_container_width=True):
+                        st.session_state["panel_mode"] = "detail"
+                        st.rerun()
 
-                  <div class="detail-section">
-                    <div class="detail-label">Ringkasan Isu</div>
-                    <div class="detail-text">{row['Ringkasan']}</div>
-                  </div>
+                    st.markdown("<hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>", unsafe_allow_html=True)
 
-                  <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
-                  <div style='font-size:10px;color:inherit;opacity:0.5'>
-                    📅 {row['Tanggal']} &nbsp;·&nbsp;
-                    🔗 <a href="{row['Link']}" target="_blank" style='color:#3B82F6'>Buka artikel asli</a>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
+                    sektor_list = list(STRUKTUR_APP.keys())
+                    sektor_default = review_tersimpan.get("sektor", sektor_list[0])
+                    sektor_idx = sektor_list.index(sektor_default) if sektor_default in sektor_list else 0
+                    sektor_pilih = st.selectbox("Sektor", sektor_list, index=sektor_idx, key=f"{review_key}_sektor")
+
+                    tema_list = list(STRUKTUR_APP.get(sektor_pilih, {}).keys())
+                    tema_default = review_tersimpan.get("tema", tema_list[0] if tema_list else None)
+                    tema_idx = tema_list.index(tema_default) if tema_default in tema_list else 0
+                    tema_pilih = st.selectbox("Tema", tema_list, index=tema_idx, key=f"{review_key}_tema") if tema_list else None
+
+                    topik_list = STRUKTUR_APP.get(sektor_pilih, {}).get(tema_pilih, []) if tema_pilih else []
+                    topik_default = review_tersimpan.get("topik", topik_list[0] if topik_list else None)
+                    topik_idx = topik_list.index(topik_default) if topik_default in topik_list else 0
+                    topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
+
+                    dampak_default = review_tersimpan.get("dampak_implikasi_final") or risiko_draft
+                    dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf AI)", value=dampak_default, key=f"{review_key}_dampak", height=110)
+
+                    gap_pilih = st.text_area("Gap Pengawasan", value=review_tersimpan.get("gap_pengawasan", ""), key=f"{review_key}_gap", height=90,
+                                               placeholder="Apa yang belum tercakup dalam pengawasan eksisting BPKP terhadap isu ini?")
+
+                    usulan_pilih = st.text_area("Usulan Pengawasan", value=review_tersimpan.get("usulan_pengawasan", ""), key=f"{review_key}_usulan", height=90,
+                                                  placeholder="Usulan lingkup/metodologi pengawasan untuk mengakomodir isu ini")
+
+                    if st.button("💾 Submit Telaah", key=f"{review_key}_submit", use_container_width=True, type="primary"):
+                        if "review_klaster" not in st.session_state:
+                            st.session_state["review_klaster"] = {}
+                        st.session_state["review_klaster"][nama_aktif] = {
+                            "sektor": sektor_pilih,
+                            "tema": tema_pilih or "-",
+                            "topik": topik_pilih or "-",
+                            "dampak_implikasi_final": dampak_pilih,
+                            "gap_pengawasan": gap_pilih,
+                            "usulan_pengawasan": usulan_pilih,
+                            "status_review": "Sudah Direview",
+                        }
+                        st.success(f"Telaah tersimpan. Klik 'Update Excel' di sidebar untuk menulis ke file.")
+                        st.rerun()
+
+                else:
+                    idx = st.session_state.get('selected_idx', 0)
+                    if idx < len(df_filtered):
+                        row = df_filtered.iloc[idx]
+                        tone_class = str(row['Tone']).lower()
+
+                        st.markdown(f"""
+                        <div style='
+                            display:flex;align-items:center;gap:6px;margin-bottom:14px;
+                            font-family:"JetBrains Mono",monospace;font-size:10px;
+                            letter-spacing:0.08em;color:#F5A623;font-weight:700;
+                            text-transform:uppercase;
+                        '>
+                          📋 Detail Analisis
+                        </div>
+
+                        <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
+                          <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{row['Judul']}</div>
+                          <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
+                        </div>
+
+                        <div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px'>
+                          <span class="badge badge-aktor">{row['IsuSubisu']}</span>
+                          <span class="badge badge-aktor">{row['AktorLokasi']}</span>
+                        </div>
+
+                        <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
+
+                        <div class="detail-section">
+                          <div class="detail-label">Ringkasan Isu</div>
+                          <div class="detail-text">{row['Ringkasan']}</div>
+                        </div>
+
+                        <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
+                        <div style='font-size:10px;color:inherit;opacity:0.5'>
+                          📅 {row['Tanggal']} &nbsp;·&nbsp;
+                          🔗 <a href="{row['Link']}" target="_blank" style='color:#3B82F6'>Buka artikel asli</a>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.info("Pilih artikel di kiri untuk melihat detail.")
 
 
 # ════════════════════════════════════════════
