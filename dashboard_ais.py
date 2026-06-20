@@ -34,7 +34,7 @@ st.markdown("""
     position: fixed !important;
     top: 90px !important;
     right: 24px !important;
-    width: min(38vw, 460px) !important;
+    width: min(42vw, 520px) !important;
     max-height: calc(100vh - 120px) !important;
     overflow-y: auto !important;
     z-index: 999 !important;
@@ -816,17 +816,22 @@ with tab2:
                     sektor_list = list(STRUKTUR_APP.keys())
                     sektor_default = review_tersimpan.get("sektor", sektor_list[0])
                     sektor_idx = sektor_list.index(sektor_default) if sektor_default in sektor_list else 0
-                    sektor_pilih = st.selectbox("Sektor", sektor_list, index=sektor_idx, key=f"{review_key}_sektor")
+
+                    col_sektor, col_tema, col_topik = st.columns(3)
+                    with col_sektor:
+                        sektor_pilih = st.selectbox("Sektor", sektor_list, index=sektor_idx, key=f"{review_key}_sektor")
 
                     tema_list = list(STRUKTUR_APP.get(sektor_pilih, {}).keys())
                     tema_default = review_tersimpan.get("tema", tema_list[0] if tema_list else None)
                     tema_idx = tema_list.index(tema_default) if tema_default in tema_list else 0
-                    tema_pilih = st.selectbox("Tema", tema_list, index=tema_idx, key=f"{review_key}_tema") if tema_list else None
+                    with col_tema:
+                        tema_pilih = st.selectbox("Tema", tema_list, index=tema_idx, key=f"{review_key}_tema") if tema_list else None
 
                     topik_list = STRUKTUR_APP.get(sektor_pilih, {}).get(tema_pilih, []) if tema_pilih else []
                     topik_default = review_tersimpan.get("topik", topik_list[0] if topik_list else None)
                     topik_idx = topik_list.index(topik_default) if topik_default in topik_list else 0
-                    topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
+                    with col_topik:
+                        topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
 
                     dampak_default = review_tersimpan.get("dampak_implikasi_final") or risiko_draft
                     dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf AI)", value=dampak_default, key=f"{review_key}_dampak", height=110)
