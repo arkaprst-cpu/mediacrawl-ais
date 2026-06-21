@@ -24,12 +24,26 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── DETEKSI AKSES PUBLIK KE REPOSITORI ISU ──────────────────────────────
+# Repositori Isu sengaja dibuat TERBUKA untuk publik (transparansi),
+# berbeda dari halaman Crawl & Analisis serta Dashboard AIS yang tetap
+# di balik gerbang password tim. Akses publik lewat URL dengan query
+# parameter ?page=repositori — ini dideteksi SEBELUM gerbang password,
+# supaya pengunjung publik tidak pernah diminta login sama sekali.
+akses_publik_repositori = st.query_params.get("page") == "repositori"
+
+if akses_publik_repositori:
+    exec(open('repositori_isu.py').read())
+    st.stop()
+
 # ── GERBANG PASSWORD ─────────────────────────────────────────────────────
 # Password tunggal dibagikan ke tim — bukan akun per-orang. Tujuannya
 # mencegah orang di luar tim (yang mungkin menemukan URL publik Streamlit
 # Cloud) ikut memakai kuota API DeepSeek. Dicek SEBELUM apa pun lain
 # dirender (termasuk sidebar & dashboard, karena dashboard_ais.py dipanggil
 # lewat exec() di dalam app.py — jadi satu gate ini melindungi keduanya).
+# TIDAK berlaku untuk Repositori Isu (lihat blok akses_publik_repositori
+# di atas — itu sengaja terbuka untuk publik).
 def cek_password():
     if st.session_state.get("ais_authenticated", False):
         return True
@@ -57,6 +71,8 @@ def cek_password():
                 st.rerun()
             else:
                 st.error("Password salah.")
+
+        st.markdown("<div style='text-align:center;margin-top:16px;font-size:11px;opacity:0.5'>Mencari isu hasil pengawasan? <a href='?page=repositori' style='color:#F5A623'>Buka Repositori Isu publik →</a></div>", unsafe_allow_html=True)
 
     return False
 
