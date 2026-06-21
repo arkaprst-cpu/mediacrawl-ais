@@ -5,3 +5,5 @@ openpyxl
 pygooglenews
 pillow>=11.0.0
 pandas>=2.0.0
+google-api-python-client
+google-auth
