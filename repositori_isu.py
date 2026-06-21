@@ -195,7 +195,7 @@ with st.spinner("Memuat repositori dari Google Drive..."):
         st.stop()
 
     if not files:
-        st.info("📭 Folder repositori masih kosong. Upload file Excel hasil telaah matang ke folder Google Drive yang sudah ditentukan.")
+        st.info("📭 Folder repositori masih kosong. Upload file Excel hasil telaah yang sudah direview ke folder Google Drive yang sudah ditentukan.")
         st.stop()
 
     semua_klaster = []
@@ -215,7 +215,7 @@ with st.spinner("Memuat repositori dari Google Drive..."):
     df_repo = pd.concat(semua_klaster, ignore_index=True)
     df_repo = df_repo.drop_duplicates(subset=["Klaster Isu", "Sektor", "Tema", "Topik"])
 
-st.caption(f"📚 {len(df_repo)} isu matang dari {len(files)} file di repositori · cache 5 menit")
+st.caption(f"📚 {len(df_repo)} isu dari {len(files)} file di repositori · cache 5 menit")
 
 # ── FILTER: TANGGAL UPLOAD + NAVIGASI SEKTOR/TEMA/TOPIK (1 BARIS) ───────
 # Tanggal upload Excel di Google Drive (modifiedTime) digabung sebaris
@@ -225,19 +225,22 @@ st.caption(f"📚 {len(df_repo)} isu matang dari {len(files)} file di repositori
 tgl_min = df_repo["_tanggal_upload"].min()
 tgl_max = df_repo["_tanggal_upload"].max()
 
+# Proporsi label HARUS sama persis dengan proporsi st.columns di bawah
+# (1.4 : 1+1+1, dengan sedikit gap) supaya label "Periode" & "Kategori Isu"
+# sejajar tepat dengan widget masing-masing, bukan sekadar perkiraan %.
 st.markdown("""
-<div style='display:flex;gap:24px;margin-bottom:2px'>
-  <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;flex:0 0 18%'>📅 Periode</div>
-  <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;flex:1;border-left:1px solid rgba(245,166,35,0.25);padding-left:24px'>🗂️ Kategori Isu</div>
+<div style='display:flex;margin-bottom:4px'>
+  <div style='flex:1.4;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55'>📅 Periode</div>
+  <div style='flex:0 0 48px'></div>
+  <div style='flex:3;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;border-left:1px solid rgba(245,166,35,0.3);padding-left:20px'>🗂️ Kategori Isu</div>
 </div>
 """, unsafe_allow_html=True)
 
-col_tgl, col_div, col_f1, col_f2, col_f3 = st.columns([1.4, 0.05, 1, 1, 1])
+col_tgl, col_div, col_f1, col_f2, col_f3 = st.columns([1.4, 0.3, 1, 1, 1])
 
 with col_tgl:
     rentang_tanggal = st.date_input(
         "Tanggal Upload", value=(tgl_min, tgl_max),
-        min_value=tgl_min, max_value=tgl_max,
         label_visibility="collapsed",
     )
 
