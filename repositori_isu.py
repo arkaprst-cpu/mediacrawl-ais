@@ -81,7 +81,7 @@ st.markdown("""
 
 st.markdown("""
 <div class="main-header">
-  <h1>🗄️ Repositori Isu </h1>
+  <h1>🗄️ Repositori Isu Matang</h1>
   <p>Navigasi Sektor · Tema · Topik — Pusat Strategi Kebijakan Pengawasan BPKP</p>
 </div>
 """, unsafe_allow_html=True)
@@ -144,10 +144,12 @@ def download_excel_bytes(file_id: str) -> bytes:
     return buf.read()
 
 
-def parse_excel_klaster(file_bytes: bytes, nama_file: str) -> pd.DataFrame:
+def parse_excel_klaster(file_bytes: bytes, nama_file: str, modified_time: str) -> pd.DataFrame:
     """Parse satu file Excel telaah, kembalikan baris unik per klaster
     yang statusnya Sudah Direview (1 baris representatif per klaster,
-    bukan per artikel — karena field telaah identik di semua anggota)."""
+    bukan per artikel — karena field telaah identik di semua anggota).
+    modified_time adalah tanggal upload/modifikasi file di Google Drive
+    (ISO 8601 dari API), dipakai untuk filter kalender di repositori."""
     try:
         df = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, header=3)
     except Exception:
@@ -164,11 +166,12 @@ def parse_excel_klaster(file_bytes: bytes, nama_file: str) -> pd.DataFrame:
     # Satu baris representatif per klaster (ambil baris pertama tiap grup)
     ringkas = df.groupby("Klaster Isu", as_index=False).first()
     ringkas["_sumber_file"] = nama_file
+    ringkas["_tanggal_upload"] = pd.to_datetime(modified_time).date()
     return ringkas[[
         "Klaster Isu", "Sektor", "Tema", "Topik",
         "Kondisi/Pemicu Klaster", "Risiko", "Area Perhatian",
         "Dampak/Implikasi (Final)", "Gap Pengawasan", "Usulan Pengawasan",
-        "Relevansi Pengawasan", "_sumber_file",
+        "Relevansi Pengawasan", "_sumber_file", "_tanggal_upload",
     ]]
 
 
@@ -200,7 +203,7 @@ with st.spinner("Memuat repositori dari Google Drive..."):
     for f in files:
         try:
             file_bytes = download_excel_bytes(f["id"])
-            ringkas = parse_excel_klaster(file_bytes, f["name"])
+            ringkas = parse_excel_klaster(file_bytes, f["name"], f.get("modifiedTime", ""))
             if len(ringkas):
                 semua_klaster.append(ringkas)
         except Exception:
@@ -214,6 +217,34 @@ with st.spinner("Memuat repositori dari Google Drive..."):
     df_repo = df_repo.drop_duplicates(subset=["Klaster Isu", "Sektor", "Tema", "Topik"])
 
 st.caption(f"📚 {len(df_repo)} isu matang dari {len(files)} file di repositori · cache 5 menit")
+
+# ── FILTER TANGGAL UPLOAD ─────────────────────────────────────────────────
+# Berdasarkan tanggal upload/modifikasi file Excel di Google Drive
+# (modifiedTime), bukan tanggal crawl artikel — karena itu yang tersedia
+# konsisten dari metadata Drive tanpa perlu parsing tambahan.
+tgl_min = df_repo["_tanggal_upload"].min()
+tgl_max = df_repo["_tanggal_upload"].max()
+
+rentang_tanggal = st.date_input(
+    "📅 Filter Tanggal Upload Excel",
+    value=(tgl_min, tgl_max),
+    min_value=tgl_min,
+    max_value=tgl_max,
+)
+
+# st.date_input dengan tuple bisa mengembalikan 1 tanggal saja sesaat
+# (saat pengguna baru memilih tanggal awal, sebelum tanggal akhir dipilih)
+# — perlu pengaman supaya tidak error saat itu terjadi.
+if isinstance(rentang_tanggal, tuple) and len(rentang_tanggal) == 2:
+    tgl_awal, tgl_akhir = rentang_tanggal
+    df_repo = df_repo[
+        (df_repo["_tanggal_upload"] >= tgl_awal) &
+        (df_repo["_tanggal_upload"] <= tgl_akhir)
+    ]
+else:
+    st.info("Pilih tanggal akhir untuk menerapkan filter rentang.")
+
+st.divider()
 
 # ── NAVIGASI SEKTOR → TEMA → TOPIK ───────────────────────────────────────
 col_f1, col_f2, col_f3 = st.columns(3)
@@ -274,4 +305,4 @@ for _, row in df_final.iterrows():
         </div>
         """, unsafe_allow_html=True)
 
-        st.caption(f"Sumber file: {row.get('_sumber_file', '-')}")
+        st.caption(f"Sumber file: {row.get('_sumber_file', '-')} · Diupload: {row.get('_tanggal_upload', '-')}")
