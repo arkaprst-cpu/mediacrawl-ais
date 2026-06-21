@@ -76,7 +76,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigasi",
-        options=["🔍 Crawl & Analisis", "📊 Dashboard AIS"],
+        options=["🔍 Crawl & Analisis", "📊 Dashboard AIS", "🗄️ Repositori Isu"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -761,3 +761,9 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 # ══════════════════════════════════════════════════════════════════════════
 elif page == "📊 Dashboard AIS":
     exec(open('dashboard_ais.py').read())
+
+# ══════════════════════════════════════════════════════════════════════════
+# HALAMAN 3 — REPOSITORI ISU
+# ══════════════════════════════════════════════════════════════════════════
+elif page == "🗄️ Repositori Isu":
+    exec(open('repositori_isu.py').read())
