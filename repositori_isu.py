@@ -79,13 +79,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek V4 Flash</span>'
-st.markdown(f"""
+st.markdown("""
 <div class="main-header">
   <h1>🗄️ Repositori Isu </h1>
   <p>Navigasi Sektor · Tema · Topik — Pusat Strategi Kebijakan Pengawasan BPKP</p>
 </div>
 """, unsafe_allow_html=True)
+st.caption("📖 Halaman ini terbuka untuk publik sebagai bagian dari transparansi hasil pengawasan.")
 
 
 # ── KONEKSI GOOGLE DRIVE ────────────────────────────────────────────────
