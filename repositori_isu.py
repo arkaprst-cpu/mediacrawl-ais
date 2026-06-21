@@ -82,7 +82,7 @@ st.markdown("""
 provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek V4 Flash</span>'
 st.markdown(f"""
 <div class="main-header">
-  <h1>🗄️ Repositori Isu Matang {provider_badge}</h1>
+  <h1>🗄️ Repositori Isu </h1>
   <p>Navigasi Sektor · Tema · Topik — Pusat Strategi Kebijakan Pengawasan BPKP</p>
 </div>
 """, unsafe_allow_html=True)
