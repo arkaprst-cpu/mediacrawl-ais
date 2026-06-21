@@ -72,7 +72,7 @@ def cek_password():
             else:
                 st.error("Password salah.")
 
-        st.markdown("<div style='text-align:center;margin-top:16px;font-size:11px;opacity:0.5'>Mencari isu hasil pengawasan? <a href='?page=repositori' style='color:#F5A623'>Buka Repositori Isu publik →</a></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center;margin-top:16px;font-size:11px;opacity:0.5'>Mencari hasil analisis isu? <a href='?page=repositori' style='color:#F5A623'>Buka Repositori Isu publik →</a></div>", unsafe_allow_html=True)
 
     return False
 
