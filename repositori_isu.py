@@ -9,6 +9,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import html as html_lib
 
 st.markdown("""
 <style>
@@ -33,6 +34,48 @@ st.markdown("""
     color: #F5A623;
     margin-right: 6px;
   }
+
+  /* Kartu sub-analisis — tiap bagian punya warna semantik berbeda */
+  .sub-card {
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+  }
+  .sub-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+  }
+  .sub-text {
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .sub-card.kondisi {
+    border-left: 4px solid #94A3B8;
+    background: rgba(148,163,184,0.08);
+  }
+  .sub-card.kondisi .sub-label { color: #94A3B8; }
+
+  .sub-card.dampak {
+    border-left: 4px solid #EF4444;
+    background: rgba(239,68,68,0.08);
+  }
+  .sub-card.dampak .sub-label { color: #EF4444; }
+
+  .sub-card.gap {
+    border-left: 4px solid #F5A623;
+    background: rgba(245,166,35,0.08);
+  }
+  .sub-card.gap .sub-label { color: #F5A623; }
+
+  .sub-card.usulan {
+    border-left: 4px solid #22C55E;
+    background: rgba(34,197,94,0.08);
+  }
+  .sub-card.usulan .sub-label { color: #22C55E; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -207,16 +250,28 @@ for _, row in df_final.iterrows():
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("**Kondisi / Pemicu**")
-        st.write(row.get("Kondisi/Pemicu Klaster", "-"))
+        kondisi_safe = html_lib.escape(str(row.get("Kondisi/Pemicu Klaster", "-")))
+        dampak_safe = html_lib.escape(str(row.get("Dampak/Implikasi (Final)", "-")))
+        gap_safe = html_lib.escape(str(row.get("Gap Pengawasan", "-")))
+        usulan_safe = html_lib.escape(str(row.get("Usulan Pengawasan", "-")))
 
-        st.markdown("**Dampak / Implikasi (Final)**")
-        st.write(row.get("Dampak/Implikasi (Final)", "-"))
-
-        st.markdown("**Gap Pengawasan**")
-        st.write(row.get("Gap Pengawasan", "-"))
-
-        st.markdown("**Usulan Pengawasan**")
-        st.write(row.get("Usulan Pengawasan", "-"))
+        st.markdown(f"""
+        <div class="sub-card kondisi">
+          <div class="sub-label">📋 Kondisi / Pemicu</div>
+          <div class="sub-text">{kondisi_safe}</div>
+        </div>
+        <div class="sub-card dampak">
+          <div class="sub-label">⚠️ Dampak / Implikasi (Final)</div>
+          <div class="sub-text">{dampak_safe}</div>
+        </div>
+        <div class="sub-card gap">
+          <div class="sub-label">🔍 Gap Pengawasan</div>
+          <div class="sub-text">{gap_safe}</div>
+        </div>
+        <div class="sub-card usulan">
+          <div class="sub-label">✅ Usulan Pengawasan</div>
+          <div class="sub-text">{usulan_safe}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
         st.caption(f"Sumber file: {row.get('_sumber_file', '-')}")
