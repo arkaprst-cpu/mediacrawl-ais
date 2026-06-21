@@ -81,11 +81,10 @@ st.markdown("""
 
 st.markdown("""
 <div class="main-header">
-  <h1>🗄️ Repositori Isu Matang</h1>
+  <h1>🗄️ Repositori Hasil Analisis</h1>
   <p>Navigasi Sektor · Tema · Topik — Pusat Strategi Kebijakan Pengawasan BPKP</p>
 </div>
 """, unsafe_allow_html=True)
-st.caption("📖 Halaman ini terbuka untuk publik sebagai bagian dari transparansi hasil pengawasan.")
 
 
 # ── KONEKSI GOOGLE DRIVE ────────────────────────────────────────────────
@@ -218,19 +217,33 @@ with st.spinner("Memuat repositori dari Google Drive..."):
 
 st.caption(f"📚 {len(df_repo)} isu matang dari {len(files)} file di repositori · cache 5 menit")
 
-# ── FILTER TANGGAL UPLOAD ─────────────────────────────────────────────────
-# Berdasarkan tanggal upload/modifikasi file Excel di Google Drive
-# (modifiedTime), bukan tanggal crawl artikel — karena itu yang tersedia
-# konsisten dari metadata Drive tanpa perlu parsing tambahan.
+# ── FILTER: TANGGAL UPLOAD + NAVIGASI SEKTOR/TEMA/TOPIK (1 BARIS) ───────
+# Tanggal upload Excel di Google Drive (modifiedTime) digabung sebaris
+# dengan navigasi Sektor/Tema/Topik untuk hemat ruang vertikal. Tanda
+# pembeda visual: filter tanggal diberi proporsi lebih kecil dan label
+# kelompok terpisah ("Periode" vs "Kategori Isu").
 tgl_min = df_repo["_tanggal_upload"].min()
 tgl_max = df_repo["_tanggal_upload"].max()
 
-rentang_tanggal = st.date_input(
-    "📅 Filter Tanggal Upload Excel",
-    value=(tgl_min, tgl_max),
-    min_value=tgl_min,
-    max_value=tgl_max,
-)
+st.markdown("""
+<div style='display:flex;gap:24px;margin-bottom:2px'>
+  <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;flex:0 0 18%'>📅 Periode</div>
+  <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;flex:1;border-left:1px solid rgba(245,166,35,0.25);padding-left:24px'>🗂️ Kategori Isu</div>
+</div>
+""", unsafe_allow_html=True)
+
+col_tgl, col_div, col_f1, col_f2, col_f3 = st.columns([1.4, 0.05, 1, 1, 1])
+
+with col_tgl:
+    rentang_tanggal = st.date_input(
+        "Tanggal Upload", value=(tgl_min, tgl_max),
+        min_value=tgl_min, max_value=tgl_max,
+        label_visibility="collapsed",
+    )
+
+with col_f1:
+    sektor_opsi = ["Semua Sektor"] + sorted(df_repo["Sektor"].dropna().unique().tolist())
+    sektor_pilih = st.selectbox("Sektor", sektor_opsi, label_visibility="collapsed")
 
 # st.date_input dengan tuple bisa mengembalikan 1 tanggal saja sesaat
 # (saat pengguna baru memilih tanggal awal, sebelum tanggal akhir dipilih)
@@ -244,26 +257,17 @@ if isinstance(rentang_tanggal, tuple) and len(rentang_tanggal) == 2:
 else:
     st.info("Pilih tanggal akhir untuk menerapkan filter rentang.")
 
-st.divider()
-
-# ── NAVIGASI SEKTOR → TEMA → TOPIK ───────────────────────────────────────
-col_f1, col_f2, col_f3 = st.columns(3)
-
-with col_f1:
-    sektor_opsi = ["Semua Sektor"] + sorted(df_repo["Sektor"].dropna().unique().tolist())
-    sektor_pilih = st.selectbox("Sektor", sektor_opsi)
-
 df_tahap1 = df_repo if sektor_pilih == "Semua Sektor" else df_repo[df_repo["Sektor"] == sektor_pilih]
 
 with col_f2:
     tema_opsi = ["Semua Tema"] + sorted(df_tahap1["Tema"].dropna().unique().tolist())
-    tema_pilih = st.selectbox("Tema", tema_opsi)
+    tema_pilih = st.selectbox("Tema", tema_opsi, label_visibility="collapsed")
 
 df_tahap2 = df_tahap1 if tema_pilih == "Semua Tema" else df_tahap1[df_tahap1["Tema"] == tema_pilih]
 
 with col_f3:
     topik_opsi = ["Semua Topik"] + sorted(df_tahap2["Topik"].dropna().unique().tolist())
-    topik_pilih = st.selectbox("Topik", topik_opsi)
+    topik_pilih = st.selectbox("Topik", topik_opsi, label_visibility="collapsed")
 
 df_final = df_tahap2 if topik_pilih == "Semua Topik" else df_tahap2[df_tahap2["Topik"] == topik_pilih]
 
