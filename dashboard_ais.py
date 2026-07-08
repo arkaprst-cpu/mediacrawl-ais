@@ -182,13 +182,29 @@ def load_from_excel(uploaded_file):
     df = pd.read_excel(uploaded_file, sheet_name=0, header=3)
     n_kolom = df.shape[1]
 
-    if n_kolom >= 14:
+    kolom_telaah = ['Sektor','Tema','Topik','DampakImplikasiFinal','GapPengawasan','UsulanPengawasan','StatusReview']
+
+    if n_kolom >= 21:
+        # Format lengkap hasil telaah (21 kolom) — kolom 15-21 berisi hasil
+        # Human Review (Sektor..Status Review). Wajib dipertahankan supaya
+        # status "Sudah Direview" tidak hilang saat file ini di-upload lagi
+        # untuk melanjutkan kerja telaah.
+        df_telaah = df.iloc[:, 14:21].copy()
+        df_telaah.columns = kolom_telaah
         df = df.iloc[:, :14]
         df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
+        df = pd.concat([df, df_telaah], axis=1)
+    elif n_kolom >= 14:
+        df = df.iloc[:, :14]
+        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
+        for k in kolom_telaah:
+            df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
     else:
         df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
         df['KondisiPemicu'] = '-'
         df['RelevansiPengawasan'] = '-'
+        for k in kolom_telaah:
+            df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
 
     df = df.dropna(subset=['Judul'])
     df = df[df['No'] != 'No']
@@ -352,6 +368,31 @@ if uploaded is not None:
     df_raw, meta = load_from_excel(uploaded)
     sumber_data = "upload"
     klaster_meta = []  # narasi klaster lengkap tidak tersedia dari Excel, hanya nama per baris
+
+    # ── HIDRASI review_klaster DARI FILE YANG DI-UPLOAD ──────────
+    # Kalau file ini sudah pernah ditelaah sebelumnya (punya kolom Status
+    # Review terisi "Sudah Direview"), badge & data telaah harus terbaca
+    # ulang ke session_state — supaya melanjutkan kerja dari file lama
+    # tidak balik ke "Belum Direview" walau datanya di file sudah benar.
+    # Di-guard dengan file_id supaya hidrasi cuma jalan sekali per file
+    # (bukan tiap rerun), agar tidak menimpa telaah baru yang baru saja
+    # disubmit di sesi berjalan ini.
+    file_id = getattr(uploaded, "file_id", None) or f"{uploaded.name}_{uploaded.size}"
+    if st.session_state.get("_review_hydrated_from") != file_id and "StatusReview" in df_raw.columns:
+        st.session_state.setdefault("review_klaster", {})
+        sudah_direview_df = df_raw[df_raw["StatusReview"] == "Sudah Direview"]
+        for nama_klaster, grup in sudah_direview_df.groupby("Klaster"):
+            baris = grup.iloc[0]
+            st.session_state["review_klaster"].setdefault(nama_klaster, {
+                "sektor": baris.get("Sektor", "-"),
+                "tema": baris.get("Tema", "-"),
+                "topik": baris.get("Topik", "-"),
+                "dampak_implikasi_final": baris.get("DampakImplikasiFinal", "-"),
+                "gap_pengawasan": baris.get("GapPengawasan", "-"),
+                "usulan_pengawasan": baris.get("UsulanPengawasan", "-"),
+                "status_review": "Sudah Direview",
+            })
+        st.session_state["_review_hydrated_from"] = file_id
 
 else:
     # Ambil dari hasil crawl halaman 1
