@@ -452,12 +452,6 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    st.link_button(
-        "📁 Repositori Telaah (Drive)",
-        "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
-        use_container_width=True,
-    )
-
     if st.button("📊 Generate Excel Terbaru", use_container_width=True, type="primary"):
         if uploaded is None:
             # Sumber: sesi crawl aktif — hasil_list mentah sudah dalam
@@ -512,6 +506,13 @@ with st.sidebar:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
+
+    st.markdown("<div style='font-size:10px;opacity:0.55;margin:10px 0 4px 2px'>Unggah hasil telaah Anda di sini ⬇️</div>", unsafe_allow_html=True)
+    st.link_button(
+        "📁 Drive Hasil Telaah",
+        "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
+        use_container_width=True,
+    )
 
 # Info banner sumber data
 if sumber_data == "session":
