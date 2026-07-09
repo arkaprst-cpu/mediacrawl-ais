@@ -452,6 +452,12 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    st.link_button(
+        "📁 Repositori Telaah (Drive)",
+        "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
+        use_container_width=True,
+    )
+
     if st.button("📊 Generate Excel Terbaru", use_container_width=True, type="primary"):
         if uploaded is None:
             # Sumber: sesi crawl aktif — hasil_list mentah sudah dalam
