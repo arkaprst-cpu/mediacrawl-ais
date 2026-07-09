@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 import io
 import html as html_lib
+from struktur_app import STRUKTUR_APP
 
 st.markdown("""
 <style>
@@ -217,36 +218,17 @@ with st.spinner("Memuat repositori dari Google Drive..."):
 
 st.caption(f"📚 {len(df_repo)} isu dari {len(files)} file di repositori · cache 5 menit")
 
-# ── FILTER: TANGGAL UPLOAD + NAVIGASI SEKTOR/TEMA/TOPIK (1 BARIS) ───────
-# Tanggal upload Excel di Google Drive (modifiedTime) digabung sebaris
-# dengan navigasi Sektor/Tema/Topik untuk hemat ruang vertikal. Tanda
-# pembeda visual: filter tanggal diberi proporsi lebih kecil dan label
-# kelompok terpisah ("Periode" vs "Kategori Isu").
+# ── FILTER TANGGAL UPLOAD ────────────────────────────────────────────────
 tgl_min = df_repo["_tanggal_upload"].min()
 tgl_max = df_repo["_tanggal_upload"].max()
 
-# Proporsi label HARUS sama persis dengan proporsi st.columns di bawah
-# (1.4 : 1+1+1, dengan sedikit gap) supaya label "Periode" & "Kategori Isu"
-# sejajar tepat dengan widget masing-masing, bukan sekadar perkiraan %.
-st.markdown("""
-<div style='display:flex;margin-bottom:4px'>
-  <div style='flex:1.4;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55'>📅 Periode</div>
-  <div style='flex:0 0 48px'></div>
-  <div style='flex:3;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;border-left:1px solid rgba(245,166,35,0.3);padding-left:20px'>🗂️ Kategori Isu</div>
-</div>
-""", unsafe_allow_html=True)
-
-col_tgl, col_div, col_f1, col_f2, col_f3 = st.columns([1.4, 0.3, 1, 1, 1])
-
+col_tgl, _ = st.columns([1.4, 2.6])
 with col_tgl:
+    st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:4px'>📅 Periode</div>", unsafe_allow_html=True)
     rentang_tanggal = st.date_input(
         "Tanggal Upload", value=(tgl_min, tgl_max),
         label_visibility="collapsed",
     )
-
-with col_f1:
-    sektor_opsi = ["Semua Sektor"] + sorted(df_repo["Sektor"].dropna().unique().tolist())
-    sektor_pilih = st.selectbox("Sektor", sektor_opsi, label_visibility="collapsed")
 
 # st.date_input dengan tuple bisa mengembalikan 1 tanggal saja sesaat
 # (saat pengguna baru memilih tanggal awal, sebelum tanggal akhir dipilih)
@@ -260,17 +242,65 @@ if isinstance(rentang_tanggal, tuple) and len(rentang_tanggal) == 2:
 else:
     st.info("Pilih tanggal akhir untuk menerapkan filter rentang.")
 
-df_tahap1 = df_repo if sektor_pilih == "Semua Sektor" else df_repo[df_repo["Sektor"] == sektor_pilih]
+# ── NAVIGASI SEKTOR — BAR CHART CAKUPAN ─────────────────────────────────
+# Daftar Sektor diambil dari STRUKTUR_APP (taksonomi tetap), BUKAN dari
+# nilai unik df_repo — supaya Sektor yang belum pernah ditelaah tetap
+# tampil dengan angka 0, bukan hilang dari navigasi. Ini yang membuat
+# gap cakupan langsung kelihatan tanpa perlu dicari manual.
+sektor_counts = df_repo["Sektor"].value_counts().to_dict()
+daftar_sektor = list(STRUKTUR_APP.keys())
+maks_hitung = max(sektor_counts.values()) if sektor_counts else 1
+sektor_aktif = st.session_state.get("repo_sektor_pilih", "Semua Sektor")
+
+st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>🗂️ Sektor</div>", unsafe_allow_html=True)
+
+if sektor_aktif != "Semua Sektor":
+    c_label, c_reset = st.columns([5, 1.2])
+    with c_label:
+        st.markdown(f"<div style='font-size:13px;padding-top:6px'>Menampilkan sektor: <b>{sektor_aktif}</b></div>", unsafe_allow_html=True)
+    with c_reset:
+        if st.button("✕ Semua Sektor", use_container_width=True):
+            st.session_state["repo_sektor_pilih"] = "Semua Sektor"
+            st.rerun()
+
+for nama_sektor in daftar_sektor:
+    jumlah = int(sektor_counts.get(nama_sektor, 0))
+    pct = round(jumlah / maks_hitung * 100) if maks_hitung else 0
+    kosong = jumlah == 0
+    terpilih = (nama_sektor == sektor_aktif)
+
+    c_bar, c_btn = st.columns([5, 1.2])
+    with c_bar:
+        st.markdown(f"""
+        <div style='display:flex;align-items:center;gap:10px;padding:5px 0'>
+          <div style='width:220px;flex-shrink:0;font-size:13px;{"opacity:0.4" if kosong else ""}{"font-weight:600" if terpilih else ""}'>{nama_sektor}</div>
+          <div style='flex:1;background:rgba(148,163,184,0.15);border-radius:4px;height:20px;position:relative;overflow:hidden'>
+            <div style='width:{pct}%;height:100%;background:{"rgba(148,163,184,0.35)" if kosong else "#F5A623"};border-radius:4px'></div>
+          </div>
+          <div style='width:26px;text-align:right;font-size:13px;font-weight:600;{"opacity:0.4" if kosong else ""}'>{jumlah}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c_btn:
+        if not kosong and not terpilih:
+            if st.button("Lihat →", key=f"repo_pilih_sektor_{nama_sektor}", use_container_width=True):
+                st.session_state["repo_sektor_pilih"] = nama_sektor
+                st.rerun()
+
+df_tahap1 = df_repo if sektor_aktif == "Semua Sektor" else df_repo[df_repo["Sektor"] == sektor_aktif]
+
+# ── NAVIGASI TEMA / TOPIK — TETAP DROPDOWN, MENGIKUTI SEKTOR TERPILIH ───
+st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>Perincian lebih lanjut</div>", unsafe_allow_html=True)
+col_f2, col_f3 = st.columns(2)
 
 with col_f2:
     tema_opsi = ["Semua Tema"] + sorted(df_tahap1["Tema"].dropna().unique().tolist())
-    tema_pilih = st.selectbox("Tema", tema_opsi, label_visibility="collapsed")
+    tema_pilih = st.selectbox("Tema", tema_opsi)
 
 df_tahap2 = df_tahap1 if tema_pilih == "Semua Tema" else df_tahap1[df_tahap1["Tema"] == tema_pilih]
 
 with col_f3:
     topik_opsi = ["Semua Topik"] + sorted(df_tahap2["Topik"].dropna().unique().tolist())
-    topik_pilih = st.selectbox("Topik", topik_opsi, label_visibility="collapsed")
+    topik_pilih = st.selectbox("Topik", topik_opsi)
 
 df_final = df_tahap2 if topik_pilih == "Semua Topik" else df_tahap2[df_tahap2["Topik"] == topik_pilih]
 
