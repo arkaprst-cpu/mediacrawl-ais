@@ -22,19 +22,31 @@ st.markdown("""
 
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-  /* Panel kanan sticky via st.container(key="panel_kanan") — dulu pakai
-     position:fixed dengan offset pixel tetap (top:90px), yang nabrak
-     topbar setiap kali tinggi toolbar berubah (beda antara dev lokal vs
-     Streamlit Cloud, beda lebar layar, dst). Sticky mengikuti alur normal
-     kolomnya sendiri (tidak pernah keluar dari col_detail), jadi tidak
-     mungkin menimpa topbar/tab di atasnya lagi. */
+  /* Panel kanan melayang via st.container(key="panel_kanan"). Sempat
+     dicoba position:sticky supaya tidak nabrak topbar, tapi gagal:
+     col_detail (kolom kanan) tingginya cuma sepanjang isi panel itu
+     sendiri, jauh lebih pendek dari col_list (daftar artikel) di
+     sebelahnya — begitu discroll melewati tinggi col_detail yang pendek
+     itu, panel ikut hilang dari layar walau daftar kiri masih panjang.
+     Balik ke position:fixed (supaya selalu kelihatan selama scroll),
+     tapi dijangkar dari BAWAH viewport (bottom), bukan dari atas (top).
+     Alasan: masalah aslinya adalah top:90px yang dulu dipakai tidak
+     pernah bisa dikalibrasi pas untuk semua tinggi toolbar (beda antara
+     dev lokal vs Streamlit Cloud vs lebar layar) — jarak dari bawah
+     layar tidak peduli setinggi apa topbar di atas, jadi masalah itu
+     hilang sepenuhnya. max-height dibatasi konservatif supaya panel
+     tidak pernah bisa "tumbuh" sampai menyentuh zona topbar walau
+     kontennya panjang — kalau memang panjang, dia scroll di dalam
+     panelnya sendiri (overflow-y:auto), bukan mendorong ke atas. */
   .st-key-panel_kanan {
-    position: sticky !important;
-    top: 16px !important;
-    width: 100% !important;
-    max-height: calc(100vh - 32px) !important;
+    position: fixed !important;
+    top: auto !important;
+    bottom: 24px !important;
+    right: 24px !important;
+    width: min(42vw, 520px) !important;
+    max-height: calc(100vh - 260px) !important;
     overflow-y: auto !important;
-    z-index: 10 !important;
+    z-index: 999 !important;
     background: rgba(13,27,42,0.97) !important;
     border: 1px solid rgba(245,166,35,0.35) !important;
     border-top: 4px solid #F5A623 !important;
