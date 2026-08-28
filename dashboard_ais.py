@@ -208,6 +208,43 @@ st.markdown("""
     color: inherit; opacity: 0.55; margin-bottom: 4px;
   }
   .detail-text { font-size: 12px; color: inherit; line-height: 1.6; }
+  .link-artikel-asli {
+    color: #5AA9FF; font-weight: 600; font-size: 11px;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .link-artikel-asli:hover { color: #8CC4FF; }
+
+  /* Expander klaster (Tab Daftar Isu) — beri identitas visual "kartu
+     klaster" pada header accordion-nya sendiri, bukan cuma pada isinya
+     saat dibuka. Tanpa ini header-nya kelihatan sama dengan accordion
+     generik, padahal secara fungsi dia adalah unit pengelompokan
+     artikel (klaster), bukan baris daftar biasa. */
+  [data-testid="stExpander"] {
+    border: none !important;
+    margin-bottom: 12px !important;
+  }
+  [data-testid="stExpander"] > details {
+    border: 1px solid rgba(245,166,35,0.4) !important;
+    border-left: 5px solid #F5A623 !important;
+    border-radius: 8px !important;
+    background: rgba(245,166,35,0.07) !important;
+    overflow: hidden !important;
+  }
+  [data-testid="stExpander"] summary {
+    padding: 14px 16px !important;
+  }
+  [data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] p {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.01em;
+  }
+  [data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
+    color: #F5A623 !important;
+  }
+  [data-testid="stExpanderDetails"] {
+    background: rgba(13,27,42,0.35) !important;
+    border-top: 1px solid rgba(245,166,35,0.15) !important;
+  }
   .implikasi-box {
     background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.5);
     border-radius: 5px; padding: 10px 12px;
@@ -881,7 +918,7 @@ with tab2:
                     tone_dom = sub_idx['Tone'].value_counts().idxmax() if jumlah else 'Netral'
                     dom_color = {'Negatif':'#E74C3C','Netral':'#95A5A6','Positif':'#27AE60'}.get(tone_dom,'#95A5A6')
 
-                    label_expander = f"🗂️ {nama}  ·  {jumlah} artikel"
+                    label_expander = f"🗂️ **{nama}**  ·  :gray[{jumlah} artikel]"
                     with st.expander(label_expander, expanded=(nama == nama_terurut[0])):
                         info_klaster = narasi_klaster.get(nama)
 
@@ -1061,9 +1098,10 @@ with tab2:
                         </div>
 
                         <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
-                        <div style='font-size:10px;color:inherit;opacity:0.5'>
-                          📅 {row['Tanggal']} &nbsp;·&nbsp;
-                          🔗 <a href="{row['Link']}" target="_blank" style='color:#3B82F6'>Buka artikel asli</a>
+                        <div style='font-size:11px;color:inherit;display:flex;align-items:center;gap:8px;flex-wrap:wrap'>
+                          <span style='opacity:0.5'>📅 {row['Tanggal']}</span>
+                          <span style='opacity:0.3'>·</span>
+                          <a href="{row['Link']}" target="_blank" class="link-artikel-asli">🔗 Buka artikel asli →</a>
                         </div>
                         """, unsafe_allow_html=True)
                     else:
