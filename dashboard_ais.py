@@ -3,10 +3,8 @@ dashboard_ais.py
 Halaman Dashboard AIS — Analisis Isu Strategis Pengawasan
 Pusat Strategi Kebijakan Pengawasan BPKP
 
-Cara pakai:
-- Upload file Excel hasil crawl (.xlsx) via sidebar
-- Dashboard otomatis render semua komponen
-- Bisa juga load dari ais_data.json jika tersedia
+Sumber data: hasil crawl sesi aktif (session_state) atau upload Excel (.xlsx)
+via sidebar.
 """
 
 import streamlit as st
@@ -24,12 +22,9 @@ st.markdown("""
 
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-  /* Panel kanan (Detail Analisis / Telaah Klaster) — fixed mengikuti
-     viewport, dipasang lewat st.container(key="panel_kanan") karena
-     widget Streamlit interaktif (selectbox, text_area, button) tidak
-     bisa dibungkus position:fixed lewat string HTML markdown biasa.
-     Class .st-key-panel_kanan ditempatkan oleh Streamlit di DALAM
-     wrapper-nya, jadi kita styling parent terdekatnya juga. */
+  /* Panel kanan fixed via st.container(key="panel_kanan") — widget
+     interaktif Streamlit tidak bisa dibungkus position:fixed lewat HTML
+     markdown biasa. */
   .st-key-panel_kanan {
     position: fixed !important;
     top: 90px !important;
@@ -317,9 +312,7 @@ with st.sidebar:
         label_visibility="collapsed"
     )
 
-    # Filter Tone & Level Risiko dihapus dari sidebar — jarang dipakai dan
-    # memakan banyak ruang vertikal. df_filtered tetap dipertahankan tanpa
-    # filter aktif (semua tone & level risiko ditampilkan).
+    # Semua tone & level risiko ditampilkan (tidak ada filter sidebar aktif)
     filter_tone = ["Negatif", "Netral", "Positif"]
     filter_risiko = ["Tinggi", "Sedang", "Rendah"]
 
@@ -369,14 +362,9 @@ if uploaded is not None:
     sumber_data = "upload"
     klaster_meta = []  # narasi klaster lengkap tidak tersedia dari Excel, hanya nama per baris
 
-    # ── HIDRASI review_klaster DARI FILE YANG DI-UPLOAD ──────────
-    # Kalau file ini sudah pernah ditelaah sebelumnya (punya kolom Status
-    # Review terisi "Sudah Direview"), badge & data telaah harus terbaca
-    # ulang ke session_state — supaya melanjutkan kerja dari file lama
-    # tidak balik ke "Belum Direview" walau datanya di file sudah benar.
-    # Di-guard dengan file_id supaya hidrasi cuma jalan sekali per file
-    # (bukan tiap rerun), agar tidak menimpa telaah baru yang baru saja
-    # disubmit di sesi berjalan ini.
+    # Hidrasi status telaah dari file yang di-upload ke session_state,
+    # di-guard per file_id supaya hanya jalan sekali (tidak menimpa telaah
+    # baru yang sedang berjalan).
     file_id = getattr(uploaded, "file_id", None) or f"{uploaded.name}_{uploaded.size}"
     if st.session_state.get("_review_hydrated_from") != file_id and "StatusReview" in df_raw.columns:
         st.session_state.setdefault("review_klaster", {})
@@ -425,13 +413,9 @@ else:
 
 df, stats = compute_stats(df_raw)
 
-# ── UPDATE EXCEL (Langkah Kerja 3) ───────────────────────────
-# Ditempatkan DI SINI (bukan di blok sidebar atas) karena perlu df_raw
-# dan meta yang baru ter-resolve setelah upload/session_state diproses —
-# memindahkan posisi kode ini ke atas akan mengembalikan bug NameError
-# yang pernah terjadi. Sebagai gantinya, blok ini dibuat menonjol secara
-# visual (warna amber kontras) supaya tetap menarik perhatian meski
-# render-nya berada di bawah blok Upload Data.
+# ── Update Excel (Langkah Kerja 3) ───────────────────────────
+# Perlu df_raw & meta yang sudah ter-resolve, jadi diletakkan setelah blok
+# upload/session_state di atas (bukan di sidebar awal).
 with st.sidebar:
     review_klaster = st.session_state.get("review_klaster", {})
     jml_direview = len(review_klaster)
@@ -496,8 +480,7 @@ with st.sidebar:
                 h2["status_review"] = review.get("status_review", "Belum Direview")
             hasil_terbaru.append(h2)
 
-        # buat_excel didefinisikan di app.py (scope yang sama karena
-        # dashboard_ais.py dieksekusi via exec() di dalam app.py)
+        # buat_excel() dari app.py (scope sama, dieksekusi via exec())
         excel_bytes = buat_excel(hasil_terbaru, label_file)
         st.download_button(
             "⬇️ Download Excel",
@@ -578,8 +561,7 @@ with tab1:
 
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
 
-    # Spotlight — ambil artikel Negatif dengan teks risiko terpanjang
-    # Spotlight — artikel paling relevan dengan topik crawl
+    # Spotlight — artikel paling relevan dengan topik crawl.
     # Prioritas: (1) Negatif + judul relevan, (2) Negatif apapun, (3) artikel pertama
     def skor_relevansi(row, topik: str) -> int:
         """Hitung relevansi judul terhadap topik crawl."""
@@ -789,15 +771,9 @@ with tab2:
                     with st.expander(label_expander, expanded=(nama == nama_terurut[0])):
                         info_klaster = narasi_klaster.get(nama)
 
-                        # Fallback: kalau narasi lengkap klaster tidak tersedia
-                        # dari sesi crawl aktif (mis. data berasal dari upload
-                        # Excel), rekonstruksi keempat field dari data artikel
-                        # itu sendiri — nilainya identik di semua anggota
-                        # klaster, karena diwarisi dari analisis tingkat
-                        # klaster saat crawl pertama. Untuk file Excel lama
-                        # (sebelum kolom Kondisi/Pemicu & Relevansi ditambahkan),
-                        # kedua field itu akan tampil "-" karena memang tidak
-                        # pernah tersimpan di format lama.
+                        # Fallback: rekonstruksi field klaster dari data
+                        # artikel jika narasi klaster tidak tersedia (mis.
+                        # sumber data dari upload Excel).
                         if not info_klaster:
                             def _ambil_unik(kolom):
                                 if kolom not in sub_idx.columns:
@@ -838,12 +814,8 @@ with tab2:
                         </div>
                         """, unsafe_allow_html=True)
 
-                        # ── TOMBOL BUKA TELAAH (Langkah Kerja 3) ───────────
-                        # Form telaah lengkap (dropdown Sektor/Tema/Topik +
-                        # text area) DIPINDAH ke panel kanan (col_detail) agar
-                        # tidak membuat kolom kiri sesak. Klik tombol ini
-                        # mengganti mode panel kanan jadi "telaah" untuk
-                        # klaster ini.
+                        # Tombol buka telaah — form lengkap ada di panel kanan
+                        # (col_detail), diaktifkan lewat panel_mode="telaah".
                         review_tersimpan = st.session_state.get("review_klaster", {}).get(nama, {})
                         sudah_direview = bool(review_tersimpan.get("status_review") == "Sudah Direview")
                         badge_review = "🟢 Sudah Direview" if sudah_direview else "⚪ Belum Direview"
