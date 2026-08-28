@@ -22,17 +22,19 @@ st.markdown("""
 
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-  /* Panel kanan fixed via st.container(key="panel_kanan") — widget
-     interaktif Streamlit tidak bisa dibungkus position:fixed lewat HTML
-     markdown biasa. */
+  /* Panel kanan sticky via st.container(key="panel_kanan") — dulu pakai
+     position:fixed dengan offset pixel tetap (top:90px), yang nabrak
+     topbar setiap kali tinggi toolbar berubah (beda antara dev lokal vs
+     Streamlit Cloud, beda lebar layar, dst). Sticky mengikuti alur normal
+     kolomnya sendiri (tidak pernah keluar dari col_detail), jadi tidak
+     mungkin menimpa topbar/tab di atasnya lagi. */
   .st-key-panel_kanan {
-    position: fixed !important;
-    top: 90px !important;
-    right: 24px !important;
-    width: min(42vw, 520px) !important;
-    max-height: calc(100vh - 120px) !important;
+    position: sticky !important;
+    top: 16px !important;
+    width: 100% !important;
+    max-height: calc(100vh - 32px) !important;
     overflow-y: auto !important;
-    z-index: 999 !important;
+    z-index: 10 !important;
     background: rgba(13,27,42,0.97) !important;
     border: 1px solid rgba(245,166,35,0.35) !important;
     border-top: 4px solid #F5A623 !important;
