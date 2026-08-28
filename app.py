@@ -1,7 +1,7 @@
 """
 Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan BPKP
 Streamlit web app: input keyword → query expansion → crawl → analisis → download Excel
-Providers: Groq (llama-3.3-70b-versatile) | Gemini (gemini-2.5-flash)
+Provider AI: DeepSeek (deepseek-chat)
 """
 
 import streamlit as st
@@ -12,7 +12,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# ── Provider imports (lazy, agar tidak crash jika salah satu tidak terinstall) ──
+# ── Klien DeepSeek (lazy import) ──
 def get_deepseek_client(api_key: str):
     from openai import OpenAI
     return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
@@ -24,26 +24,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── DETEKSI AKSES PUBLIK KE REPOSITORI ISU ──────────────────────────────
-# Repositori Isu sengaja dibuat TERBUKA untuk publik (transparansi),
-# berbeda dari halaman Crawl & Analisis serta Dashboard AIS yang tetap
-# di balik gerbang password tim. Akses publik lewat URL dengan query
-# parameter ?page=repositori — ini dideteksi SEBELUM gerbang password,
-# supaya pengunjung publik tidak pernah diminta login sama sekali.
+# ── Akses publik ke Repositori Isu (tanpa password) ─────────────────────
+# Dicek sebelum gerbang password agar Repositori Isu bisa diakses via
+# ?page=repositori tanpa login.
 akses_publik_repositori = st.query_params.get("page") == "repositori"
 
 if akses_publik_repositori:
     exec(open('repositori_isu.py').read())
     st.stop()
 
-# ── GERBANG PASSWORD ─────────────────────────────────────────────────────
-# Password tunggal dibagikan ke tim — bukan akun per-orang. Tujuannya
-# mencegah orang di luar tim (yang mungkin menemukan URL publik Streamlit
-# Cloud) ikut memakai kuota API DeepSeek. Dicek SEBELUM apa pun lain
-# dirender (termasuk sidebar & dashboard, karena dashboard_ais.py dipanggil
-# lewat exec() di dalam app.py — jadi satu gate ini melindungi keduanya).
-# TIDAK berlaku untuk Repositori Isu (lihat blok akses_publik_repositori
-# di atas — itu sengaja terbuka untuk publik).
+# ── Gerbang password (satu password untuk seluruh tim) ──────────────────
+# Melindungi halaman Crawl & Analisis dan Dashboard AIS (keduanya dieksekusi
+# lewat exec() di app.py, jadi satu gate ini cukup). Tidak berlaku untuk
+# Repositori Isu — lihat akses_publik_repositori di atas.
 def cek_password():
     if st.session_state.get("ais_authenticated", False):
         return True
@@ -97,9 +90,7 @@ with st.sidebar:
     )
     st.divider()
 
-# ── Excel builder (top-level — dipakai oleh halaman Crawl & Analisis
-# maupun halaman Dashboard AIS untuk regenerate Excel setelah telaah
-# manusia di Langkah Kerja 3) ────────────────────────────────────────────
+# ── Excel builder (top-level agar bisa dipanggil dari dashboard_ais.py) ──
 def buat_excel(data: list, label_isu: str) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -509,8 +500,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "anggota": sisa,
                     })
 
-                # PENGAMAN: tegakkan batas 3-5 klaster di kode, jangan hanya
-                # andalkan kepatuhan model terhadap instruksi prompt.
+                # Tegakkan batas maks 5 klaster di kode (bukan hanya di prompt)
                 MAKS_KLASTER = 5
                 if len(klaster_valid) > MAKS_KLASTER:
                     klaster_valid.sort(key=lambda k: len(k.get("anggota", [])), reverse=True)
@@ -563,10 +553,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             "_error": pesan,
         }
 
-    # ── Excel builder didefinisikan di top-level (lihat atas file) agar
-    # bisa diakses dari halaman Dashboard AIS untuk regenerate Excel
-    # setelah telaah manusia — lihat fungsi buat_excel() di awal file.
-
     # ══════════════════════════════════════════════════════════════════════
     # SIDEBAR — konfigurasi provider & input
     # ══════════════════════════════════════════════════════════════════════
@@ -576,11 +562,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         st.divider()
 
         # ── API Key DeepSeek ─────────────────────────────────────────────
-        # Provider tunggal: DeepSeek. Gemini & Groq sudah dicoba dan
-        # tidak dipakai lagi — Gemini terlalu lambat (delay 6.5s/artikel
-        # untuk hindari rate limit 10 RPM), Groq sering kosong di volume
-        # tinggi karena rate limit ketat. DeepSeek terbukti cepat, murah
-        # (<$0.01 per 20 artikel), dan hasil analisisnya konsisten.
         deepseek_key_default = st.secrets.get("DEEPSEEK_API_KEY","") if hasattr(st,"secrets") else ""
         if deepseek_key_default:
             st.success("✅ DeepSeek API Key dari Secrets")
