@@ -78,19 +78,39 @@ st.markdown("""
   .spotlight-title { font-size: 16px; font-weight: 700; color: white; line-height: 1.3; margin-bottom: 10px; }
   .spotlight-body { font-size: 12px; color: rgba(255,255,255,0.75); line-height: 1.65; }
 
-  /* Stat cards */
-  .stat-card {
+  /* Stat cards — dua tingkat: primary (metrik paling actionable, lebih
+     besar) dan secondary (rincian pendukung, lebih kecil) supaya tidak
+     semua angka bersaing dengan bobot yang sama. */
+  .stat-card-primary {
     background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
-    border-radius: 8px; padding: 16px;
+    border-radius: 8px; padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  .stat-num-primary {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 38px; font-weight: 700; color: inherit; line-height: 1;
+  }
+  .stat-label-primary {
+    font-size: 12px; color: inherit; opacity: 0.65; margin-top: 6px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .stat-card-secondary {
+    background: rgba(128,128,128,0.04); border: 1px solid rgba(128,128,128,0.15);
+    border-radius: 6px; padding: 10px;
     text-align: center;
   }
-  .stat-num {
+  .stat-num-secondary {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 28px; font-weight: 700; color: inherit; line-height: 1;
+    font-size: 20px; font-weight: 700; color: inherit; line-height: 1;
   }
-  .stat-label { font-size: 11px; color: inherit; opacity: 0.6; margin-top: 4px; }
+  .stat-label-secondary { font-size: 10px; color: inherit; opacity: 0.55; margin-top: 3px; }
 
-  /* Issue card */
+  /* Issue card — base dipakai apa adanya untuk daftar datar (fallback
+     tanpa klaster). Dua varian di bawah menyesuaikan bobot visual sesuai
+     konteks: -highlight untuk sorotan "perlu perhatian" (Tab Ikhtisar),
+     -member untuk anggota klaster yang harus terasa lebih ringan daripada
+     blok INDUK KLASTER di atasnya (Tab Daftar Isu). */
   .issue-card {
     background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
     border-radius: 6px; padding: 14px 14px 14px 18px;
@@ -107,6 +127,20 @@ st.markdown("""
   .issue-title { font-size: 13px; font-weight: 600; color: inherit; line-height: 1.4; }
   .issue-sub { font-size: 11px; color: inherit; opacity: 0.65; margin-top: 2px; }
   .issue-summary { font-size: 11px; color: inherit; opacity: 0.65; line-height: 1.5; margin-top: 6px; }
+
+  .issue-card-highlight {
+    padding: 16px 16px 16px 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  }
+  .issue-card-highlight::before { width: 5px; }
+  .issue-card-highlight .issue-title { font-size: 14px; font-weight: 700; }
+
+  .issue-card-member {
+    padding: 9px 12px 9px 14px;
+    background: transparent;
+  }
+  .issue-card-member::before { width: 3px; }
+  .issue-card-member .issue-title { font-size: 12px; font-weight: 500; opacity: 0.85; }
 
   /* Badges */
   .badge {
@@ -148,6 +182,17 @@ st.markdown("""
   #MainMenu {visibility: hidden;}
   footer {visibility: hidden;}
   .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+
+  /* Uploader di sidebar — dropzone bawaan Streamlit besar padahal cuma
+     dipakai sesekali per sesi; diperkecil agar tidak mendominasi sidebar. */
+  [data-testid="stFileUploaderDropzone"] {
+    padding: 8px 12px !important;
+    min-height: 0 !important;
+  }
+  [data-testid="stFileUploaderDropzoneInstructions"] svg { display: none; }
+  [data-testid="stFileUploaderDropzoneInstructions"] span { font-size: 11px !important; }
+  [data-testid="stFileUploaderDropzoneInstructions"] small { display: none; }
+  [data-testid="stBaseButton-secondary"] { padding: 2px 10px !important; font-size: 11px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -531,32 +576,38 @@ tab1, tab2, tab3, tab4 = st.tabs(["📋 Ikhtisar", "🗂️ Daftar Isu", "📈 T
 # ════════════════════════════════════════════
 with tab1:
 
-    # Stat row
-    c1, c2, c3, c4, c5 = st.columns(5)
+    # Stat row — primer (Total & Dominasi Negatif, dua metrik paling
+    # actionable untuk pengawasan) di atas, rincian tone sebagai sekunder
+    # di bawahnya supaya bobot visual tidak rata.
+    c_p1, c_p2 = st.columns(2)
+    with c_p1:
+        st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #F5A623">
+          <div class="stat-num-primary">{stats['total']}</div>
+          <div class="stat-label-primary">Total Artikel</div>
+        </div>""", unsafe_allow_html=True)
+    with c_p2:
+        st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
+          <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
+          <div class="stat-label-primary">Dominasi Negatif</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #F5A623">
-          <div class="stat-num">{stats['total']}</div>
-          <div class="stat-label">Total Artikel</div>
+        st.markdown(f"""<div class="stat-card-secondary">
+          <div class="stat-num-secondary" style="color:#E74C3C">{stats['negatif']}</div>
+          <div class="stat-label-secondary">🔴 Negatif</div>
         </div>""", unsafe_allow_html=True)
     with c2:
-        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #E74C3C">
-          <div class="stat-num" style="color:#E74C3C">{stats['negatif']}</div>
-          <div class="stat-label">Tone Negatif</div>
+        st.markdown(f"""<div class="stat-card-secondary">
+          <div class="stat-num-secondary" style="color:#7F8C8D">{stats['netral']}</div>
+          <div class="stat-label-secondary">⚪ Netral</div>
         </div>""", unsafe_allow_html=True)
     with c3:
-        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #95A5A6">
-          <div class="stat-num" style="color:#7F8C8D">{stats['netral']}</div>
-          <div class="stat-label">Tone Netral</div>
-        </div>""", unsafe_allow_html=True)
-    with c4:
-        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #27AE60">
-          <div class="stat-num" style="color:#27AE60">{stats['positif']}</div>
-          <div class="stat-label">Tone Positif</div>
-        </div>""", unsafe_allow_html=True)
-    with c5:
-        st.markdown(f"""<div class="stat-card" style="border-top:3px solid #E74C3C">
-          <div class="stat-num" style="color:#E74C3C">{stats['pct_neg']}%</div>
-          <div class="stat-label">Dominasi Negatif</div>
+        st.markdown(f"""<div class="stat-card-secondary">
+          <div class="stat-num-secondary" style="color:#27AE60">{stats['positif']}</div>
+          <div class="stat-label-secondary">🟢 Positif</div>
         </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
@@ -682,7 +733,7 @@ with tab1:
                 tone_class = str(row['Tone']).lower()
                 aktor_short = str(row['AktorLokasi'])[:40]
                 st.markdown(f"""
-                <div class="issue-card {tone_class}">
+                <div class="issue-card issue-card-highlight {tone_class}">
                   <div class="issue-title">{str(row['Judul'])[:80]}{'…' if len(str(row['Judul']))>80 else ''}</div>
                   <div class="issue-sub">{str(row['IsuSubisu'])}</div>
                   <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
@@ -712,17 +763,18 @@ with tab2:
 
             ada_klaster = 'Klaster' in df_filtered.columns and (df_filtered['Klaster'] != '-').any()
 
-            def render_artikel_item(i, row):
+            def render_artikel_item(i, row, compact=False):
                 tone_class = str(row['Tone']).lower()
                 is_selected = (i == selected_idx)
                 border_style = "border:2px solid rgba(99,179,237,0.8);" if is_selected else "border:1px solid rgba(128,128,128,0.2);"
                 bg_style = "background:rgba(99,179,237,0.08);" if is_selected else "background:transparent;"
+                varian_class = "issue-card-member" if compact else ""
 
                 judul_short = str(row['Judul'])[:75]+'…' if len(str(row['Judul']))>75 else str(row['Judul'])
 
                 btn_key = f"artikel_{i}"
                 st.markdown(f"""
-                <div class="issue-card {tone_class}" style="{border_style}{bg_style}">
+                <div class="issue-card {varian_class} {tone_class}" style="{border_style}{bg_style}">
                   <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px'>
                     <div>
                       <div class="issue-title">{judul_short}</div>
@@ -804,13 +856,13 @@ with tab2:
                             <span style='font-size:10px;opacity:0.55'>{jumlah} artikel anggota</span>
                           </div>
                           <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Kondisi / Pemicu</div>
-                          <div style='font-size:13px;line-height:1.6;margin-bottom:10px;font-weight:500'>{info_klaster.get('kondisi_pemicu','-')}</div>
+                          <div style='font-size:14px;line-height:1.6;margin-bottom:10px;font-weight:600'>{info_klaster.get('kondisi_pemicu','-')}</div>
                           <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Risiko</div>
-                          <div style='font-size:13px;line-height:1.6;margin-bottom:10px;font-weight:500'>{info_klaster.get('risiko','-')}</div>
+                          <div style='font-size:14px;line-height:1.6;margin-bottom:10px;font-weight:600'>{info_klaster.get('risiko','-')}</div>
                           <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Area Perhatian</div>
-                          <div style='font-size:13px;line-height:1.6;margin-bottom:10px;font-weight:500'>{info_klaster.get('area_perhatian','-')}</div>
+                          <div style='font-size:14px;line-height:1.6;margin-bottom:10px;font-weight:600'>{info_klaster.get('area_perhatian','-')}</div>
                           <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Relevansi Pengawasan BPKP</div>
-                          <div style='font-size:13px;line-height:1.6;font-weight:500'>{info_klaster.get('relevansi_pengawasan','-')}</div>
+                          <div style='font-size:14px;line-height:1.6;font-weight:600'>{info_klaster.get('relevansi_pengawasan','-')}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -833,7 +885,7 @@ with tab2:
 
                         st.markdown("<div style='margin-left:14px;border-left:1px dashed rgba(128,128,128,0.25);padding-left:14px'>", unsafe_allow_html=True)
                         for i, row in sub_idx.iterrows():
-                            render_artikel_item(i, row)
+                            render_artikel_item(i, row, compact=True)
                         st.markdown("</div>", unsafe_allow_html=True)
 
         with col_detail:
@@ -959,6 +1011,40 @@ with tab2:
 # TAB 3 — TONE & TREN
 # ════════════════════════════════════════════
 with tab3:
+    # Catatan analitis ditaruh paling atas — ini kesimpulan yang dicari
+    # user, tabel & chart di bawah adalah rincian pendukungnya.
+    neg_issues = df[df['Tone']=='Negatif']['IsuSubisu'].value_counts().head(3).index.tolist()
+    pos_issues = df[df['Tone']=='Positif']['IsuSubisu'].value_counts().head(2).index.tolist()
+
+    st.markdown("**Catatan Analitis**")
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        st.markdown(f"""
+        <div style='background:rgba(231,76,60,0.12);border-radius:6px;padding:12px;border-left:3px solid #E74C3C'>
+          <div style='font-size:10px;font-weight:700;color:#E74C3C;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Dominan Negatif</div>
+          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in neg_issues) if neg_issues else "—"}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_b:
+        st.markdown(f"""
+        <div style='background:rgba(245,166,35,0.12);border-radius:6px;padding:12px;border-left:3px solid #F5A623'>
+          <div style='font-size:10px;font-weight:700;color:#c47d0a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Volume Pemberitaan</div>
+          <div style='font-size:11px;color:inherit;line-height:1.6'>
+            Total <strong>{stats['total']}</strong> artikel dalam periode ini.<br>
+            {stats['negatif']} negatif ({stats['pct_neg']}%) menunjukkan tekanan pemberitaan yang perlu diwaspadai.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_c:
+        st.markdown(f"""
+        <div style='background:rgba(39,174,96,0.12);border-radius:6px;padding:12px;border-left:3px solid #27AE60'>
+          <div style='font-size:10px;font-weight:700;color:#27AE60;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Bernada Positif</div>
+          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in pos_issues) if pos_issues else "—"}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
     col_tbl, col_chart = st.columns([3, 2])
 
     with col_tbl:
@@ -1020,39 +1106,6 @@ with tab3:
         tanggal_counts = df.groupby(['Tanggal','Tone']).size().unstack(fill_value=0)
         if not tanggal_counts.empty:
             st.bar_chart(tanggal_counts, color=["#E74C3C","#BDC3C7","#27AE60"] if all(c in tanggal_counts.columns for c in ['Negatif','Netral','Positif']) else None, height=200)
-
-    # Catatan analitis
-    st.markdown("---")
-    st.markdown("**Catatan Analitis**")
-
-    neg_issues = df[df['Tone']=='Negatif']['IsuSubisu'].value_counts().head(3).index.tolist()
-    pos_issues = df[df['Tone']=='Positif']['IsuSubisu'].value_counts().head(2).index.tolist()
-
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        st.markdown(f"""
-        <div style='background:rgba(231,76,60,0.12);border-radius:6px;padding:12px;border-left:3px solid #E74C3C'>
-          <div style='font-size:10px;font-weight:700;color:#E74C3C;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Dominan Negatif</div>
-          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in neg_issues) if neg_issues else "—"}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_b:
-        st.markdown(f"""
-        <div style='background:rgba(245,166,35,0.12);border-radius:6px;padding:12px;border-left:3px solid #F5A623'>
-          <div style='font-size:10px;font-weight:700;color:#c47d0a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Volume Pemberitaan</div>
-          <div style='font-size:11px;color:inherit;line-height:1.6'>
-            Total <strong>{stats['total']}</strong> artikel dalam periode ini.<br>
-            {stats['negatif']} negatif ({stats['pct_neg']}%) menunjukkan tekanan pemberitaan yang perlu diwaspadai.
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_c:
-        st.markdown(f"""
-        <div style='background:rgba(39,174,96,0.12);border-radius:6px;padding:12px;border-left:3px solid #27AE60'>
-          <div style='font-size:10px;font-weight:700;color:#27AE60;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Bernada Positif</div>
-          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in pos_issues) if pos_issues else "—"}</div>
-        </div>
-        """, unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════
