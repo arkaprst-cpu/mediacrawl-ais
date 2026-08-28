@@ -71,6 +71,14 @@ st.markdown("""
     box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
   }
 
+  /* Kartu upload di tengah landing state (belum ada data) */
+  .st-key-landing_upload_card {
+    border: 2px dashed rgba(128,128,128,0.3) !important;
+    border-radius: 12px !important;
+    background: rgba(128,128,128,0.06) !important;
+    padding: 24px 24px 16px !important;
+  }
+
   /* Topbar */
   .ais-topbar {
     background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
@@ -436,14 +444,29 @@ def risiko_per_aktor(df, top_n=8):
 
 
 # ── SIDEBAR ──────────────────────────────────────────────────
+# Tombol upload sengaja TIDAK selalu di sidebar. Selama belum ada data
+# sama sekali (landing state), dia ditaruh di tengah halaman utama —
+# itu satu-satunya aksi yang relevan buat user di titik itu, jadi lebih
+# masuk akal ditonjolkan di tengah alur baca daripada "disembunyikan"
+# di panel kiri yang gampang kelewat. Begitu ada data (dari upload atau
+# dari sesi crawl), tempatnya pindah ke sidebar sebagai cara ganti file
+# tanpa mengganggu tampilan dashboard. Widget-nya pakai key eksplisit
+# ("uploader_xlsx") supaya nilainya tetap sama walau lokasi renders-nya
+# berpindah antar rerun.
+has_session = st.session_state.get("ais_ready", False) and "hasil" in st.session_state
+sudah_pernah_upload = st.session_state.get("_dashboard_upload_ok", False)
+uploader_di_sidebar = has_session or sudah_pernah_upload
+
 with st.sidebar:
-    st.markdown("### 📂 Upload Data")
-    st.markdown("<div style='font-size:11px;color:#888;margin-bottom:8px'>Upload file Excel hasil pipeline crawl AIS (.xlsx)</div>", unsafe_allow_html=True)
-    
-    uploaded = st.file_uploader(
-        "Pilih file Excel", type=["xlsx"],
-        label_visibility="collapsed"
-    )
+    if uploader_di_sidebar:
+        st.markdown("### 📂 Upload Data")
+        st.markdown("<div style='font-size:11px;color:#888;margin-bottom:8px'>Upload file Excel hasil pipeline crawl AIS (.xlsx)</div>", unsafe_allow_html=True)
+        uploaded = st.file_uploader(
+            "Pilih file Excel", type=["xlsx"],
+            label_visibility="collapsed", key="uploader_xlsx"
+        )
+    else:
+        uploaded = None
 
     # Semua tone & level risiko ditampilkan (tidak ada filter sidebar aktif)
     filter_tone = ["Negatif", "Netral", "Positif"]
@@ -455,37 +478,59 @@ with st.sidebar:
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
 # Prioritas sumber data:
-# 1. Upload manual via sidebar (override)
+# 1. Upload manual (override) — sidebar kalau sudah pernah ada data,
+#    tengah halaman (landing) kalau ini pertama kali.
 # 2. Hasil crawl dari halaman 1 via session_state
 # 3. Tidak ada data → tampilkan landing
-
-has_session = st.session_state.get("ais_ready", False) and "hasil" in st.session_state
 
 if uploaded is None and not has_session:
     # Landing state — belum ada data dari mana pun
     st.markdown("""
     <div class="ais-topbar">
       <div>
-        <div class="ais-logo">AIS Dashboard</div>
+        <div class="ais-logo">Dashboard Analisis Isu Strategis</div>
         <div class="ais-subtitle">Analisis Isu Strategis Pengawasan — Pusat Strategi Kebijakan Pengawasan BPKP</div>
       </div>
-      <div class="ais-badge">SIAP DIGUNAKAN</div>
     </div>
     """, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.markdown("""
-        <div style='text-align:center;padding:60px 20px;background:rgba(128,128,128,0.06);border-radius:12px;border:2px dashed rgba(128,128,128,0.3);'>
-          <div style='font-size:40px;margin-bottom:12px'>📊</div>
-          <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
-          <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6'>
-            Jalankan crawl di halaman <b>🔍 Crawl & Analisis</b> terlebih dahulu,<br>
-            atau upload file <code>.xlsx</code> hasil crawl sebelumnya<br>
-            melalui panel di sebelah kiri.
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # uploader_di_sidebar==True di titik ini berarti widget-nya sudah
+        # dirender (dan kosong) di sidebar pada run ini — jangan render
+        # file_uploader kedua dengan key yang sama di sini, cukup arahkan
+        # user ke sana. Ini kondisi tepi: user sempat upload lalu
+        # menghapus file-nya lagi tanpa ada sesi crawl aktif.
+        if uploader_di_sidebar:
+            st.markdown("""
+            <div class="st-key-landing_upload_card" style='text-align:center;padding:32px 24px'>
+              <div style='font-size:40px;margin-bottom:12px'>📊</div>
+              <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
+              <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6'>
+                Jalankan crawl di halaman <b>🔍 Crawl & Analisis</b> terlebih dahulu,<br>
+                atau upload file <code>.xlsx</code> hasil crawl sebelumnya melalui panel Upload Data di sidebar kiri.
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            with st.container(key="landing_upload_card"):
+                st.markdown("""
+                <div style='text-align:center;padding:8px 4px 4px'>
+                  <div style='font-size:40px;margin-bottom:12px'>📊</div>
+                  <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
+                  <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6;margin-bottom:14px'>
+                    Jalankan crawl di halaman <b>🔍 Crawl & Analisis</b> terlebih dahulu,<br>
+                    atau upload file <code>.xlsx</code> hasil crawl sebelumnya di bawah ini.
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+                uploaded_landing = st.file_uploader(
+                    "Upload file Excel (.xlsx)", type=["xlsx"],
+                    label_visibility="collapsed", key="uploader_xlsx"
+                )
+            if uploaded_landing is not None:
+                st.session_state["_dashboard_upload_ok"] = True
+                st.rerun()
     st.stop()
 
 # ── LOAD & PROCESS DATA ──────────────────────────────────────
@@ -644,7 +689,7 @@ df_filtered = df[
 st.markdown(f"""
 <div class="ais-topbar">
   <div>
-    <div class="ais-logo">AIS Dashboard</div>
+    <div class="ais-logo">Dashboard Analisis Isu Strategis</div>
     <div class="ais-subtitle">Analisis Isu Strategis Pengawasan — {meta.get('unit','Pusat Strategi Kebijakan Pengawasan BPKP')}</div>
   </div>
   <div>
