@@ -230,9 +230,8 @@ with col_tgl:
         label_visibility="collapsed",
     )
 
-# st.date_input dengan tuple bisa mengembalikan 1 tanggal saja sesaat
-# (saat pengguna baru memilih tanggal awal, sebelum tanggal akhir dipilih)
-# — perlu pengaman supaya tidak error saat itu terjadi.
+# Guard: st.date_input bisa mengembalikan 1 tanggal saja sesaat sebelum
+# tanggal akhir dipilih.
 if isinstance(rentang_tanggal, tuple) and len(rentang_tanggal) == 2:
     tgl_awal, tgl_akhir = rentang_tanggal
     df_repo = df_repo[
@@ -242,11 +241,9 @@ if isinstance(rentang_tanggal, tuple) and len(rentang_tanggal) == 2:
 else:
     st.info("Pilih tanggal akhir untuk menerapkan filter rentang.")
 
-# ── NAVIGASI SEKTOR — BAR CHART CAKUPAN ─────────────────────────────────
-# Daftar Sektor diambil dari STRUKTUR_APP (taksonomi tetap), BUKAN dari
-# nilai unik df_repo — supaya Sektor yang belum pernah ditelaah tetap
-# tampil dengan angka 0, bukan hilang dari navigasi. Ini yang membuat
-# gap cakupan langsung kelihatan tanpa perlu dicari manual.
+# ── Navigasi Sektor — bar chart cakupan ──────────────────────────────────
+# Daftar Sektor dari STRUKTUR_APP (bukan nilai unik df_repo) agar sektor
+# yang belum ditelaah tetap tampil dengan angka 0.
 sektor_counts = df_repo["Sektor"].value_counts().to_dict()
 daftar_sektor = list(STRUKTUR_APP.keys())
 maks_hitung = max(sektor_counts.values()) if sektor_counts else 1
