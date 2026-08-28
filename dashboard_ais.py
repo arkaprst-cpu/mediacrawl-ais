@@ -198,7 +198,12 @@ st.markdown("""
   .badge-negatif { background: rgba(231,76,60,0.15); color: #E74C3C; }
   .badge-netral { background: rgba(127,140,141,0.15); color: #95A5A6; }
   .badge-positif { background: rgba(39,174,96,0.15); color: #27AE60; }
-  .badge-aktor { background: rgba(99,102,241,0.15); color: #818CF8; }
+  /* Topik/subisu (kategori isu) vs Aktor/Lokasi (pihak yang terlibat)
+     tadinya sama-sama pakai .badge-aktor sehingga tidak terlihat beda
+     level informasinya. Dipisah: -topik tetap indigo (kategori),
+     -aktor jadi slate + ikon 👤 (entitas/pihak). */
+  .badge-topik { background: rgba(99,102,241,0.15); color: #818CF8; }
+  .badge-aktor { background: rgba(148,163,184,0.16); color: #94A3B8; }
 
   /* Detail box */
   .detail-section { margin-bottom: 14px; }
@@ -762,7 +767,7 @@ with tab1:
                   <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
                   <div style='margin-top:6px'>
                     <span class="badge badge-{tone_class}">{row['Tone']}</span>
-                    <span class="badge badge-aktor">{aktor_short}</span>
+                    <span class="badge badge-aktor">👤 {aktor_short}</span>
                   </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1070,6 +1075,16 @@ with tab2:
                         tone_class = str(row['Tone']).lower()
                         judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
 
+                        # Aktor/Lokasi dipecah jadi pill per nama (bukan satu
+                        # blob teks) supaya tiap pihak yang terlibat gampang
+                        # dipindai satu-satu, dan dikasih ikon 👤 + warna
+                        # slate yang beda dari badge topik (indigo) di
+                        # atasnya — dua-duanya kelihatan sama sebelum ini
+                        # padahal beda level informasi (kategori isu vs.
+                        # pihak yang terlibat).
+                        daftar_aktor = [a.strip() for a in str(row['AktorLokasi']).split(',') if a.strip() and a.strip() != '-']
+                        aktor_pills = "".join(f'<span class="badge badge-aktor">👤 {a}</span>' for a in daftar_aktor) or '<span class="badge badge-aktor">👤 -</span>'
+
                         st.markdown(f"""
                         <div style='
                             display:flex;align-items:center;gap:6px;margin-bottom:14px;
@@ -1085,9 +1100,13 @@ with tab2:
                           <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
                         </div>
 
+                        <div style='margin-bottom:10px'>
+                          <span class="badge badge-topik">🏷️ {row['IsuSubisu']}</span>
+                        </div>
+
+                        <div class="detail-label" style='margin-bottom:6px'>Aktor / Lokasi Terkait</div>
                         <div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px'>
-                          <span class="badge badge-aktor">{row['IsuSubisu']}</span>
-                          <span class="badge badge-aktor">{row['AktorLokasi']}</span>
+                          {aktor_pills}
                         </div>
 
                         <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
