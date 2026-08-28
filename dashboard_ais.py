@@ -11,9 +11,29 @@ import streamlit as st
 import pandas as pd
 import json
 import io
+import re
 from collections import Counter
 from datetime import datetime
 from struktur_app import STRUKTUR_APP
+
+
+def pisahkan_sumber_judul(judul: str):
+    """Pisahkan judul dari nama sumber yang ditempel Google News di akhir
+    (format '... - NamaSumber'). Mengembalikan (judul_bersih, nama_sumber)."""
+    s = str(judul)
+    m = re.search(r"\s[-–]\s([^-–]+)$", s)
+    if m:
+        return s[:m.start()].strip(), m.group(1).strip()
+    return s.strip(), ""
+
+
+def pill_sumber_html(sumber: str, compact: bool = False) -> str:
+    """Render pill kecil nama sumber (Kompas, CNN, Tempo, dst.) di awal judul."""
+    if not sumber:
+        return ""
+    cls = "pill-sumber pill-sumber-compact" if compact else "pill-sumber"
+    return f'<span class="{cls}">{sumber}</span>'
+
 
 # ── CUSTOM CSS ───────────────────────────────────────────────
 st.markdown("""
@@ -22,29 +42,25 @@ st.markdown("""
 
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-  /* Panel kanan melayang via st.container(key="panel_kanan"). Sempat
-     dicoba position:sticky supaya tidak nabrak topbar, tapi gagal:
-     col_detail (kolom kanan) tingginya cuma sepanjang isi panel itu
-     sendiri, jauh lebih pendek dari col_list (daftar artikel) di
-     sebelahnya — begitu discroll melewati tinggi col_detail yang pendek
-     itu, panel ikut hilang dari layar walau daftar kiri masih panjang.
-     Balik ke position:fixed (supaya selalu kelihatan selama scroll),
-     tapi dijangkar dari BAWAH viewport (bottom), bukan dari atas (top).
-     Alasan: masalah aslinya adalah top:90px yang dulu dipakai tidak
-     pernah bisa dikalibrasi pas untuk semua tinggi toolbar (beda antara
-     dev lokal vs Streamlit Cloud vs lebar layar) — jarak dari bawah
-     layar tidak peduli setinggi apa topbar di atas, jadi masalah itu
-     hilang sepenuhnya. max-height dibatasi konservatif supaya panel
-     tidak pernah bisa "tumbuh" sampai menyentuh zona topbar walau
-     kontennya panjang — kalau memang panjang, dia scroll di dalam
-     panelnya sendiri (overflow-y:auto), bukan mendorong ke atas. */
+  /* Panel kanan fixed via st.container(key="panel_kanan") — widget
+     interaktif Streamlit tidak bisa dibungkus position:fixed lewat HTML
+     markdown biasa. Kalibrasi ini (top:90px) sempat diganti dua kali
+     (sticky, lalu fixed-dari-bawah) untuk mengejar bug "nabrak topbar"
+     di Streamlit Cloud, tapi dua-duanya bikin regresi lebih parah:
+     sticky bikin panel hilang total saat scroll panjang, dan
+     fixed-dari-bawah memaksa max-height sangat pendek yang
+     mengempeskan tinggi field form Telaah Klaster (text area jadi
+     cuma garis tipis). Sengaja dikembalikan ke versi ini — lebih
+     diterima sesekali nabrak topbar (kosmetik) daripada form telaah
+     tidak bisa dipakai (fungsional). max-height dilebarkan hampir
+     sepenuh tinggi viewport (cuma sisa 16px margin bawah) supaya
+     ruang mengetik uraian panjang di form Telaah Klaster lebih lega. */
   .st-key-panel_kanan {
     position: fixed !important;
-    top: auto !important;
-    bottom: 24px !important;
+    top: 90px !important;
     right: 24px !important;
     width: min(42vw, 520px) !important;
-    max-height: calc(100vh - 260px) !important;
+    max-height: calc(100vh - 106px) !important;
     overflow-y: auto !important;
     z-index: 999 !important;
     background: rgba(13,27,42,0.97) !important;
@@ -155,6 +171,22 @@ st.markdown("""
   }
   .issue-card-member::before { width: 3px; }
   .issue-card-member .issue-title { font-size: 12px; font-weight: 500; opacity: 0.85; }
+
+  /* Pill sumber — nama media (Kompas, CNN, Tempo, dst.) ditonjolkan di
+     awal judul supaya pembaca langsung tahu asal beritanya. */
+  .pill-sumber {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #F5A623; background: rgba(245,166,35,0.12);
+    border: 1px solid rgba(245,166,35,0.35);
+    padding: 1px 7px; border-radius: 3px;
+    margin-right: 6px; letter-spacing: 0.02em;
+    text-transform: uppercase; vertical-align: middle;
+  }
+  .spotlight-title .pill-sumber { vertical-align: 2px; }
+  .pill-sumber-compact {
+    font-size: 9px; padding: 0px 5px; opacity: 0.75;
+  }
 
   /* Badges */
   .badge {
@@ -645,19 +677,61 @@ with tab1:
     df_score['relevansi'] = df_score.apply(lambda r: skor_relevansi(r, topik_crawl), axis=1)
     df_score = df_score.sort_values('relevansi', ascending=False)
 
+    spotlight_idx = df_score.index[0] if len(df_score) > 0 else None
+
     if len(df_score) > 0:
         spotlight = df_score.iloc[0]
         tone_spotlight = str(spotlight['Tone'])
         tone_color = {'Negatif': '#E74C3C', 'Netral': '#95A5A6', 'Positif': '#27AE60'}.get(tone_spotlight, '#95A5A6')
+        judul_spotlight, sumber_spotlight = pisahkan_sumber_judul(spotlight['Judul'])
         st.markdown(f"""
         <div class="spotlight-box">
           <div class="spotlight-eyebrow">⚡ Isu Prioritas — Paling Relevan & Signifikan</div>
-          <div class="spotlight-title">{spotlight['Judul']}</div>
+          <div class="spotlight-title">{pill_sumber_html(sumber_spotlight)}{judul_spotlight}</div>
           <div class="spotlight-body">{spotlight['Ringkasan']}<br><br>
             <strong style="color:rgba(255,255,255,0.9)">Risiko:</strong> {spotlight['Risiko']}
           </div>
         </div>
         """, unsafe_allow_html=True)
+
+    # Artikel risiko tinggi — ditaruh sebelum chart supaya insight yang
+    # paling actionable terlihat duluan, baru statistik pendukungnya.
+    # Artikel yang sudah muncul di Spotlight di-exclude supaya tidak dobel.
+    st.markdown("**Artikel Risiko Tinggi — Perlu Perhatian**")
+    df_tinggi = df[df['level_risiko'] == 'Tinggi']
+    if spotlight_idx is not None:
+        df_tinggi = df_tinggi[df_tinggi.index != spotlight_idx]
+    df_tinggi = df_tinggi.head(3)
+    if len(df_tinggi) == 0:
+        df_tinggi = df[df['Tone'] == 'Negatif']
+        if spotlight_idx is not None:
+            df_tinggi = df_tinggi[df_tinggi.index != spotlight_idx]
+        df_tinggi = df_tinggi.head(3)
+
+    if len(df_tinggi) == 0:
+        st.info("Tidak ada artikel risiko tinggi/negatif lain di luar Isu Prioritas pada periode ini.")
+    else:
+        cols_tinggi = st.columns(min(3, len(df_tinggi)))
+        for i, (_, row) in enumerate(df_tinggi.iterrows()):
+            with cols_tinggi[i]:
+                tone_class = str(row['Tone']).lower()
+                aktor_short = str(row['AktorLokasi'])[:40]
+                judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
+                judul_disp = judul_bersih[:80] + ('…' if len(judul_bersih) > 80 else '')
+                st.markdown(f"""
+                <div class="issue-card issue-card-highlight {tone_class}">
+                  <div class="issue-title">{pill_sumber_html(sumber_row)}{judul_disp}</div>
+                  <div class="issue-sub">{str(row['IsuSubisu'])}</div>
+                  <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
+                  <div style='margin-top:6px'>
+                    <span class="badge badge-{tone_class}">{row['Tone']}</span>
+                    <span class="badge badge-aktor">{aktor_short}</span>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+    st.markdown("---")
 
     # Tone bar + frekuensi subisu
     col_left, col_right = st.columns(2)
@@ -731,33 +805,6 @@ with tab1:
             </div>
             """, unsafe_allow_html=True)
 
-    # Risiko tinggi preview cards
-    st.markdown("---")
-    st.markdown("**Artikel Risiko Tinggi — Perlu Perhatian**")
-    df_tinggi = df[df['level_risiko']=='Tinggi'].head(3)
-    if len(df_tinggi) == 0:
-        df_tinggi = df[df['Tone']=='Negatif'].head(3)
-
-    if len(df_tinggi) == 0:
-        st.info("Tidak ada artikel dengan risiko tinggi atau tone negatif pada periode ini.")
-    else:
-        cols = st.columns(min(3, len(df_tinggi)))
-        for i, (_, row) in enumerate(df_tinggi.iterrows()):
-            with cols[i]:
-                tone_class = str(row['Tone']).lower()
-                aktor_short = str(row['AktorLokasi'])[:40]
-                st.markdown(f"""
-                <div class="issue-card issue-card-highlight {tone_class}">
-                  <div class="issue-title">{str(row['Judul'])[:80]}{'…' if len(str(row['Judul']))>80 else ''}</div>
-                  <div class="issue-sub">{str(row['IsuSubisu'])}</div>
-                  <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
-                  <div style='margin-top:6px'>
-                    <span class="badge badge-{tone_class}">{row['Tone']}</span>
-                    <span class="badge badge-aktor">{aktor_short}</span>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-
 
 # ════════════════════════════════════════════
 # TAB 2 — DAFTAR ISU
@@ -784,14 +831,15 @@ with tab2:
                 bg_style = "background:rgba(99,179,237,0.08);" if is_selected else "background:transparent;"
                 varian_class = "issue-card-member" if compact else ""
 
-                judul_short = str(row['Judul'])[:75]+'…' if len(str(row['Judul']))>75 else str(row['Judul'])
+                judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
+                judul_short = judul_bersih[:75]+'…' if len(judul_bersih)>75 else judul_bersih
 
                 btn_key = f"artikel_{i}"
                 st.markdown(f"""
                 <div class="issue-card {varian_class} {tone_class}" style="{border_style}{bg_style}">
                   <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px'>
                     <div>
-                      <div class="issue-title">{judul_short}</div>
+                      <div class="issue-title">{pill_sumber_html(sumber_row, compact=compact)}{judul_short}</div>
                       <div class="issue-sub">{str(row['IsuSubisu'])}</div>
                     </div>
                     <span class="badge badge-{tone_class}" style='flex-shrink:0'>{row['Tone']}</span>
@@ -983,6 +1031,7 @@ with tab2:
                     if idx < len(df_filtered):
                         row = df_filtered.iloc[idx]
                         tone_class = str(row['Tone']).lower()
+                        judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
 
                         st.markdown(f"""
                         <div style='
@@ -995,7 +1044,7 @@ with tab2:
                         </div>
 
                         <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
-                          <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{row['Judul']}</div>
+                          <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{pill_sumber_html(sumber_row)}{judul_bersih}</div>
                           <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
                         </div>
 
