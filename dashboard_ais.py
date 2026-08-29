@@ -485,7 +485,7 @@ with st.sidebar:
     filter_risiko = ["Tinggi", "Sedang", "Rendah"]
 
     st.markdown("---")
-    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by DeepSeek</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP</div>", unsafe_allow_html=True)
 
 # File baru dari uploader sidebar (mis. user ganti file) langsung
 # di-parse & disimpan ke session_state — lihat catatan panjang di atas.
