@@ -238,6 +238,9 @@ if page == "🔍 Crawl & Analisis":
         box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
     .artikel-judul { font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 0.4rem; line-height: 1.4; }
+    .artikel-judul a.judul-link { color: #1e293b; text-decoration: none; }
+    .artikel-judul a.judul-link:hover { color: #1F3864; text-decoration: underline; }
+    .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.75em; font-weight: 400; opacity: 0.4; margin-left: 4px; white-space: nowrap; }
     .artikel-meta  { font-size: 0.78rem; color: #64748b; margin-bottom: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
     .artikel-ringkasan { font-size: 0.88rem; color: #374151; line-height: 1.6; margin-bottom: 0.6rem; }
     .artikel-risiko {
@@ -647,7 +650,13 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             placeholder="Contoh: Pertamax BBM Juni 2026",
             label_visibility="collapsed",
         )
-        max_art   = st.slider("Maks. Artikel", min_value=5, max_value=50, value=20, step=5)
+        max_art   = st.slider(
+            "Maks. Artikel", min_value=5, max_value=30, value=20, step=5,
+            help="Klasterisasi isu dibatasi 3–5 klaster berapa pun jumlah artikelnya — "
+                 "di atas ~25 artikel, tiap klaster jadi berisi terlalu banyak artikel "
+                 "sehingga analisis risikonya melebar/generic. 15–25 artikel biasanya "
+                 "titik optimal antara cakupan isu dan ketajaman analisis per klaster.",
+        )
         st.divider()
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
@@ -813,16 +822,23 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         for h in tampil:
             tone = h.get("tone","Netral")
             klaster_label = h.get("klaster","-")
+            link = h.get("link","")
+            judul = h.get("judul","-")
+            # Judul langsung jadi hyperlink ke artikel asli (bukan link
+            # terpisah di bawah card via expander) — lebih cepat diakses,
+            # dan tetap terasa satu kesatuan dengan card-nya.
+            if link and link != "-":
+                judul_html = f'<a href="{link}" target="_blank" rel="noopener" class="judul-link">{judul}</a>'
+            else:
+                judul_html = judul
             st.markdown(f"""
             <div class="artikel-card">
-                <div class="artikel-judul">{h.get('judul','-')}</div>
+                <div class="artikel-judul">{judul_html}</div>
                 <div class="artikel-meta">📅 {h.get('tanggal','-')} &nbsp;·&nbsp; 📰 {h.get('sumber','-')} &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span> &nbsp;·&nbsp; 🗂️ {klaster_label}</div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
                 <div class="artikel-risiko">⚠️ <b>Risiko klaster:</b> {h.get('risiko','-')}</div>
                 <div class="artikel-tindak">🔍 <b>Area Perhatian klaster:</b> {h.get('area_perhatian','-')}</div>
             </div>""", unsafe_allow_html=True)
-            with st.expander("🔗 Lihat link artikel"):
-                st.write(h.get("link","-"))
 
 
 # ══════════════════════════════════════════════════════════════════════════
