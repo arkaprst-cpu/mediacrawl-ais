@@ -450,12 +450,24 @@ def risiko_per_aktor(df, top_n=8):
 # masuk akal ditonjolkan di tengah alur baca daripada "disembunyikan"
 # di panel kiri yang gampang kelewat. Begitu ada data (dari upload atau
 # dari sesi crawl), tempatnya pindah ke sidebar sebagai cara ganti file
-# tanpa mengganggu tampilan dashboard. Widget-nya pakai key eksplisit
-# ("uploader_xlsx") supaya nilainya tetap sama walau lokasi renders-nya
-# berpindah antar rerun.
+# tanpa mengganggu tampilan dashboard.
+#
+# "has_upload" TIDAK dicek dari nilai widget file_uploader itu sendiri
+# (uploaded is not None) — itu penyebab bug "balik ke sidebar lagi"
+# yang sempat dilaporkan: app.py ini multipage lewat exec(), jadi saat
+# user pindah ke halaman lain, dashboard_ais.py sama sekali tidak
+# dieksekusi pada run itu, widget-nya jadi tidak ter-render, dan
+# Streamlit MEMBUANG file yang sudah diupload ke widget itu (beda dari
+# entri session_state biasa yang tahan pindah halaman). Begitu balik ke
+# Dashboard, `uploaded` sudah None lagi walau user merasa baru saja
+# upload. Solusinya: begitu file diupload, langsung di-parse dan hasil
+# parsingnya (bukan objek file mentahnya) disimpan ke session_state
+# ("_dash_upload_df_raw" dkk) — itu yang jadi sumber kebenaran, persis
+# seperti "has_session" untuk data dari sesi crawl, dan sama-sama tahan
+# pindah halaman.
 has_session = st.session_state.get("ais_ready", False) and "hasil" in st.session_state
-sudah_pernah_upload = st.session_state.get("_dashboard_upload_ok", False)
-uploader_di_sidebar = has_session or sudah_pernah_upload
+has_upload = "_dash_upload_df_raw" in st.session_state
+uploader_di_sidebar = has_session or has_upload
 
 with st.sidebar:
     if uploader_di_sidebar:
@@ -475,6 +487,15 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP<br>Powered by DeepSeek</div>", unsafe_allow_html=True)
 
+# File baru dari uploader sidebar (mis. user ganti file) langsung
+# di-parse & disimpan ke session_state — lihat catatan panjang di atas.
+if uploaded is not None:
+    df_raw_baru, meta_baru = load_from_excel(uploaded)
+    st.session_state["_dash_upload_df_raw"] = df_raw_baru
+    st.session_state["_dash_upload_meta"] = meta_baru
+    st.session_state["_dash_upload_file_id"] = getattr(uploaded, "file_id", None) or f"{uploaded.name}_{uploaded.size}"
+    has_upload = True
+
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
 # Prioritas sumber data:
@@ -483,7 +504,7 @@ with st.sidebar:
 # 2. Hasil crawl dari halaman 1 via session_state
 # 3. Tidak ada data → tampilkan landing
 
-if uploaded is None and not has_session:
+if not has_upload and not has_session:
     # Landing state — belum ada data dari mana pun
     st.markdown("""
     <div class="ais-topbar">
@@ -496,54 +517,42 @@ if uploaded is None and not has_session:
 
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        # uploader_di_sidebar==True di titik ini berarti widget-nya sudah
-        # dirender (dan kosong) di sidebar pada run ini — jangan render
-        # file_uploader kedua dengan key yang sama di sini, cukup arahkan
-        # user ke sana. Ini kondisi tepi: user sempat upload lalu
-        # menghapus file-nya lagi tanpa ada sesi crawl aktif.
-        if uploader_di_sidebar:
+        with st.container(key="landing_upload_card"):
             st.markdown("""
-            <div class="st-key-landing_upload_card" style='text-align:center;padding:32px 24px'>
+            <div style='text-align:center;padding:8px 4px 4px'>
               <div style='font-size:40px;margin-bottom:12px'>📊</div>
               <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
-              <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6'>
+              <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6;margin-bottom:14px'>
                 Jalankan crawl di halaman <b>🔍 Crawl & Analisis</b> terlebih dahulu,<br>
-                atau upload file <code>.xlsx</code> hasil crawl sebelumnya melalui panel Upload Data di sidebar kiri.
+                atau upload file <code>.xlsx</code> hasil crawl sebelumnya di bawah ini.
               </div>
             </div>
             """, unsafe_allow_html=True)
-        else:
-            with st.container(key="landing_upload_card"):
-                st.markdown("""
-                <div style='text-align:center;padding:8px 4px 4px'>
-                  <div style='font-size:40px;margin-bottom:12px'>📊</div>
-                  <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
-                  <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6;margin-bottom:14px'>
-                    Jalankan crawl di halaman <b>🔍 Crawl & Analisis</b> terlebih dahulu,<br>
-                    atau upload file <code>.xlsx</code> hasil crawl sebelumnya di bawah ini.
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-                uploaded_landing = st.file_uploader(
-                    "Upload file Excel (.xlsx)", type=["xlsx"],
-                    label_visibility="collapsed", key="uploader_xlsx"
-                )
-            if uploaded_landing is not None:
-                st.session_state["_dashboard_upload_ok"] = True
-                st.rerun()
+            uploaded_landing = st.file_uploader(
+                "Upload file Excel (.xlsx)", type=["xlsx"],
+                label_visibility="collapsed", key="uploader_xlsx"
+            )
+        if uploaded_landing is not None:
+            df_raw_baru, meta_baru = load_from_excel(uploaded_landing)
+            st.session_state["_dash_upload_df_raw"] = df_raw_baru
+            st.session_state["_dash_upload_meta"] = meta_baru
+            st.session_state["_dash_upload_file_id"] = getattr(uploaded_landing, "file_id", None) or f"{uploaded_landing.name}_{uploaded_landing.size}"
+            st.rerun()
     st.stop()
 
 # ── LOAD & PROCESS DATA ──────────────────────────────────────
-if uploaded is not None:
-    # Upload manual — selalu override session_state
-    df_raw, meta = load_from_excel(uploaded)
+if has_upload:
+    # Upload manual — selalu override session_state. Dibaca dari cache
+    # session_state (bukan langsung dari widget) — lihat catatan di atas.
+    df_raw = st.session_state["_dash_upload_df_raw"]
+    meta = st.session_state["_dash_upload_meta"]
     sumber_data = "upload"
     klaster_meta = []  # narasi klaster lengkap tidak tersedia dari Excel, hanya nama per baris
 
     # Hidrasi status telaah dari file yang di-upload ke session_state,
     # di-guard per file_id supaya hanya jalan sekali (tidak menimpa telaah
     # baru yang sedang berjalan).
-    file_id = getattr(uploaded, "file_id", None) or f"{uploaded.name}_{uploaded.size}"
+    file_id = st.session_state["_dash_upload_file_id"]
     if st.session_state.get("_review_hydrated_from") != file_id and "StatusReview" in df_raw.columns:
         st.session_state.setdefault("review_klaster", {})
         sudah_direview_df = df_raw[df_raw["StatusReview"] == "Sudah Direview"]
@@ -615,7 +624,11 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     if st.button("📊 Generate Excel Terbaru", use_container_width=True, type="primary"):
-        if uploaded is None:
+        # Dicek dari sumber_data (hasil resolusi df_raw/meta di atas),
+        # bukan dari nilai widget "uploaded" — widget itu bisa kosong
+        # walau datanya berasal dari upload (lihat catatan panjang soal
+        # has_upload di bagian SIDEBAR di atas).
+        if sumber_data == "session":
             # Sumber: sesi crawl aktif — hasil_list mentah sudah dalam
             # format dict yang dipahami buat_excel.
             sumber_baris = st.session_state["hasil"]
