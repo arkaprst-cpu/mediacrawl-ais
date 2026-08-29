@@ -77,7 +77,7 @@ def cek_password():
           <div class="login-kicker">AIS</div>
           <div class="login-title">Analisis Isu Strategis Pengawasan</div>
           <div class="login-org">Pusat Strategi Kebijakan Pengawasan BPKP</div>
-          <div class="login-desc">Memantau pemberitaan media secara otomatis dan meringkasnya menjadi analisis siap pakai untuk mendukung pengawasan isu strategis.</div>
+          <div class="login-desc">Deteksi dini isu strategis dari pemberitaan media.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -615,7 +615,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
     st.markdown("""
     <div class="main-header">
       <h1>📰 Analisis Isu Strategis Pengawasan</h1>
-      <p>Memantau pemberitaan media secara otomatis dan meringkasnya menjadi analisis siap pakai untuk mendukung pengawasan isu strategis BPKP.</p>
+      <p>Deteksi dini isu strategis dari pemberitaan media.</p>
     </div>
     """, unsafe_allow_html=True)
 
