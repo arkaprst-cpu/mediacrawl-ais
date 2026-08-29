@@ -41,19 +41,48 @@ def cek_password():
     if st.session_state.get("ais_authenticated", False):
         return True
 
+    # Layar ini dieksekusi SEBELUM blok <style> font utama di bawah (yang
+    # baru jalan setelah login) — tanpa import sendiri di sini, gerbang
+    # password jatuh ke font default browser dan kelihatan polos/putus
+    # nyambung dengan identitas amber-navy di halaman-halaman lain.
     st.markdown("""
-    <div style='max-width:420px;margin:80px auto 0;text-align:center'>
-      <div style='font-family:monospace;font-size:22px;font-weight:700;color:#F5A623'>AIS</div>
-      <div style='font-size:13px;color:#888;margin-top:4px;margin-bottom:24px'>
-        Analisis Isu Strategis Pengawasan — Pusat Strategi Kebijakan Pengawasan BPKP
-      </div>
-    </div>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap');
+    html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
+    .st-key-login_card {
+        max-width: 440px; margin: 64px auto 0;
+        background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
+        border-radius: 14px; border-top: 3px solid #F5A623;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+        padding: 8px 8px 20px;
+    }
+    .login-kicker {
+        font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.18em; color: #F5A623; text-transform: uppercase; margin-bottom: 10px;
+    }
+    .login-title { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.3; margin-bottom: 6px; }
+    .login-org   { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55); margin-bottom: 14px; }
+    .login-desc  { font-size: 12.5px; color: rgba(255,255,255,0.68); line-height: 1.6; max-width: 320px; margin: 0 auto 22px; }
+    </style>
     """, unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1, 1.2, 1])
-    with c2:
+    # Judul (nama lengkap) dan nama unit dipisah jadi dua level tipografi
+    # sendiri-sendiri, bukan digabung satu baris dengan em dash — supaya
+    # tidak ambigu mana judul aplikasi dan mana nama organisasinya. Ditambah
+    # satu kalimat penjelasan singkat: sebelum ini gerbang password langsung
+    # menyodorkan form login tanpa info apa pun soal aplikasinya sendiri.
+    with st.container(key="login_card"):
+        st.markdown("""
+        <div style='text-align:center'>
+          <div class="login-kicker">AIS</div>
+          <div class="login-title">Analisis Isu Strategis Pengawasan</div>
+          <div class="login-org">Pusat Strategi Kebijakan Pengawasan BPKP</div>
+          <div class="login-desc">Memantau pemberitaan media secara otomatis dan meringkasnya menjadi analisis siap pakai untuk mendukung pengawasan isu strategis.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
         pw_input = st.text_input("Password Akses Tim", type="password", key="pw_gate_input")
-        masuk = st.button("Masuk", use_container_width=True)
+        masuk = st.button("Masuk", use_container_width=True, type="primary")
 
         if masuk:
             pw_benar = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
@@ -196,11 +225,6 @@ if page == "🔍 Crawl & Analisis":
         padding: 0.8rem 1rem; margin-bottom: 1rem;
         font-size: 0.83rem; color: #1e40af; font-family: 'IBM Plex Mono', monospace;
     }
-    .provider-badge {
-        display:inline-block; padding:2px 10px; border-radius:12px;
-        font-size:0.72rem; font-weight:600; margin-left:6px;
-    }
-    .badge-deepseek { background:#fdf4ff; color:#86198f; border:1px solid #f5d0fe; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -421,7 +445,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 if "429" in err_str or "rate" in err_str:
                     wait = BASE_DELAY * (2 ** attempt)
                     if rate_status:
-                        rate_status.warning(f"⏳ Rate limit DeepSeek — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
+                        rate_status.warning(f"⏳ Rate limit tercapai — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
                     time.sleep(wait)
                 elif attempt < MAX_RETRY - 1:
                     time.sleep(BASE_DELAY)
@@ -429,7 +453,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 else:
                     return _fallback_error(artikel, str(e)[:200])
 
-        return _fallback_error(artikel, "Rate limit DeepSeek — semua retry habis")
+        return _fallback_error(artikel, "Rate limit tercapai — semua retry habis")
 
     # ── Klasterisasi + Analisis Risiko/Area Perhatian per klaster ──────────
     def klasterisasi_isu_deepseek(client, hasil_list: list) -> list:
@@ -562,9 +586,12 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         st.divider()
 
         # ── API Key DeepSeek ─────────────────────────────────────────────
+        # Kalau sudah dikonfigurasi lewat Secrets, tidak perlu ditunjukkan
+        # ke user — itu detail teknis provider AI, bukan sesuatu yang perlu
+        # mereka pahami/pikirkan. UI cukup langsung siap pakai; kotak isian
+        # API Key hanya muncul kalau memang belum dikonfigurasi.
         deepseek_key_default = st.secrets.get("DEEPSEEK_API_KEY","") if hasattr(st,"secrets") else ""
         if deepseek_key_default:
-            st.success("✅ DeepSeek API Key dari Secrets")
             active_key = deepseek_key_default
         else:
             active_key = st.text_input("DeepSeek API Key", type="password", placeholder="sk-...")
@@ -582,11 +609,13 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
 
     # ── Main area ──────────────────────────────────────────────────────────
-    provider_badge = '<span class="provider-badge badge-deepseek">DeepSeek Chat</span>'
-    st.markdown(f"""
+    # Provider AI (DeepSeek) sengaja tidak lagi ditampilkan sebagai pill di
+    # header — sama seperti badge API key di sidebar, itu detail teknis
+    # implementasi yang tidak perlu diketahui/dipikirkan user.
+    st.markdown("""
     <div class="main-header">
-      <h1>📰 Analisis Isu Strategis Pengawasan {provider_badge}</h1>
-      <p>Media Crawl otomatis · Query Expansion · Analisis AI · Output Excel · Pusat Strategi Kebijakan Pengawasan BPKP</p>
+      <h1>📰 Analisis Isu Strategis Pengawasan</h1>
+      <p>Memantau pemberitaan media secara otomatis dan meringkasnya menjadi analisis siap pakai untuk mendukung pengawasan isu strategis BPKP.</p>
     </div>
     """, unsafe_allow_html=True)
 
