@@ -180,6 +180,35 @@ st.markdown("""
   .issue-card-member::before { width: 3px; }
   .issue-card-member .issue-title { font-size: 12px; font-weight: 500; opacity: 0.85; }
 
+  /* Kartu artikel + tombol "Lihat detail →" — dibungkus satu
+     st.container(key="artikel_card_N") di Python supaya keduanya satu
+     elemen DOM, lalu di sini disambungkan jadi satu unit visual: card
+     persegi di atas (radius bawah dihilangkan), tombol jadi strip footer
+     tanpa celah/border ganda di bawahnya. Sebelumnya tombolnya render
+     sebagai widget terpisah di bawah card HTML, jadi ambigu itu tombol
+     punya card yang mana. */
+  [class*="st-key-artikel_card_"] [data-testid="stVerticalBlock"] { gap: 0 !important; }
+  [class*="st-key-artikel_card_"] .issue-card.artikel-card-attached {
+    border-radius: 6px 6px 0 0;
+    margin-bottom: 0;
+  }
+  [class*="st-key-artikel_card_"] div[data-testid="stButton"] { margin: 0; }
+  [class*="st-key-artikel_card_"] div[data-testid="stButton"] button {
+    width: 100%;
+    border: 1px solid rgba(128,128,128,0.2);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    background: rgba(128,128,128,0.04);
+    color: inherit; opacity: 0.7;
+    font-size: 11px; font-weight: 500;
+    padding: 5px 12px; min-height: 30px;
+  }
+  [class*="st-key-artikel_card_"] div[data-testid="stButton"] button:hover {
+    background: rgba(99,179,237,0.14);
+    border-color: rgba(99,179,237,0.45);
+    color: #63B3ED; opacity: 1;
+  }
+
   /* Pill sumber — nama media (Kompas, CNN, Tempo, dst.) ditonjolkan di
      awal judul supaya pembaca langsung tahu asal beritanya. */
   .pill-sumber {
@@ -955,24 +984,33 @@ with tab2:
                 judul_short = judul_bersih[:75]+'…' if len(judul_bersih)>75 else judul_bersih
 
                 btn_key = f"artikel_{i}"
-                st.markdown(f"""
-                <div class="issue-card {varian_class} {tone_class}" style="{border_style}{bg_style}">
-                  <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px'>
-                    <div>
-                      <div class="issue-title">{pill_sumber_html(sumber_row, compact=compact)}{judul_short}</div>
-                      <div class="issue-sub">{str(row['IsuSubisu'])}</div>
+                # Card HTML + tombol "Lihat detail" dibungkus SATU
+                # st.container(key=...) supaya keduanya benar-benar
+                # bertetangga dalam satu elemen DOM (bukan dua widget
+                # terpisah yang cuma kebetulan berdekatan) — sebelumnya ini
+                # bikin gak jelas tombol itu milik card di atas atau malah
+                # nempel ke card berikutnya. CSS di bawah menyambungkan
+                # visualnya jadi satu unit: card persegi di atas, tombol
+                # jadi strip footer nempel tanpa celah di bawahnya.
+                with st.container(key=f"artikel_card_{i}"):
+                    st.markdown(f"""
+                    <div class="issue-card artikel-card-attached {varian_class} {tone_class}" style="{border_style}{bg_style}">
+                      <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px'>
+                        <div>
+                          <div class="issue-title">{pill_sumber_html(sumber_row, compact=compact)}{judul_short}</div>
+                          <div class="issue-sub">{str(row['IsuSubisu'])}</div>
+                        </div>
+                        <span class="badge badge-{tone_class}" style='flex-shrink:0'>{row['Tone']}</span>
+                      </div>
+                      <div style='margin-top:6px;font-size:10px;color:inherit;opacity:0.5;font-family:monospace'>
+                        📅 {row['Tanggal']} &nbsp;·&nbsp; 🏢 {str(row['AktorLokasi'])[:40]}
+                      </div>
                     </div>
-                    <span class="badge badge-{tone_class}" style='flex-shrink:0'>{row['Tone']}</span>
-                  </div>
-                  <div style='margin-top:6px;font-size:10px;color:inherit;opacity:0.5;font-family:monospace'>
-                    📅 {row['Tanggal']} &nbsp;·&nbsp; 🏢 {str(row['AktorLokasi'])[:40]}
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
 
-                if st.button(f"Lihat detail →", key=btn_key, use_container_width=True):
-                    st.session_state['selected_idx'] = i
-                    st.rerun()
+                    if st.button(f"Lihat detail →", key=btn_key, use_container_width=True):
+                        st.session_state['selected_idx'] = i
+                        st.rerun()
 
             narasi_klaster = {}  # selalu didefinisikan, diisi jika ada_klaster True
 
