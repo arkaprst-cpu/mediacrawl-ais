@@ -494,15 +494,26 @@ if uploaded is not None:
     st.session_state["_dash_upload_df_raw"] = df_raw_baru
     st.session_state["_dash_upload_meta"] = meta_baru
     st.session_state["_dash_upload_file_id"] = getattr(uploaded, "file_id", None) or f"{uploaded.name}_{uploaded.size}"
+    st.session_state["_dash_last_source"] = "upload"
     has_upload = True
 
 
 # ── MAIN CONTENT ─────────────────────────────────────────────
-# Prioritas sumber data:
-# 1. Upload manual (override) — sidebar kalau sudah pernah ada data,
-#    tengah halaman (landing) kalau ini pertama kali.
-# 2. Hasil crawl dari halaman 1 via session_state
-# 3. Tidak ada data → tampilkan landing
+# Prioritas sumber data — BUKAN lagi "upload selalu menang" secara
+# statis. Itu penyebab bug yang dilaporkan user: habis crawl baru (mis.
+# 20 artikel), Dashboard AIS malah masih menampilkan Excel upload manual
+# lama yang sempat diupload di sesi sebelumnya — karena has_upload sekali
+# True akan TERUS True sepanjang sesi (session_state-nya tidak pernah
+# dibersihkan), jadi crawl baru tidak pernah "menang" walau jelas lebih
+# baru. Sekarang dipilih berdasarkan aksi mana yang TERAKHIR terjadi
+# (upload file, ATAU crawl baru selesai) via
+# session_state["_dash_last_source"] — ditulis di titik upload (di atas,
+# dan di landing) dan di titik crawl selesai (app.py, tepat setelah
+# "hasil"/"klaster" diisi). Kalau cuma salah satu sumber yang ada, sumber
+# itu otomatis dipakai; kalau _dash_last_source belum pernah ditandai
+# (sesi lama dari sebelum fix ini) fallback ke upload, sama seperti
+# perilaku lama, supaya tidak ada perubahan tampilan mendadak untuk sesi
+# yang sudah berjalan.
 
 if not has_upload and not has_session:
     # Landing state — belum ada data dari mana pun
@@ -537,12 +548,21 @@ if not has_upload and not has_session:
             st.session_state["_dash_upload_df_raw"] = df_raw_baru
             st.session_state["_dash_upload_meta"] = meta_baru
             st.session_state["_dash_upload_file_id"] = getattr(uploaded_landing, "file_id", None) or f"{uploaded_landing.name}_{uploaded_landing.size}"
+            st.session_state["_dash_last_source"] = "upload"
             st.rerun()
     st.stop()
 
 # ── LOAD & PROCESS DATA ──────────────────────────────────────
-if has_upload:
-    # Upload manual — selalu override session_state. Dibaca dari cache
+last_source = st.session_state.get("_dash_last_source")
+if has_upload and has_session:
+    pakai_upload = last_source != "session"
+else:
+    pakai_upload = has_upload
+
+if pakai_upload:
+    # Upload manual dipilih — baik karena cuma ini satu-satunya sumber
+    # yang ada, atau karena ini yang paling terakhir dilakukan user
+    # dibanding sesi crawl yang sedang aktif. Dibaca dari cache
     # session_state (bukan langsung dari widget) — lihat catatan di atas.
     df_raw = st.session_state["_dash_upload_df_raw"]
     meta = st.session_state["_dash_upload_meta"]
