@@ -256,6 +256,29 @@ if page == "🔍 Crawl & Analisis":
     .tone-positif { background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
     .tone-netral  { background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
     .tone-negatif { background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
+    /* Pill sumber & badge aktor/topik — konsep sama dengan yang sudah
+       dipakai di Dashboard AIS (pill nama media, badge topik indigo,
+       badge aktor slate), tapi warnanya disesuaikan untuk card PUTIH di
+       halaman ini (Dashboard AIS pakai card gelap) supaya kontrasnya
+       tetap terjaga, bukan asal salin warna yang jadi pudar di background
+       terang. */
+    .pill-sumber {
+        display: inline-block; font-size: 10px; font-weight: 700;
+        font-family: 'IBM Plex Mono', monospace;
+        color: #92400e; background: #fef3c7; border: 1px solid #fde68a;
+        padding: 1px 7px; border-radius: 3px;
+        margin-right: 6px; letter-spacing: 0.02em;
+        text-transform: uppercase; vertical-align: middle;
+    }
+    .badge-pill {
+        display: inline-block; font-size: 10.5px; font-weight: 600;
+        font-family: 'IBM Plex Mono', monospace;
+        padding: 2px 8px; border-radius: 4px;
+        margin-right: 5px; margin-top: 4px;
+    }
+    .badge-topik { background: #e0e7ff; color: #4338ca; }
+    .badge-aktor { background: #e2e8f0; color: #475569; }
+    .artikel-tanggal { opacity: 0.65; }
     .query-box {
         background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
         padding: 0.8rem 1rem; margin-bottom: 1rem;
@@ -286,6 +309,14 @@ if page == "🔍 Crawl & Analisis":
             sumber = re.sub(r"\s*\[.*?\]\s*$", "", sumber).strip()
             return sumber if sumber else ""
         return ""
+
+    def bersihkan_judul_dari_sumber(judul: str) -> str:
+        """Buang suffix ' - NamaSumber' Google News dari judul untuk
+        ditampilkan \u2014 nama sumbernya sendiri sudah tampil terpisah sebagai
+        pill (lihat pill-sumber), sama seperti tweak yang sudah diterapkan
+        di Dashboard AIS."""
+        m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
+        return judul[:m.start()].strip() if m else judul.strip()
 
     # ── PROMPT SISTEM (analisis per-artikel) ───────────────────────────────
     PROMPT_SISTEM = """Kamu adalah analis isu strategis pengawasan pemerintahan Indonesia untuk BPKP Pusat Strategi Kebijakan Pengawasan.
@@ -760,6 +791,12 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         st.session_state["label_isu"] = label_isu.strip()
         st.session_state["ais_ready"] = True
         st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
+        # Tandai crawl BARU ini sebagai sumber data TERAKTIF di Dashboard AIS
+        # — sebelumnya Dashboard AIS selalu mengutamakan Excel upload manual
+        # apa pun yang terjadi belakangan, jadi hasil crawl baru bisa
+        # "kalah" ditimpa tampilan upload lama yang masih tersimpan di
+        # sesi. Lihat dashboard_ais.py bagian "LOAD & PROCESS DATA".
+        st.session_state["_dash_last_source"] = "session"
 
         if not klaster_list:
             st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.")
@@ -823,21 +860,37 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             tone = h.get("tone","Netral")
             klaster_label = h.get("klaster","-")
             link = h.get("link","")
-            judul = h.get("judul","-")
+            judul_bersih = bersihkan_judul_dari_sumber(h.get("judul","-"))
+            sumber_pill = f'<span class="pill-sumber">{h.get("sumber","-")}</span>' if h.get("sumber") else ""
             # Judul langsung jadi hyperlink ke artikel asli (bukan link
             # terpisah di bawah card via expander) — lebih cepat diakses,
-            # dan tetap terasa satu kesatuan dengan card-nya.
+            # dan tetap terasa satu kesatuan dengan card-nya. Nama sumber
+            # dipisah dari teks judul dan ditampilkan sebagai pill di
+            # depannya — sama seperti tweak pill sumber di Dashboard AIS.
             if link and link != "-":
-                judul_html = f'<a href="{link}" target="_blank" rel="noopener" class="judul-link">{judul}</a>'
+                judul_html = f'{sumber_pill}<a href="{link}" target="_blank" rel="noopener" class="judul-link">{judul_bersih}</a>'
             else:
-                judul_html = judul
+                judul_html = f'{sumber_pill}{judul_bersih}'
+
+            # Aktor/Lokasi dipecah jadi pill per-nama (bukan satu blob teks),
+            # dan Isu/Subisu ditampilkan sebagai badge topik — sama seperti
+            # tweak badge topik vs. aktor yang sudah diterapkan di panel
+            # Detail Analisis Dashboard AIS (dua level informasi berbeda,
+            # jadi dipisah warna: topik indigo, aktor slate).
+            daftar_aktor = [a.strip() for a in str(h.get("aktor_lokasi","")).split(",") if a.strip() and a.strip() != "-"]
+            aktor_pills = "".join(f'<span class="badge-pill badge-aktor">👤 {a}</span>' for a in daftar_aktor)
+            isu_subisu = h.get("isu_subisu","-")
+            topik_badge = f'<span class="badge-pill badge-topik">🏷️ {isu_subisu}</span>' if isu_subisu and isu_subisu != "-" else ""
+
             st.markdown(f"""
             <div class="artikel-card">
                 <div class="artikel-judul">{judul_html}</div>
-                <div class="artikel-meta">📅 {h.get('tanggal','-')} &nbsp;·&nbsp; 📰 {h.get('sumber','-')} &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span> &nbsp;·&nbsp; 🗂️ {klaster_label}</div>
+                <div class="artikel-meta"><span class="artikel-tanggal">📅 {h.get('tanggal','-')}</span> &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
+                <div style="margin:2px 0 10px 0">{topik_badge}{aktor_pills}</div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
                 <div class="artikel-risiko">⚠️ <b>Risiko klaster:</b> {h.get('risiko','-')}</div>
                 <div class="artikel-tindak">🔍 <b>Area Perhatian klaster:</b> {h.get('area_perhatian','-')}</div>
+                <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8">🗂️ Klaster: {klaster_label}</div>
             </div>""", unsafe_allow_html=True)
 
 
