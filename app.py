@@ -77,7 +77,7 @@ def cek_password():
           <div class="login-kicker">AIS</div>
           <div class="login-title">Analisis Isu Strategis Pengawasan</div>
           <div class="login-org">Pusat Strategi Kebijakan Pengawasan BPKP</div>
-          <div class="login-desc">Deteksi dini isu strategis dari pemberitaan media.</div>
+          <div class="login-desc">Pemantauan media otomatis untuk pengawasan isu strategis.</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -103,14 +103,47 @@ if not cek_password():
 
 # ── NAVIGASI ───────────────────────────────────────────────────────────────
 with st.sidebar:
+    # CSS ini berlaku di semua halaman (blok with st.sidebar ini selalu
+    # dieksekusi di setiap run, tidak seperti CSS spesifik per-halaman di
+    # bawah) — merapatkan jarak antar elemen sidebar yang sebelumnya terlalu
+    # lebar, plus styling tombol logout & label section yang mentereng.
     st.markdown("""
-    <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
-                border-radius:8px;padding:12px 16px;margin-bottom:12px;
-                border-bottom:2px solid #F5A623'>
-      <div style='font-family:monospace;font-size:15px;font-weight:700;color:#F5A623'>AIS</div>
-      <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
-    </div>
+    <style>
+    [data-testid="stSidebar"] hr { margin: 0.5rem 0; }
+    [data-testid="stSidebar"] .stMarkdown { margin-bottom: 0; }
+    .sidebar-section-label {
+        font-size: 0.78rem; font-weight: 700; color: #F5A623;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        margin: 2px 0 4px 0;
+    }
+    /* Tombol logout ditumpuk di pojok kanan-atas card brand (position:
+       absolute) alih-alih dipepetkan ke kolom sempit — supaya lebar tombol
+       menyesuaikan isi teksnya sendiri, tidak wrap/gepeng di layar sempit. */
+    .st-key-sidebar_brand_row { position: relative; margin-bottom: 12px; }
+    .st-key-logout_btn { position: absolute; top: 8px; right: 8px; z-index: 5; }
+    .st-key-logout_btn button {
+        background: transparent; border: 1px solid rgba(255,255,255,0.25);
+        color: rgba(255,255,255,0.75); font-size: 11px; font-weight: 500;
+        padding: 1px 10px; min-height: 24px; width: auto; white-space: nowrap;
+    }
+    .st-key-logout_btn button:hover {
+        background: rgba(220,60,60,0.15); border-color: #dc3c3c; color: #ff9494;
+    }
+    </style>
     """, unsafe_allow_html=True)
+
+    with st.container(key="sidebar_brand_row"):
+        st.markdown("""
+        <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
+                    border-radius:8px;padding:12px 16px;
+                    border-bottom:2px solid #F5A623'>
+          <div style='font-family:monospace;font-size:15px;font-weight:700;color:#F5A623'>AIS</div>
+          <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Keluar", key="logout_btn", help="Keluar dari sesi"):
+            st.session_state.pop("ais_authenticated", None)
+            st.rerun()
 
     page = st.radio(
         "Navigasi",
@@ -581,29 +614,39 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
     # SIDEBAR — konfigurasi provider & input
     # ══════════════════════════════════════════════════════════════════════
     with st.sidebar:
-        st.markdown("### 📰 Media Crawl AIS")
-        st.caption("Pusat Strategi Kebijakan Pengawasan BPKP")
-        st.divider()
+        # Header "Media Crawl AIS" dihapus — sudah terwakili oleh brand "AIS"
+        # di nav atas, jadi ini dulu redundant dan makan tempat vertikal.
 
         # ── API Key DeepSeek ─────────────────────────────────────────────
         # Kalau sudah dikonfigurasi lewat Secrets, tidak perlu ditunjukkan
         # ke user — itu detail teknis provider AI, bukan sesuatu yang perlu
         # mereka pahami/pikirkan. UI cukup langsung siap pakai; kotak isian
-        # API Key hanya muncul kalau memang belum dikonfigurasi.
+        # API Key hanya muncul (plus divider-nya) kalau memang belum
+        # dikonfigurasi — supaya tidak ada divider ganda yang mengapit ruang
+        # kosong saat key sudah tersedia dari Secrets.
         deepseek_key_default = st.secrets.get("DEEPSEEK_API_KEY","") if hasattr(st,"secrets") else ""
         if deepseek_key_default:
             active_key = deepseek_key_default
         else:
             active_key = st.text_input("DeepSeek API Key", type="password", placeholder="sk-...")
+            st.divider()
 
-        st.divider()
-
+        # Label section custom (bukan label bawaan Streamlit) supaya field
+        # kunci ini — kata kunci pencarian & nama file — terlihat mentereng
+        # dan jelas, bukan sekadar label abu-abu standar.
+        st.markdown('<div class="sidebar-section-label">🔍 Kata Kunci Isu</div>', unsafe_allow_html=True)
         keywords_raw = st.text_area(
             "Kata Kunci Isu",
             placeholder="Contoh:\nMBG, makan bergizi gratis\nDanantara ekspor\nPertamax BBM",
-            height=130,
+            height=120,
+            label_visibility="collapsed",
         )
-        label_isu = st.text_input("Label Isu (nama file Excel)", placeholder="Contoh: Pertamax BBM Juni 2026")
+        st.markdown('<div class="sidebar-section-label">📁 Label Isu (nama file Excel)</div>', unsafe_allow_html=True)
+        label_isu = st.text_input(
+            "Label Isu (nama file Excel)",
+            placeholder="Contoh: Pertamax BBM Juni 2026",
+            label_visibility="collapsed",
+        )
         max_art   = st.slider("Maks. Artikel", min_value=5, max_value=50, value=20, step=5)
         st.divider()
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
@@ -615,7 +658,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
     st.markdown("""
     <div class="main-header">
       <h1>📰 Analisis Isu Strategis Pengawasan</h1>
-      <p>Deteksi dini isu strategis dari pemberitaan media.</p>
+      <p>Pemantauan media otomatis untuk pengawasan isu strategis.</p>
     </div>
     """, unsafe_allow_html=True)
 
