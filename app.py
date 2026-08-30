@@ -1,7 +1,8 @@
 """
 Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan BPKP
 Streamlit web app: input keyword → query expansion → crawl → analisis → download Excel
-Provider AI: DeepSeek (deepseek-v4-flash)
+Provider AI: DeepSeek (nama model diatur lewat Secrets DEEPSEEK_MODEL,
+default "deepseek-v4-flash" — lihat _baca_deepseek_model())
 """
 
 import streamlit as st
@@ -86,6 +87,23 @@ def _baca_max_crawl_bersamaan(default: int = 5) -> int:
 @st.cache_resource
 def _get_crawl_slot_manager():
     return _CrawlSlotManager(_baca_max_crawl_bersamaan())
+
+
+# ── Nama model DeepSeek — sengaja TIDAK di-hardcode di 3 tempat pemanggilan.
+# DeepSeek pernah menghentikan nama model lama ("deepseek-chat" ->
+# "deepseek-v4-flash", per 2026-07-24) tanpa jaminan itu tidak akan terulang
+# untuk generasi berikutnya. Dengan nama model dibaca dari Secrets
+# (DEEPSEEK_MODEL), kalau DeepSeek suatu saat mengganti/mem-pensiunkan
+# "deepseek-v4-flash", cukup ubah satu nilai di Secrets — tidak perlu edit
+# kode atau deploy ulang.
+def _baca_deepseek_model(default: str = "deepseek-v4-flash") -> str:
+    if not hasattr(st, "secrets"):
+        return default
+    nilai = st.secrets.get("DEEPSEEK_MODEL", default)
+    return nilai if isinstance(nilai, str) and nilai.strip() else default
+
+
+DEEPSEEK_MODEL = _baca_deepseek_model()
 
 
 st.set_page_config(
@@ -467,10 +485,18 @@ Aturan:
 Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         try:
             resp = client.chat.completions.create(
-                model="deepseek-v4-flash",
+                model=DEEPSEEK_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
                 max_tokens=300,
+                # Matikan thinking mode: v4-flash aktifkan reasoning
+                # chain-of-thought secara default (effort "high") yang jauh
+                # lebih lambat dan tidak dibutuhkan untuk tugas sederhana
+                # ini (query expansion). Tanpa ini, waktu respons bisa
+                # berkali-kali lipat lebih lama dari perilaku deepseek-chat
+                # lama, bahkan bisa menghabiskan max_tokens untuk proses
+                # "berpikir" sebelum sempat menjawab.
+                extra_body={"thinking": {"type": "disabled"}},
             )
             teks = resp.choices[0].message.content.strip()
             teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
@@ -568,13 +594,19 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         for attempt in range(MAX_RETRY):
             try:
                 resp = client.chat.completions.create(
-                    model="deepseek-v4-flash",
+                    model=DEEPSEEK_MODEL,
                     messages=[
                         {"role": "system", "content": PROMPT_SISTEM},
                         {"role": "user",   "content": prompt},
                     ],
                     temperature=0.3,
                     max_tokens=800,
+                    # Matikan thinking mode — lihat catatan di
+                    # ekspansi_keyword_deepseek(). Di sini dampaknya lebih
+                    # kritis: 800 token bisa habis untuk "berpikir" sebelum
+                    # model sempat menulis JSON hasil analisis, sehingga
+                    # parsing gagal terus dan artikel jatuh ke fallback.
+                    extra_body={"thinking": {"type": "disabled"}},
                 )
                 return _parse_json(resp.choices[0].message.content)
 
@@ -617,13 +649,20 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         for attempt in range(MAX_RETRY):
             try:
                 resp = client.chat.completions.create(
-                    model="deepseek-v4-flash",
+                    model=DEEPSEEK_MODEL,
                     messages=[
                         {"role": "system", "content": PROMPT_KLASTER},
                         {"role": "user",   "content": prompt},
                     ],
                     temperature=0.2,
                     max_tokens=3500,
+                    # Matikan thinking mode — lihat catatan di
+                    # ekspansi_keyword_deepseek(). Ini yang bikin tahap
+                    # "Mengelompokkan isu & menganalisis risiko per
+                    # klaster..." terasa muter lama: input klasterisasi
+                    # berisi ringkasan SELURUH artikel sekaligus, jadi kalau
+                    # thinking mode aktif, reasoning-nya jauh lebih panjang.
+                    extra_body={"thinking": {"type": "disabled"}},
                 )
                 teks = (resp.choices[0].message.content or "").strip()
 
