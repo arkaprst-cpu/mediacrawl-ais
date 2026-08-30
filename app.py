@@ -250,8 +250,17 @@ def buat_excel(data: list, label_isu: str) -> bytes:
     C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
     TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
     HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian","Kondisi/Pemicu Klaster","Relevansi Pengawasan",
-             "Sektor","Tema","Topik","Dampak/Implikasi (Final)","Gap Pengawasan","Usulan Pengawasan","Status Review"]
+             "Sektor","Tema","Topik","Dampak/Implikasi (Final)","Gap Pengawasan","Usulan Pengawasan","Status Review",
+             # Ditambahkan di paling AKHIR (kolom ke-22), SENGAJA bukan disisipkan
+             # dekat "Relevansi Pengawasan" — supaya posisi kolom 1-21 (termasuk
+             # blok telaah manusia Sektor..Status Review di 15-21) tidak bergeser
+             # dan file lama (21 kolom) tetap terbaca benar oleh dashboard_ais.py.
+             "Dimensi Pengawasan (GRCC AnCoDe)"]
     NCOL=len(HEADERS)
+    COL_STATUS_REVIEW = HEADERS.index("Status Review") + 1  # posisi eksplisit,
+    # bukan diasumsikan "kolom terakhir" — supaya penambahan kolom baru di masa
+    # depan tidak diam-diam salah mewarnai kolom yang salah (ini yang dulu
+    # nyaris kejadian pas nambah kolom Dimensi Pengawasan di atas).
     s=Side(style="thin",color="CCCCCC")
     BD=Border(left=s,right=s,top=s,bottom=s)
 
@@ -282,17 +291,18 @@ def buat_excel(data: list, label_isu: str) -> bytes:
                d.get("kondisi_pemicu","-"),d.get("relevansi_pengawasan","-"),
                d.get("sektor","-"),d.get("tema","-"),d.get("topik","-"),
                d.get("dampak_implikasi_final","-"),d.get("gap_pengawasan","-"),d.get("usulan_pengawasan","-"),
-               d.get("status_review","Belum Direview")]
+               d.get("status_review","Belum Direview"),
+               ", ".join(d.get("dimensi_pengawasan") or [])]
         for col,val in enumerate(baris,1):
             c=ws.cell(row=r,column=col,value=val); style(c,bg)
         tone_val=d.get("tone","Netral")
         ws.cell(row=r,column=10).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
         status_val=d.get("status_review","Belum Direview")
         STATUS_C={"Sudah Direview":"C6EFCE","Belum Direview":"F2F2F2"}
-        ws.cell(row=r,column=NCOL).fill=PatternFill("solid",fgColor=STATUS_C.get(status_val,"F2F2F2"))
+        ws.cell(row=r,column=COL_STATUS_REVIEW).fill=PatternFill("solid",fgColor=STATUS_C.get(status_val,"F2F2F2"))
         ws.row_dimensions[r].height=60
 
-    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16],1):
+    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16,40],1):
         ws.column_dimensions[get_column_letter(col)].width=w
 
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
@@ -418,7 +428,7 @@ Identifikasi: siapa yang disebut, apa yang terjadi, ada angka/besaran apa, ada k
 LANGKAH 2 — ISI JSON
 Output harus berupa JSON murni tanpa teks apapun di luar kurung kurawal:
 {
-  "ringkasan_isu"  : "2-3 kalimat: apa yang terjadi (sebutkan nama program/institusi/angka jika ada di judul), apa pemicunya, mengapa relevan bagi pengawasan BPKP",
+  "ringkasan_isu"  : "2-3 kalimat FAKTUAL: apa yang terjadi (sebutkan nama program/institusi/angka jika ada di judul), apa pemicunya. JANGAN simpulkan relevansi/prioritas bagi pengawasan BPKP di sini — itu dinilai belakangan di level klaster, dengan konteks seluruh artikel sejenis, bukan per-artikel.",
   "isu_subisu"     : "Nama isu utama / subisu spesifik (gunakan istilah dari judul, bukan abstraksi)",
   "aktor_lokasi"   : "Nama institusi atau jabatan yang disebut dalam judul / lokasi spesifik",
   "tone"           : "Positif" atau "Netral" atau "Negatif"
@@ -456,20 +466,34 @@ Contoh SALAH (area_perhatian berbentuk kegiatan pengawasan):
 Contoh BENAR (area_perhatian berbentuk titik lemah):
 "Standar kebersihan dan kualitas bahan baku pada dapur penyedia MBG belum terverifikasi secara independen, sementara pengelolaan dapur melibatkan banyak penyedia pihak ketiga dengan pengawasan harian yang minim dari BGN"
 
+TUGAS 3 — TAG DIMENSI PENGAWASAN (GRCC AnCoDe):
+Tandai klaster ini dengan dimensi pengawasan mana saja yang BENAR-BENAR didukung isi artikelnya. Pilih HANYA dari daftar ini (boleh lebih dari satu, boleh KOSONG kalau memang tidak ada yang jelas-jelas cocok — JANGAN dipaksakan):
+- "Governance": persoalan tata kelola/struktur kewenangan/akuntabilitas kelembagaan
+- "Risk": ada indikasi risiko/ancaman terhadap capaian program yang belum terealisasi (bukan masalah yang sudah terjadi)
+- "Control": ada indikasi lemahnya/tidak berjalannya mekanisme pengendalian internal
+- "Compliance": ada indikasi ketidaksesuaian dengan aturan/regulasi/prosedur yang berlaku
+- "Anti-Korupsi": ada indikasi penyalahgunaan wewenang, gratifikasi, atau korupsi
+- "Debottlenecking": ada indikasi hambatan birokrasi/regulasi yang memperlambat program prioritas nasional
+
+Ini KLASIFIKASI, bukan narasi — jangan tulis penjelasan, cukup daftar nama dimensi yang cocok.
+
 FORMAT OUTPUT setiap klaster wajib diberi:
 - "nama": nama klaster singkat (maks 8 kata), mencerminkan isu utama bukan sekadar topik umum
 - "kondisi_pemicu": 1-2 kalimat kondisi/pemicu konkret yang menyatukan artikel-artikel ini
 - "risiko": sesuai aturan Tugas 2 di atas
 - "area_perhatian": sesuai aturan Tugas 2 di atas
 - "relevansi_pengawasan": mengapa klaster ini relevan/tidak terlalu prioritas bagi pengawasan BPKP
+- "dimensi_pengawasan": array sesuai aturan Tugas 3 di atas (bisa array kosong [])
 - "anggota": array berisi nomor (No) artikel yang masuk klaster ini
 
 Urutkan array klaster dari yang paling kritikal/prioritas bagi pengawasan BPKP ke yang paling rendah prioritas.
 Balas HANYA dalam format JSON murni, TANPA teks lain, TANPA markdown code fence, TANPA penjelasan di luar JSON.
 
 Format output:
-{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "anggota": [1,2,3]}]}
+{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "dimensi_pengawasan": ["Governance"], "anggota": [1,2,3]}]}
 """
+
+    DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Korupsi", "Debottlenecking"}
 
     # ── Query expansion ────────────────────────────────────────────────────
     def ekspansi_keyword_deepseek(client, keyword: str) -> list:
@@ -687,7 +711,14 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     if not anggota:
                         continue
                     anggota_terpakai.update(anggota)
-                    klaster_valid.append({**kl, "anggota": anggota})
+                    # Sanitasi dimensi_pengawasan: cuma terima nilai dari daftar
+                    # resmi (jaga-jaga AI berhalusinasi nama dimensi lain/typo),
+                    # dan cuma terima kalau memang berbentuk list — bukan
+                    # dipaksa selalu ada isinya (klaster tanpa dimensi jelas =
+                    # list kosong, itu valid).
+                    dimensi_mentah = kl.get("dimensi_pengawasan", [])
+                    dimensi = [d for d in dimensi_mentah if isinstance(d, str) and d in DIMENSI_PENGAWASAN_VALID] if isinstance(dimensi_mentah, list) else []
+                    klaster_valid.append({**kl, "anggota": anggota, "dimensi_pengawasan": dimensi})
 
                 # Artikel yang tidak masuk klaster manapun -> klaster "Isu Lainnya"
                 sisa = [n for n in range(1, total_artikel + 1) if n not in anggota_terpakai]
@@ -698,6 +729,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "risiko": "-",
                         "area_perhatian": "-",
                         "relevansi_pengawasan": "Perlu ditelaah manual — tidak teridentifikasi pola yang jelas.",
+                        "dimensi_pengawasan": [],
                         "anggota": sisa,
                     })
 
@@ -714,6 +746,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "risiko": "-",
                         "area_perhatian": "Perlu ditelaah manual per artikel — masing-masing berdiri sendiri tanpa pola dominan.",
                         "relevansi_pengawasan": "-",
+                        "dimensi_pengawasan": [],
                         "anggota": anggota_gabungan,
                     })
                     klaster_valid = dipertahankan
@@ -903,12 +936,14 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     h["area_perhatian"]        = kl.get("area_perhatian", "-")
                     h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
                     h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
+                    h["dimensi_pengawasan"]    = kl.get("dimensi_pengawasan", [])
                 else:
                     h["klaster"]               = "-"
                     h["risiko"]                = "-"
                     h["area_perhatian"]        = "-"
                     h["kondisi_pemicu"]        = "-"
                     h["relevansi_pengawasan"]  = "-"
+                    h["dimensi_pengawasan"]    = []
 
             prog_bar.progress(100, text="✅ Selesai!")
             status_tx.empty()
