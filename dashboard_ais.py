@@ -240,6 +240,14 @@ st.markdown("""
      level informasinya. Dipisah: -topik tetap indigo (kategori),
      -aktor jadi slate + ikon 👤 (entitas/pihak). */
   .badge-topik { background: rgba(99,102,241,0.15); color: #818CF8; }
+  /* Tag dimensi pengawasan (Governance/Risk/Control/Compliance/
+     Anti-Korupsi/Debottlenecking) di kartu INDUK KLASTER — warna
+     senada aksen oranye klaster (#F5A623) tapi lebih redup, supaya
+     kebaca sebagai "klasifikasi ringkas", bukan bersaing dengan judul. */
+  .badge-dimensi {
+    background: rgba(245,166,35,0.14); color: #F5A623;
+    border: 1px solid rgba(245,166,35,0.3);
+  }
   .badge-aktor { background: rgba(148,163,184,0.16); color: #94A3B8; }
 
   /* Detail box */
@@ -348,28 +356,49 @@ def load_from_excel(uploaded_file):
     n_kolom = df.shape[1]
 
     kolom_telaah = ['Sektor','Tema','Topik','DampakImplikasiFinal','GapPengawasan','UsulanPengawasan','StatusReview']
+    KOLOM_INTI_14 = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
 
-    if n_kolom >= 21:
-        # Format lengkap hasil telaah (21 kolom) — kolom 15-21 berisi hasil
-        # Human Review (Sektor..Status Review). Wajib dipertahankan supaya
-        # status "Sudah Direview" tidak hilang saat file ini di-upload lagi
-        # untuk melanjutkan kerja telaah.
+    # PENTING — jenjang format ditambah dari BAWAH (n_kolom>=22), bukan
+    # mengubah cabang lama: kolom 1-21 (termasuk blok telaah manusia
+    # Sektor..Status Review di 15-21) TIDAK PERNAH digeser posisinya. File
+    # lama (21 kolom, dari sebelum kolom Dimensi Pengawasan ditambahkan)
+    # tetap lewat cabang n_kolom>=21 apa adanya — status "Sudah Direview"
+    # tidak boleh ikut hilang/reset hanya karena kolom baru ditambahkan.
+    if n_kolom >= 22:
+        # Format terbaru (22 kolom): 14 kolom inti + 7 kolom telaah manusia
+        # + 1 kolom Dimensi Pengawasan (GRCC AnCoDe) di paling akhir.
+        df_dimensi = df.iloc[:, 21:22].copy()
+        df_dimensi.columns = ['DimensiPengawasan']
         df_telaah = df.iloc[:, 14:21].copy()
         df_telaah.columns = kolom_telaah
         df = df.iloc[:, :14]
-        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
+        df.columns = KOLOM_INTI_14
+        df = pd.concat([df, df_telaah, df_dimensi], axis=1)
+    elif n_kolom >= 21:
+        # Format lengkap hasil telaah (21 kolom, TANPA Dimensi Pengawasan —
+        # file dari sebelum fitur itu ada). Kolom 15-21 berisi hasil Human
+        # Review (Sektor..Status Review). Wajib dipertahankan supaya status
+        # "Sudah Direview" tidak hilang saat file ini di-upload lagi untuk
+        # melanjutkan kerja telaah.
+        df_telaah = df.iloc[:, 14:21].copy()
+        df_telaah.columns = kolom_telaah
+        df = df.iloc[:, :14]
+        df.columns = KOLOM_INTI_14
         df = pd.concat([df, df_telaah], axis=1)
+        df['DimensiPengawasan'] = ''
     elif n_kolom >= 14:
         df = df.iloc[:, :14]
-        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
+        df.columns = KOLOM_INTI_14
         for k in kolom_telaah:
             df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
+        df['DimensiPengawasan'] = ''
     else:
         df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
         df['KondisiPemicu'] = '-'
         df['RelevansiPengawasan'] = '-'
         for k in kolom_telaah:
             df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
+        df['DimensiPengawasan'] = ''
 
     df = df.dropna(subset=['Judul'])
     df = df[df['No'] != 'No']
@@ -638,6 +667,7 @@ else:
         'TindakLanjut': h.get('area_perhatian', '-'),
         'KondisiPemicu': h.get('kondisi_pemicu', '-'),
         'RelevansiPengawasan': h.get('relevansi_pengawasan', '-'),
+        'DimensiPengawasan': ", ".join(h.get('dimensi_pengawasan') or []),
     } for i, h in enumerate(hasil_list)])
     meta = {
         "isu":      label_sesi,
@@ -1054,12 +1084,37 @@ with tab2:
                                 nilai = nilai[nilai != "-"]
                                 return nilai.iloc[0] if len(nilai) else "-"
 
+                            # Dimensi Pengawasan disimpan di Excel sebagai
+                            # string dipisah koma (mis. "Anti-Korupsi, Control")
+                            # — pecah balik jadi list, dan saring ulang ke
+                            # daftar resmi supaya kalau file diedit manual
+                            # (typo, format lain) tidak ikut nyasar ke UI,
+                            # cukup diam-diam diabaikan.
+                            DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Korupsi", "Debottlenecking"}
+                            dimensi_mentah = _ambil_unik('DimensiPengawasan')
+                            dimensi_upload = (
+                                [d.strip() for d in dimensi_mentah.split(",") if d.strip() in DIMENSI_PENGAWASAN_VALID]
+                                if dimensi_mentah and dimensi_mentah != "-" else []
+                            )
+
                             info_klaster = {
                                 "kondisi_pemicu":       _ambil_unik('KondisiPemicu'),
                                 "risiko":               _ambil_unik('Risiko'),
                                 "area_perhatian":       _ambil_unik('TindakLanjut'),
                                 "relevansi_pengawasan": _ambil_unik('RelevansiPengawasan'),
+                                "dimensi_pengawasan":   dimensi_upload,
                             }
+
+                        # Tag dimensi pengawasan (GRCC AnCoDe) — cuma render
+                        # baris ini kalau memang ada tag yang lolos sanitasi di
+                        # klasterisasi_isu_deepseek(); klaster tanpa dimensi
+                        # jelas (list kosong) tidak dipaksa tampil baris kosong.
+                        dimensi_list = info_klaster.get('dimensi_pengawasan') or []
+                        dimensi_html = "".join(f'<span class="badge badge-dimensi">{d}</span>' for d in dimensi_list)
+                        dimensi_row = (
+                            f"<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-top:10px;margin-bottom:5px'>Dimensi Pengawasan</div>"
+                            f"<div>{dimensi_html}</div>"
+                        ) if dimensi_list else ""
 
                         st.markdown(f"""
                         <div style='
@@ -1083,6 +1138,7 @@ with tab2:
                           <div style='font-size:14px;line-height:1.6;margin-bottom:10px;font-weight:600'>{info_klaster.get('area_perhatian','-')}</div>
                           <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Relevansi Pengawasan BPKP</div>
                           <div style='font-size:14px;line-height:1.6;font-weight:600'>{info_klaster.get('relevansi_pengawasan','-')}</div>
+                          {dimensi_row}
                         </div>
                         """, unsafe_allow_html=True)
 
