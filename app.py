@@ -1,11 +1,11 @@
 """
 Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan BPKP
 Streamlit web app: input keyword → query expansion → crawl → analisis → download Excel
-Provider AI: DeepSeek (deepseek-chat)
+Provider AI: DeepSeek (deepseek-v4-flash)
 """
 
 import streamlit as st
-import feedparser, json, time, re, io
+import feedparser, json, time, re, io, threading
 from datetime import datetime
 from urllib.parse import quote_plus
 from openpyxl import Workbook
@@ -16,6 +16,77 @@ from openpyxl.utils import get_column_letter
 def get_deepseek_client(api_key: str):
     from openai import OpenAI
     return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
+
+# ── Antrean crawl lintas-sesi ─────────────────────────────────────────────
+# Latar belakang: dokumentasi resmi DeepSeek (api-docs.deepseek.com/
+# quick_start/rate_limit) menyatakan limitnya berbasis CONCURRENCY per akun
+# (500 koneksi API bersamaan untuk deepseek-v4-pro, 2.500 untuk
+# deepseek-v4-flash) — bukan RPM/TPM seperti provider lain. Karena app ini
+# memproses artikel satu-per-satu secara berurutan per sesi (bukan paralel),
+# satu sesi crawl paling banter cuma punya 1 request DeepSeek yang sedang
+# "in-flight" di satu waktu. Jadi puluhan pengguna bersamaan (mis. satu
+# kelas) masih jauh di bawah limit DeepSeek itu sendiri — bukan itu yang
+# butuh diamankan.
+#
+# Yang justru perlu diamankan: satu proses Streamlit yang dipakai bersama
+# semua pengguna. Kalau banyak orang menekan "Mulai Crawl" nyaris
+# bersamaan, semua request Google News RSS + parsing + panggilan DeepSeek
+# + pembuatan Excel itu jalan di proses Python yang SAMA — bisa bikin
+# semuanya kerasa lambat/berat kalau tidak dibatasi. _CrawlSlotManager di
+# bawah ini singleton (di-cache lewat st.cache_resource, jadi SATU
+# instance untuk SEMUA sesi/pengguna, bukan per-sesi) yang membatasi
+# berapa banyak crawl boleh berjalan BERSAMAAN; sisanya otomatis antre
+# dengan status yang jelas di layar, bukan dipaksa jalan sekaligus atau
+# ditolak begitu saja.
+class _CrawlSlotManager:
+    def __init__(self, max_concurrent: int):
+        self._lock = threading.Lock()
+        self._active = 0
+        self._max = max_concurrent
+
+    def status(self):
+        with self._lock:
+            return self._active, self._max
+
+    def acquire_blocking(self, on_wait=None, poll_seconds: float = 1.0):
+        """Blok sampai dapat slot. on_wait(active, max) dipanggil tiap kali
+        masih menunggu, supaya UI bisa menampilkan status antre real-time
+        (Streamlit tetap mengirim update elemen ke browser meski script
+        masih berjalan/nge-sleep di dalam loop ini — pola yang sama
+        dipakai progress bar crawl di bawah)."""
+        while True:
+            with self._lock:
+                if self._active < self._max:
+                    self._active += 1
+                    return
+                active_sekarang = self._active
+            if on_wait:
+                on_wait(active_sekarang, self._max)
+            time.sleep(poll_seconds)
+
+    def release(self):
+        with self._lock:
+            self._active = max(0, self._active - 1)
+
+
+def _baca_max_crawl_bersamaan(default: int = 5) -> int:
+    """Bisa diubah tanpa edit kode lewat Streamlit Secrets
+    (MAX_CRAWL_BERSAMAAN) — default 5 aman untuk server kelas biasa;
+    naikkan kalau servernya cukup kuat, atau kalau ternyata tidak perlu
+    seketat itu."""
+    if not hasattr(st, "secrets"):
+        return default
+    try:
+        return int(st.secrets.get("MAX_CRAWL_BERSAMAAN", default))
+    except (TypeError, ValueError):
+        return default
+
+
+@st.cache_resource
+def _get_crawl_slot_manager():
+    return _CrawlSlotManager(_baca_max_crawl_bersamaan())
+
 
 st.set_page_config(
     page_title="Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan",
@@ -396,7 +467,7 @@ Aturan:
 Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         try:
             resp = client.chat.completions.create(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
                 max_tokens=300,
@@ -497,7 +568,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         for attempt in range(MAX_RETRY):
             try:
                 resp = client.chat.completions.create(
-                    model="deepseek-chat",
+                    model="deepseek-v4-flash",
                     messages=[
                         {"role": "system", "content": PROMPT_SISTEM},
                         {"role": "user",   "content": prompt},
@@ -546,7 +617,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         for attempt in range(MAX_RETRY):
             try:
                 resp = client.chat.completions.create(
-                    model="deepseek-chat",
+                    model="deepseek-v4-flash",
                     messages=[
                         {"role": "system", "content": PROMPT_KLASTER},
                         {"role": "user",   "content": prompt},
@@ -717,90 +788,115 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 
         ai_client = get_deepseek_client(active_key)
 
-        st.subheader("⏳ Proses Crawl & Analisis")
+        # ── Antrean crawl lintas-sesi ────────────────────────────────────
+        # Kalau slot sedang penuh (banyak orang crawl bersamaan), tunggu di
+        # sini dengan status yang jelas alih-alih membiarkan semua sesi
+        # membebani proses Streamlit sekaligus. Lihat _CrawlSlotManager di
+        # bagian atas file untuk alasan lengkapnya.
+        slot_mgr = _get_crawl_slot_manager()
+        antre_status = st.empty()
+        def _lapor_antre(active, mx):
+            antre_status.warning(
+                f"🕐 Sedang antre ({active}/{mx} slot terpakai). Permintaan Anda akan "
+                f"diproses otomatis begitu slot tersedia — mohon tunggu di halaman ini, "
+                f"jangan ditutup atau di-refresh."
+            )
+        slot_mgr.acquire_blocking(on_wait=_lapor_antre)
+        antre_status.empty()
 
-        with st.spinner("Memperluas keyword..."):
-            all_queries = []
-            for kw in keywords_input:
-                expanded = ekspansi_keyword_deepseek(ai_client, kw)
-                all_queries.extend(expanded)
+        try:
+            st.subheader("⏳ Proses Crawl & Analisis")
 
-        query_lines = "<br>".join(f"🔍 {q}" for q in all_queries)
-        st.markdown(f'<div class="query-box"><b>Query ({len(all_queries)} variasi):</b><br>{query_lines}</div>', unsafe_allow_html=True)
+            with st.spinner("Memperluas keyword..."):
+                all_queries = []
+                for kw in keywords_input:
+                    expanded = ekspansi_keyword_deepseek(ai_client, kw)
+                    all_queries.extend(expanded)
 
-        prog_bar  = st.progress(0, text="Crawling Google News...")
-        status_tx = st.empty()
-        status_tx.info(f"Crawling {len(all_queries)} query...")
-        artikel_raw = crawl_google_news(all_queries, max_art)
+            query_lines = "<br>".join(f"🔍 {q}" for q in all_queries)
+            st.markdown(f'<div class="query-box"><b>Query ({len(all_queries)} variasi):</b><br>{query_lines}</div>', unsafe_allow_html=True)
 
-        if not artikel_raw:
-            st.warning("Tidak ada artikel ditemukan.")
-            st.stop()
+            prog_bar  = st.progress(0, text="Crawling Google News...")
+            status_tx = st.empty()
+            status_tx.info(f"Crawling {len(all_queries)} query...")
+            artikel_raw = crawl_google_news(all_queries, max_art)
 
-        status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis...")
+            if not artikel_raw:
+                st.warning("Tidak ada artikel ditemukan.")
+                st.stop()
 
-        hasil_list  = []
-        rate_status = st.empty()
+            status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis...")
 
-        for idx, art in enumerate(artikel_raw):
-            pct = int((idx + 1) / len(artikel_raw) * 100)
-            prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
+            hasil_list  = []
+            rate_status = st.empty()
 
-            # DeepSeek berbayar, tanpa RPM ketat -> delay ringan cukup
-            time.sleep(0.3)
+            for idx, art in enumerate(artikel_raw):
+                pct = int((idx + 1) / len(artikel_raw) * 100)
+                prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
 
-            art["label_isu"] = label_isu.strip()
-            analisis = analisis_deepseek(ai_client, art, rate_status)
-            hasil_list.append({**art, **analisis})
+                # DeepSeek berbayar, tanpa RPM ketat -> delay ringan cukup
+                time.sleep(0.3)
 
-        rate_status.empty()
-        prog_bar.progress(100, text="✅ Mengelompokkan jadi klaster isu...")
+                art["label_isu"] = label_isu.strip()
+                analisis = analisis_deepseek(ai_client, art, rate_status)
+                hasil_list.append({**art, **analisis})
 
-        with st.spinner("Mengelompokkan isu & menganalisis risiko per klaster..."):
-            klaster_list = klasterisasi_isu_deepseek(ai_client, hasil_list)
+            rate_status.empty()
+            prog_bar.progress(100, text="✅ Mengelompokkan jadi klaster isu...")
 
-        # Sebarkan nama klaster, risiko, area_perhatian, kondisi_pemicu, dan
-        # relevansi_pengawasan dari hasil klasterisasi ke setiap artikel
-        # anggotanya — semua field ini TIDAK lagi dianalisis per-artikel,
-        # melainkan diwarisi dari analisis tingkat klaster (lebih kaya
-        # konteks, lebih sedikit panggilan AI).
-        klaster_per_no = {}
-        for kl in klaster_list:
-            for no in kl.get("anggota", []):
-                klaster_per_no[no] = kl
-        for i, h in enumerate(hasil_list):
-            kl = klaster_per_no.get(i + 1)
-            if kl:
-                h["klaster"]               = kl.get("nama", "-")
-                h["risiko"]                = kl.get("risiko", "-")
-                h["area_perhatian"]        = kl.get("area_perhatian", "-")
-                h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
-                h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
-            else:
-                h["klaster"]               = "-"
-                h["risiko"]                = "-"
-                h["area_perhatian"]        = "-"
-                h["kondisi_pemicu"]        = "-"
-                h["relevansi_pengawasan"]  = "-"
+            with st.spinner("Mengelompokkan isu & menganalisis risiko per klaster..."):
+                klaster_list = klasterisasi_isu_deepseek(ai_client, hasil_list)
 
-        prog_bar.progress(100, text="✅ Selesai!")
-        status_tx.empty()
+            # Sebarkan nama klaster, risiko, area_perhatian, kondisi_pemicu, dan
+            # relevansi_pengawasan dari hasil klasterisasi ke setiap artikel
+            # anggotanya — semua field ini TIDAK lagi dianalisis per-artikel,
+            # melainkan diwarisi dari analisis tingkat klaster (lebih kaya
+            # konteks, lebih sedikit panggilan AI).
+            klaster_per_no = {}
+            for kl in klaster_list:
+                for no in kl.get("anggota", []):
+                    klaster_per_no[no] = kl
+            for i, h in enumerate(hasil_list):
+                kl = klaster_per_no.get(i + 1)
+                if kl:
+                    h["klaster"]               = kl.get("nama", "-")
+                    h["risiko"]                = kl.get("risiko", "-")
+                    h["area_perhatian"]        = kl.get("area_perhatian", "-")
+                    h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
+                    h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
+                else:
+                    h["klaster"]               = "-"
+                    h["risiko"]                = "-"
+                    h["area_perhatian"]        = "-"
+                    h["kondisi_pemicu"]        = "-"
+                    h["relevansi_pengawasan"]  = "-"
 
-        st.session_state["hasil"]     = hasil_list
-        st.session_state["klaster"]   = klaster_list
-        st.session_state["label_isu"] = label_isu.strip()
-        st.session_state["ais_ready"] = True
-        st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
-        # Tandai crawl BARU ini sebagai sumber data TERAKTIF di Dashboard AIS
-        # — sebelumnya Dashboard AIS selalu mengutamakan Excel upload manual
-        # apa pun yang terjadi belakangan, jadi hasil crawl baru bisa
-        # "kalah" ditimpa tampilan upload lama yang masih tersimpan di
-        # sesi. Lihat dashboard_ais.py bagian "LOAD & PROCESS DATA".
-        st.session_state["_dash_last_source"] = "session"
+            prog_bar.progress(100, text="✅ Selesai!")
+            status_tx.empty()
 
-        if not klaster_list:
-            st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.")
-        st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk visualisasi lengkap.")
+            st.session_state["hasil"]     = hasil_list
+            st.session_state["klaster"]   = klaster_list
+            st.session_state["label_isu"] = label_isu.strip()
+            st.session_state["ais_ready"] = True
+            st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
+            # Tandai crawl BARU ini sebagai sumber data TERAKTIF di Dashboard AIS
+            # — sebelumnya Dashboard AIS selalu mengutamakan Excel upload manual
+            # apa pun yang terjadi belakangan, jadi hasil crawl baru bisa
+            # "kalah" ditimpa tampilan upload lama yang masih tersimpan di
+            # sesi. Lihat dashboard_ais.py bagian "LOAD & PROCESS DATA".
+            st.session_state["_dash_last_source"] = "session"
+
+            if not klaster_list:
+                st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.")
+            st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk visualisasi lengkap.")
+        finally:
+            # WAJIB dilepas apa pun yang terjadi (termasuk st.stop() di atas
+            # kalau tidak ada artikel ditemukan, atau error tak terduga) —
+            # kalau slot bocor/tidak pernah dilepas, app ini akan makin
+            # "penuh" terus-menerus sampai di-restart, dan pengguna
+            # berikutnya antre selamanya walau sebenarnya tidak ada crawl
+            # lain yang benar-benar berjalan.
+            slot_mgr.release()
 
     # ── Error diagnostik ───────────────────────────────────────────────────
     if st.session_state.get("ais_errors"):
