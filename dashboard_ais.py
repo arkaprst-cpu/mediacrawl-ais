@@ -148,7 +148,7 @@ st.markdown("""
      tanpa klaster). Dua varian di bawah menyesuaikan bobot visual sesuai
      konteks: -highlight untuk sorotan "perlu perhatian" (Tab Ikhtisar),
      -member untuk anggota klaster yang harus terasa lebih ringan daripada
-     blok INDUK KLASTER di atasnya (Tab Daftar Isu). */
+     blok INDUK KLASTER di atasnya (Tab Klasterisasi Isu). */
   .issue-card {
     background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
     border-radius: 6px; padding: 14px 14px 14px 18px;
@@ -256,7 +256,7 @@ st.markdown("""
   }
   .link-artikel-asli:hover { color: #8CC4FF; }
 
-  /* Expander klaster (Tab Daftar Isu) — beri identitas visual "kartu
+  /* Expander klaster (Tab Klasterisasi Isu) — beri identitas visual "kartu
      klaster" pada header accordion-nya sendiri, bukan cuma pada isinya
      saat dibuka. Tanpa ini header-nya kelihatan sama dengan accordion
      generik, padahal secara fungsi dia adalah unit pengelompokan
@@ -667,7 +667,7 @@ with st.sidebar:
     '>
       <div style='font-size:13px;font-weight:700;color:#F5A623;margin-bottom:4px'>📥 Update Excel</div>
       <div style='font-size:11px;opacity:0.75;line-height:1.4'>
-        {f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel." if jml_direview > 0 else "Belum ada klaster yang ditelaah. Isi form telaah di Tab Daftar Isu."}
+        {f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel." if jml_direview > 0 else "Belum ada klaster yang ditelaah. Isi form telaah di Tab Klasterisasi Isu."}
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -763,7 +763,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── TABS ─────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs(["📋 Ikhtisar", "🗂️ Daftar Isu", "📈 Tone & Tren", "🔑 Kata Kunci"])
+tab1, tab2, tab3, tab4 = st.tabs(["📋 Ikhtisar", "🗂️ Klasterisasi Isu", "📈 Sentimen & Tren", "🔑 Kata Kunci"])
 
 
 # ════════════════════════════════════════════
@@ -886,7 +886,7 @@ with tab1:
     col_left, col_right = st.columns(2)
 
     with col_left:
-        st.markdown("**Distribusi Tone Pemberitaan**")
+        st.markdown("**Distribusi Sentimen Pemberitaan**")
         
         # Visual tone bar
         pn = stats['pct_neg']; pt = stats['pct_net']; pp = stats['pct_pos']
@@ -1284,7 +1284,7 @@ with tab3:
     col_tbl, col_chart = st.columns([3, 2])
 
     with col_tbl:
-        st.markdown("**Tone per Subisu**")
+        st.markdown("**Sentimen per Subisu**")
         
         tone_table = df.groupby(['IsuSubisu','Tone']).size().unstack(fill_value=0)
         for col_name in ['Negatif','Netral','Positif']:
@@ -1314,7 +1314,7 @@ with tab3:
             """, unsafe_allow_html=True)
 
     with col_chart:
-        st.markdown("**Distribusi Tone Keseluruhan**")
+        st.markdown("**Distribusi Sentimen Keseluruhan**")
         
         import streamlit as st
         tone_data = df['Tone'].value_counts()
