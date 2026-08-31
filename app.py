@@ -226,12 +226,6 @@ with st.sidebar:
     [class*="st-key-navtile_"] { margin-bottom: 4px; }
     [class*="st-key-navtile_"] button {
         width: 100% !important; text-align: left !important;
-        /* st.button bawaan Streamlit pakai display:flex +
-           justify-content:center pada elemen <button>-nya sendiri — jadi
-           walau text-align:left sudah diset, isinya (div markdown + <p>)
-           tetap kesentering sebagai flex item, karena justify-content
-           mengatur posisi BLOK-nya, bukan teks di dalamnya. text-align
-           doang nggak cukup, harus override justify-content juga. */
         justify-content: flex-start !important;
         white-space: nowrap !important; height: auto !important;
         line-height: 1.4 !important; padding: 8px 14px !important;
@@ -239,6 +233,16 @@ with st.sidebar:
         background: rgba(255,255,255,0.04) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
     }
+    /* justify-content di <button> saja ternyata belum cukup — Streamlit
+       membungkus label tombol dalam SATU <div> anak lagi (bukan cuma teks
+       langsung di <button>) yang JUGA display:flex + justify-content:center
+       sendiri, independen dari kondisi <button> induknya. Efeknya baru
+       kelihatan jelas di label pendek ("Crawl Berita") yang nyisa banyak
+       ruang kosong kalau di-center; label panjang ("Klasterisasi & Analisis")
+       kebetulan hampir sepanjang tombol jadi terlihat rata kiri padahal
+       sebenarnya juga masih ke-center — bukan soal tile aktif/nggak aktif.
+       Perbaikannya: paksa div anak langsung ini juga rata kiri. */
+    [class*="st-key-navtile_"] button > div { justify-content: flex-start !important; }
     [class*="st-key-navtile_"] button p { font-size: 13px !important; }
     </style>
     """, unsafe_allow_html=True)
