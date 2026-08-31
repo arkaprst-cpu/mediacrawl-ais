@@ -503,7 +503,7 @@ Tandai klaster ini dengan dimensi pengawasan mana saja yang BENAR-BENAR didukung
 - "Risk": ada indikasi risiko/ancaman terhadap capaian program yang belum terealisasi (bukan masalah yang sudah terjadi)
 - "Control": ada indikasi lemahnya/tidak berjalannya mekanisme pengendalian internal
 - "Compliance": ada indikasi ketidaksesuaian dengan aturan/regulasi/prosedur yang berlaku
-- "Anti-Korupsi": ada indikasi penyalahgunaan wewenang, gratifikasi, atau korupsi
+- "Anti-Corruption": ada indikasi penyalahgunaan wewenang, gratifikasi, atau korupsi
 - "Debottlenecking": ada indikasi hambatan birokrasi/regulasi yang memperlambat program prioritas nasional
 
 Ini KLASIFIKASI, bukan narasi — jangan tulis penjelasan, cukup daftar nama dimensi yang cocok.
@@ -524,7 +524,7 @@ Format output:
 {"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "dimensi_pengawasan": ["Governance"], "anggota": [1,2,3]}]}
 """
 
-    DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Korupsi", "Debottlenecking"}
+    DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Corruption", "Debottlenecking"}
 
     # ── Query expansion ────────────────────────────────────────────────────
     def ekspansi_keyword_deepseek(client, keyword: str) -> list:
