@@ -241,7 +241,7 @@ st.markdown("""
      -aktor jadi slate + ikon 👤 (entitas/pihak). */
   .badge-topik { background: rgba(99,102,241,0.15); color: #818CF8; }
   /* Tag dimensi pengawasan (Governance/Risk/Control/Compliance/
-     Anti-Korupsi/Debottlenecking) di kartu INDUK KLASTER — warna
+     Anti-Corruption/Debottlenecking) di kartu INDUK KLASTER — warna
      senada aksen oranye klaster (#F5A623) tapi lebih redup, supaya
      kebaca sebagai "klasifikasi ringkas", bukan bersaing dengan judul. */
   .badge-dimensi {
@@ -1121,12 +1121,12 @@ with tab2:
                                 return nilai.iloc[0] if len(nilai) else "-"
 
                             # Dimensi Pengawasan disimpan di Excel sebagai
-                            # string dipisah koma (mis. "Anti-Korupsi, Control")
+                            # string dipisah koma (mis. "Anti-Corruption, Control")
                             # — pecah balik jadi list, dan saring ulang ke
                             # daftar resmi supaya kalau file diedit manual
                             # (typo, format lain) tidak ikut nyasar ke UI,
                             # cukup diam-diam diabaikan.
-                            DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Korupsi", "Debottlenecking"}
+                            DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Corruption", "Debottlenecking"}
                             dimensi_mentah = _ambil_unik('DimensiPengawasan')
                             dimensi_upload = (
                                 [d.strip() for d in dimensi_mentah.split(",") if d.strip() in DIMENSI_PENGAWASAN_VALID]
