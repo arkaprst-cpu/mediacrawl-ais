@@ -83,8 +83,8 @@ st.markdown("""
   .ais-topbar {
     background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
     border-radius: 8px;
-    padding: 16px 24px;
-    margin-bottom: 20px;
+    padding: 12px 18px;
+    margin-bottom: 14px;
     border-bottom: 3px solid #F5A623;
     display: flex;
     align-items: center;
@@ -589,8 +589,8 @@ if not has_upload and not has_session:
     st.markdown("""
     <div class="ais-topbar">
       <div>
-        <div class="ais-logo">Dashboard Analisis Isu Strategis</div>
-        <div class="ais-subtitle">Analisis Isu Strategis Pengawasan — Pusat Strategi Kebijakan Pengawasan BPKP</div>
+        <div class="ais-logo">📊 Klasterisasi dan Analisis</div>
+        <div class="ais-subtitle">Klasterisasi, tren & telaah — Pusat Strategi Kebijakan Pengawasan BPKP</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -603,7 +603,7 @@ if not has_upload and not has_session:
               <div style='font-size:40px;margin-bottom:12px'>📊</div>
               <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
               <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6;margin-bottom:14px'>
-                Jalankan crawl di halaman <b>🔍 Crawl & Analisis</b> terlebih dahulu,<br>
+                Jalankan crawl di halaman <b>🔍 Crawl Berita</b> terlebih dahulu,<br>
                 atau upload file <code>.xlsx</code> hasil crawl sebelumnya di bawah ini.
               </div>
             </div>
@@ -792,8 +792,8 @@ df_filtered = df[
 st.markdown(f"""
 <div class="ais-topbar">
   <div>
-    <div class="ais-logo">Dashboard Analisis Isu Strategis</div>
-    <div class="ais-subtitle">Analisis Isu Strategis Pengawasan — {meta.get('unit','Pusat Strategi Kebijakan Pengawasan BPKP')}</div>
+    <div class="ais-logo">📊 Klasterisasi dan Analisis</div>
+    <div class="ais-subtitle">Klasterisasi, tren & telaah — {meta.get('unit','Pusat Strategi Kebijakan Pengawasan BPKP')}</div>
   </div>
   <div>
     <span class="ais-badge">ISU: {meta.get('isu','—').upper()}</span>
