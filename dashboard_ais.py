@@ -358,15 +358,29 @@ def load_from_excel(uploaded_file):
     kolom_telaah = ['Sektor','Tema','Topik','DampakImplikasiFinal','GapPengawasan','UsulanPengawasan','StatusReview']
     KOLOM_INTI_14 = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
 
-    # PENTING — jenjang format ditambah dari BAWAH (n_kolom>=22), bukan
+    # PENTING — jenjang format ditambah dari BAWAH (n_kolom>=23), bukan
     # mengubah cabang lama: kolom 1-21 (termasuk blok telaah manusia
     # Sektor..Status Review di 15-21) TIDAK PERNAH digeser posisinya. File
     # lama (21 kolom, dari sebelum kolom Dimensi Pengawasan ditambahkan)
     # tetap lewat cabang n_kolom>=21 apa adanya — status "Sudah Direview"
     # tidak boleh ikut hilang/reset hanya karena kolom baru ditambahkan.
-    if n_kolom >= 22:
-        # Format terbaru (22 kolom): 14 kolom inti + 7 kolom telaah manusia
-        # + 1 kolom Dimensi Pengawasan (GRCC AnCoDe) di paling akhir.
+    if n_kolom >= 23:
+        # Format terbaru (23 kolom): 14 kolom inti + 7 kolom telaah manusia
+        # + Dimensi Pengawasan (GRCC AnCoDe) + Sudut Pandang Spesifik, dua-
+        # duanya di paling akhir sesuai urutan ditambahkannya.
+        df_sudut = df.iloc[:, 22:23].copy()
+        df_sudut.columns = ['SudutPandang']
+        df_dimensi = df.iloc[:, 21:22].copy()
+        df_dimensi.columns = ['DimensiPengawasan']
+        df_telaah = df.iloc[:, 14:21].copy()
+        df_telaah.columns = kolom_telaah
+        df = df.iloc[:, :14]
+        df.columns = KOLOM_INTI_14
+        df = pd.concat([df, df_telaah, df_dimensi, df_sudut], axis=1)
+    elif n_kolom >= 22:
+        # Format 22 kolom (TANPA Sudut Pandang Spesifik — file dari sebelum
+        # field itu ada): 14 kolom inti + 7 kolom telaah manusia + 1 kolom
+        # Dimensi Pengawasan (GRCC AnCoDe) di paling akhir.
         df_dimensi = df.iloc[:, 21:22].copy()
         df_dimensi.columns = ['DimensiPengawasan']
         df_telaah = df.iloc[:, 14:21].copy()
@@ -374,6 +388,7 @@ def load_from_excel(uploaded_file):
         df = df.iloc[:, :14]
         df.columns = KOLOM_INTI_14
         df = pd.concat([df, df_telaah, df_dimensi], axis=1)
+        df['SudutPandang'] = ''
     elif n_kolom >= 21:
         # Format lengkap hasil telaah (21 kolom, TANPA Dimensi Pengawasan —
         # file dari sebelum fitur itu ada). Kolom 15-21 berisi hasil Human
@@ -386,12 +401,14 @@ def load_from_excel(uploaded_file):
         df.columns = KOLOM_INTI_14
         df = pd.concat([df, df_telaah], axis=1)
         df['DimensiPengawasan'] = ''
+        df['SudutPandang'] = ''
     elif n_kolom >= 14:
         df = df.iloc[:, :14]
         df.columns = KOLOM_INTI_14
         for k in kolom_telaah:
             df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
         df['DimensiPengawasan'] = ''
+        df['SudutPandang'] = ''
     else:
         df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
         df['KondisiPemicu'] = '-'
@@ -399,6 +416,7 @@ def load_from_excel(uploaded_file):
         for k in kolom_telaah:
             df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
         df['DimensiPengawasan'] = ''
+        df['SudutPandang'] = ''
 
     df = df.dropna(subset=['Judul'])
     df = df[df['No'] != 'No']
@@ -668,6 +686,7 @@ else:
         'KondisiPemicu': h.get('kondisi_pemicu', '-'),
         'RelevansiPengawasan': h.get('relevansi_pengawasan', '-'),
         'DimensiPengawasan': ", ".join(h.get('dimensi_pengawasan') or []),
+        'SudutPandang': h.get('sudut_pandang', ''),
     } for i, h in enumerate(hasil_list)])
     meta = {
         "isu":      label_sesi,
@@ -1264,6 +1283,29 @@ with tab2:
                         daftar_aktor = [a.strip() for a in str(row['AktorLokasi']).split(',') if a.strip() and a.strip() != '-']
                         aktor_pills = "".join(f'<span class="badge badge-aktor">👤 {a}</span>' for a in daftar_aktor) or '<span class="badge badge-aktor">👤 -</span>'
 
+                        # Opsional — cuma terisi kalau artikel ini punya sudut
+                        # pandang yang beda nyata dari artikel lain di klaster
+                        # yang sama (lihat Tugas 4 di PROMPT_KLASTER, app.py).
+                        # Ditampilkan terpisah dari Ringkasan Isu (yang murni
+                        # faktual) supaya jelas ini catatan tambahan, bukan
+                        # bagian dari ringkasan.
+                        # pd.isna() wajib dicek lebih dulu — sel Excel kosong
+                        # kebaca pandas sebagai NaN (float), bukan string
+                        # kosong, dan NaN itu truthy di Python biasa (beda
+                        # dari None/""), jadi tanpa ini box-nya malah muncul
+                        # berisi literal teks "nan" untuk artikel yang
+                        # sebetulnya tidak punya catatan.
+                        sudut_pandang_raw = row.get('SudutPandang', '')
+                        sudut_pandang_val = '' if pd.isna(sudut_pandang_raw) else str(sudut_pandang_raw).strip()
+                        sudut_pandang_html = (
+                            f"""<div class="detail-section" style='background:rgba(245,166,35,0.08);
+                                border-left:3px solid #F5A623;border-radius:0 6px 6px 0;padding:8px 10px;margin-bottom:10px'>
+                              <div class="detail-label" style='color:#F5A623'>💡 Sudut Pandang Spesifik</div>
+                              <div class="detail-text" style='font-style:italic'>{sudut_pandang_val}</div>
+                            </div>"""
+                            if sudut_pandang_val and sudut_pandang_val != '-' else ""
+                        )
+
                         st.markdown(f"""
                         <div style='
                             display:flex;align-items:center;gap:6px;margin-bottom:14px;
@@ -1294,6 +1336,8 @@ with tab2:
                           <div class="detail-label">Ringkasan Isu</div>
                           <div class="detail-text">{row['Ringkasan']}</div>
                         </div>
+
+                        {sudut_pandang_html}
 
                         <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
                         <div style='font-size:11px;color:inherit;display:flex;align-items:center;gap:8px;flex-wrap:wrap'>
