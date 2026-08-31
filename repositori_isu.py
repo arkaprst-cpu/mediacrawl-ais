@@ -17,6 +17,24 @@ st.markdown("""
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
   html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
+  /* .main-header didefinisikan ULANG di sini (bukan cuma mengandalkan CSS
+     dari blok Crawl Berita di app.py) karena halaman ini punya 2 jalur
+     akses: (1) lewat nav sidebar setelah login — di jalur ini CSS dari
+     Crawl Berita kebetulan sudah kepasang duluan karena "ais_page" selalu
+     start dari situ; (2) akses publik ?page=repositori TANPA login, yang
+     dieksekusi PALING AWAL bahkan sebelum blok Crawl Berita sempat jalan
+     (lihat app.py, akses_publik_repositori) — di jalur ini CSS
+     .main-header dari app.py TIDAK PERNAH ke-inject, jadi kartu judul akan
+     tampil polos tanpa gaya buat pengunjung publik kalau tidak didefinisikan
+     ulang di sini. Nilai persis disamakan dengan app.py biar konsisten.
+  */
+  .main-header {
+    background: linear-gradient(135deg, #1F3864 0%, #2d5299 100%);
+    color: white; padding: 14px 20px; border-radius: 10px; margin-bottom: 14px;
+  }
+  .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; }
+  .main-header p  { font-size: 0.85rem; opacity: 0.75; margin: 0; font-family: 'IBM Plex Mono', monospace; }
+
   .repo-card {
     border: 1px solid rgba(245,166,35,0.3);
     border-left: 4px solid #F5A623;
@@ -82,8 +100,8 @@ st.markdown("""
 
 st.markdown("""
 <div class="main-header">
-  <h1>🗄️ Repositori Hasil Analisis</h1>
-  <p>Navigasi Sektor · Tema · Topik — Pusat Strategi Kebijakan Pengawasan BPKP</p>
+  <h1>🗄️ Repositori Isu Strategis</h1>
+  <p>Arsip hasil yang sudah direview — Pusat Strategi Kebijakan Pengawasan BPKP</p>
 </div>
 """, unsafe_allow_html=True)
 
