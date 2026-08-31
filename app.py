@@ -339,6 +339,21 @@ if page == "🔍 Crawl & Analisis":
     .empty-guide ol { margin: 0; padding-left: 1.2rem; max-width: 520px; margin-left: auto; margin-right: auto; }
     .empty-guide li { margin-bottom: 0.45rem; font-size: 12.5px; color: inherit; opacity: 0.75; line-height: 1.6; }
     .empty-guide li b { opacity: 1; font-weight: 600; }
+    /* Kartu "Unduh Hasil" — sengaja beraksen amber (primaryColor app ini)
+       supaya jadi satu-satunya elemen berwarna di antara kartu-kartu
+       putih/netral lainnya, menandakan ini aksi penutup yang paling
+       penting. Judul + tombol disatukan dalam satu container (bukan
+       heading kecil terpisah dari tombol polos seperti sebelumnya) supaya
+       bobot visualnya terasa setara. */
+    .st-key-download_cta {
+        background: linear-gradient(135deg, rgba(245,166,35,0.16), rgba(245,166,35,0.05)) !important;
+        border: 1px solid rgba(245,166,35,0.4) !important;
+        border-radius: 12px !important;
+        padding: 22px 24px !important;
+    }
+    .download-cta-icon { font-size: 26px; text-align: center; margin-bottom: 8px; }
+    .download-cta-title { font-size: 16px; font-weight: 700; color: #F5A623; margin-bottom: 4px; text-align: center; }
+    .download-cta-sub { font-size: 12px; color: inherit; opacity: 0.7; margin-bottom: 16px; line-height: 1.5; text-align: center; }
     .stat-card {
         background: white; border: 1px solid #e8ecf0; border-radius: 10px;
         padding: 1.2rem 1.5rem; text-align: center;
@@ -353,9 +368,15 @@ if page == "🔍 Crawl & Analisis":
         box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     }
     .artikel-judul { font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 0.4rem; line-height: 1.4; }
-    .artikel-judul a.judul-link { color: #1e293b; text-decoration: none; }
+    /* Warna link judul dibuat permanen (bukan cuma muncul saat hover) —
+       sebelumnya sama persis dengan warna teks biasa saat tidak disentuh
+       kursor, jadi nyaris tidak kelihatan kalau judulnya bisa diklik.
+       Panah "↗" juga diperkuat (opacity & ketebalan naik) sebagai sinyal
+       kedua. Opsi ini dipilih karena "teks biru = bisa diklik" adalah
+       konvensi web paling universal, tidak perlu penjelasan tambahan. */
+    .artikel-judul a.judul-link { color: #1a56c4; text-decoration: none; }
     .artikel-judul a.judul-link:hover { color: #1F3864; text-decoration: underline; }
-    .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.75em; font-weight: 400; opacity: 0.4; margin-left: 4px; white-space: nowrap; }
+    .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.8em; font-weight: 700; opacity: 0.75; margin-left: 5px; white-space: nowrap; }
     .artikel-meta  { font-size: 0.78rem; color: #64748b; margin-bottom: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
     .artikel-ringkasan { font-size: 0.88rem; color: #374151; line-height: 1.6; margin-bottom: 0.6rem; }
     .tone-positif { background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
@@ -1078,16 +1099,13 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             with col:
                 st.markdown(f'<div class="stat-card"><div class="stat-number" style="color:{warna}">{tone_counts[tone]}</div><div class="stat-label">{emoji} {tone}</div></div>', unsafe_allow_html=True)
 
+        # "Unduh Hasil" sengaja dipindah ke PALING BAWAH (setelah daftar
+        # artikel, lihat blok "download-cta" di akhir) — sebelumnya
+        # ditaruh di sini, tepat setelah statistik, malah memotong alur
+        # sebelum user sempat lihat artikel apa saja yang ketarik.
+        # Sekarang jadi penutup alami: tinjau dulu artikelnya, baru unduh.
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### ⬇️ Unduh Hasil")
-        excel_buf = buat_excel(hasil_list, label_isu)
-        nama_file = f"MediaCrawl_AIS_{label_isu.replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-        st.download_button("📥 Download Excel", data=excel_buf, file_name=nama_file,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### 📋 Pratinjau Hasil Analisis")
+        st.markdown("### 📰 Artikel yang Ditemukan")
         c_filter1, c_filter2 = st.columns(2)
         with c_filter1:
             filter_tone = st.selectbox("Filter tone:", ["Semua","Positif","Netral","Negatif"])
@@ -1100,6 +1118,12 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             tampil = [h for h in tampil if h.get("tone") == filter_tone]
         if filter_klaster != "Semua":
             tampil = [h for h in tampil if h.get("klaster") == filter_klaster]
+
+        # Caption ini sengaja eksplisit bilang "artikel individu" dan "tiap
+        # kartu di bawah adalah satu artikel" — sebelumnya heading-nya
+        # "Pratinjau Hasil Analisis" yang kesannya satu hasil analisis
+        # gabungan, padahal isinya daftar artikel satu-satu.
+        st.caption(f"Menampilkan **{len(tampil)} dari {len(hasil_list)}** artikel individu hasil crawl — tiap kartu di bawah adalah satu artikel.")
 
         for h in tampil:
             tone = h.get("tone","Netral")
@@ -1135,6 +1159,24 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
                 <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8">🗂️ Klaster: {klaster_label}</div>
             </div>""", unsafe_allow_html=True)
+
+        # Kartu unduh — penutup alami setelah user selesai meninjau daftar
+        # artikel di atas. Sengaja dibuat menonjol (aksen amber, warna
+        # primaryColor app ini) supaya bobot visualnya setara dengan
+        # pentingnya aksi ini — sebelumnya cuma heading kecil + tombol
+        # polos, gampang terlewat padahal ini tujuan akhir dari crawl.
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.container(key="download_cta"):
+            st.markdown("""
+            <div class="download-cta-icon">📥</div>
+            <div class="download-cta-title">Unduh Hasil Lengkap</div>
+            <div class="download-cta-sub">Sudah selesai meninjau? Unduh seluruh artikel beserta analisis klaster, risiko, dan area perhatian dalam satu file Excel.</div>
+            """, unsafe_allow_html=True)
+            excel_buf = buat_excel(hasil_list, label_isu)
+            nama_file = f"MediaCrawl_AIS_{label_isu.replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+            st.download_button("📥 Download Excel", data=excel_buf, file_name=nama_file,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, type="primary")
 
 
 # ══════════════════════════════════════════════════════════════════════════
