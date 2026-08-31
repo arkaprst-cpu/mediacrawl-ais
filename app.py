@@ -323,15 +323,22 @@ if page == "🔍 Crawl & Analisis":
     }
     .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.3rem 0; }
     .main-header p  { font-size: 0.85rem; opacity: 0.75; margin: 0; font-family: 'IBM Plex Mono', monospace; }
-    .empty-guide {
-        background: white; border: 1px solid #e8ecf0; border-left: 4px solid #F5A623;
-        border-radius: 10px; padding: 1.3rem 1.6rem; margin-bottom: 1.5rem;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    /* Kartu panduan "Cara memulai" — dibuat setara gaya kartu "Belum Ada
+       Data" di Dashboard AIS (border putus-putus, background transparan
+       tipis, warna teks ikut tema dark via `inherit`/opacity) supaya kedua
+       halaman terasa satu sistem visual yang sama, bukan white-card ala
+       dokumen yang kontras dengan tema dark aplikasi. */
+    .st-key-crawl_empty_guide {
+        border: 2px dashed rgba(128,128,128,0.3) !important;
+        border-radius: 12px !important;
+        background: rgba(128,128,128,0.06) !important;
+        padding: 20px 24px !important;
+        margin-bottom: 1.5rem !important;
     }
-    .empty-guide h3 { margin: 0 0 0.6rem 0; font-size: 1.05rem; }
-    .empty-guide ol { margin: 0; padding-left: 1.2rem; }
-    .empty-guide li { margin-bottom: 0.4rem; font-size: 0.92rem; line-height: 1.5; }
-    .empty-guide b { color: #1F3864; }
+    .empty-guide-title { font-size: 16px; font-weight: 600; color: inherit; margin-bottom: 10px; text-align: center; }
+    .empty-guide ol { margin: 0; padding-left: 1.2rem; max-width: 520px; margin-left: auto; margin-right: auto; }
+    .empty-guide li { margin-bottom: 0.45rem; font-size: 12.5px; color: inherit; opacity: 0.75; line-height: 1.6; }
+    .empty-guide li b { opacity: 1; font-weight: 600; }
     .stat-card {
         background: white; border: 1px solid #e8ecf0; border-radius: 10px;
         padding: 1.2rem 1.5rem; text-align: center;
@@ -858,18 +865,20 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
     # Begitu "hasil" masuk ke session_state (crawl pertama berhasil), guard
     # ini otomatis False untuk sisa sesi, jadi tidak mengganggu tampilan
     # hasil di rerun berikutnya. `not run_btn` mencegah kartu ini sempat
-    # nongol sekilas di pass rerun saat tombol baru saja diklik.
+    # nongol sekilas di pass rerun saat tombol baru saja diklik. Judul
+    # sengaja "Cara memulai" (bukan "Mulai di sini") karena kartu ini ada
+    # di area konten utama, sedangkan aksi sesungguhnya (isi kata kunci,
+    # klik tombol) ada di sidebar kiri — bukan di kartu ini sendiri.
     if "hasil" not in st.session_state and not run_btn:
-        st.markdown("""
-        <div class="empty-guide">
-          <h3>👋 Mulai di sini</h3>
-          <ol>
-            <li>Isi <b>kata kunci isu</b> di sidebar kiri (boleh lebih dari satu, satu per baris)</li>
-            <li>Beri <b>nama file Excel</b> yang mudah dikenali nanti</li>
-            <li>Klik <b>🔍 Mulai Crawl</b> — hasil analisisnya akan muncul di halaman ini</li>
-          </ol>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(key="crawl_empty_guide"):
+            st.markdown("""
+            <div class="empty-guide-title">👈 Cara memulai</div>
+            <ol>
+              <li>Isi <b>kata kunci isu</b> di sidebar kiri (boleh lebih dari satu, satu per baris)</li>
+              <li>Beri <b>nama file Excel</b> yang mudah dikenali nanti</li>
+              <li>Klik <b>🔍 Mulai Crawl</b> — hasil analisisnya akan muncul di halaman ini</li>
+            </ol>
+            """, unsafe_allow_html=True)
 
     if run_btn:
         if not active_key:
