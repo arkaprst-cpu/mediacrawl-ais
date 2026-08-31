@@ -226,6 +226,13 @@ with st.sidebar:
     [class*="st-key-navtile_"] { margin-bottom: 4px; }
     [class*="st-key-navtile_"] button {
         width: 100% !important; text-align: left !important;
+        /* st.button bawaan Streamlit pakai display:flex +
+           justify-content:center pada elemen <button>-nya sendiri — jadi
+           walau text-align:left sudah diset, isinya (div markdown + <p>)
+           tetap kesentering sebagai flex item, karena justify-content
+           mengatur posisi BLOK-nya, bukan teks di dalamnya. text-align
+           doang nggak cukup, harus override justify-content juga. */
+        justify-content: flex-start !important;
         white-space: nowrap !important; height: auto !important;
         line-height: 1.4 !important; padding: 8px 14px !important;
         border-radius: 8px !important;
