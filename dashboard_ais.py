@@ -314,7 +314,18 @@ st.markdown("""
   /* Hide streamlit chrome */
   #MainMenu {visibility: hidden;}
   footer {visibility: hidden;}
-  .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+  /* padding-top diperbesar dari 1rem → 5.5rem. Root cause "judul topbar
+     kepotong" sama persis dengan bug "nabrak topbar" yang sudah didiagnosis
+     untuk .st-key-panel_kanan di atas: toolbar bawaan Streamlit Community
+     Cloud (ikon Share/star/fork/GitHub) di-inject FIXED di atas viewport,
+     di luar perhitungan layout Streamlit sendiri, jadi tidak otomatis
+     dikompensasi oleh block-container. Karena .ais-topbar dirender persis
+     di baris pertama block-container, padding-top yang terlalu tipis (1rem
+     = 16px) bikin bagian atas judul (ascender huruf D/b/h/l/t/S) selalu
+     ketiban toolbar itu — konstan di semua level zoom karena toolbar-nya
+     fixed-position, bukan soal ukuran font. Nilai 5.5rem (~88px) disamakan
+     dengan kalibrasi top:90px yang sudah terbukti pas untuk panel_kanan. */
+  .block-container { padding-top: 5.5rem; padding-bottom: 1rem; }
 
   /* Uploader di sidebar — dropzone bawaan Streamlit besar padahal cuma
      dipakai sesekali per sesi; diperkecil agar tidak mendominasi sidebar. */
