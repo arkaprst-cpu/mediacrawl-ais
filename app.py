@@ -205,19 +205,7 @@ with st.sidebar:
         text-transform: uppercase; letter-spacing: 0.04em;
         margin: 2px 0 4px 0;
     }
-    /* Tombol logout ditumpuk di pojok kanan-atas card brand (position:
-       absolute) alih-alih dipepetkan ke kolom sempit — supaya lebar tombol
-       menyesuaikan isi teksnya sendiri, tidak wrap/gepeng di layar sempit. */
-    .st-key-sidebar_brand_row { position: relative; margin-bottom: 12px; }
-    .st-key-logout_btn { position: absolute; top: 8px; right: 8px; z-index: 5; }
-    .st-key-logout_btn button {
-        background: transparent; border: 1px solid rgba(255,255,255,0.25);
-        color: rgba(255,255,255,0.75); font-size: 11px; font-weight: 500;
-        padding: 1px 10px; min-height: 24px; width: auto; white-space: nowrap;
-    }
-    .st-key-logout_btn button:hover {
-        background: rgba(220,60,60,0.15); border-color: #dc3c3c; color: #ff9494;
-    }
+    .st-key-sidebar_brand_row { margin-bottom: 12px; }
     /* Navigasi 3-menu — "tile" bukan radio polos, biar 3 fungsi utama app
        (crawl, klasterisasi/analisis, repositori) kelihatan sebagai 3 modul
        yang setara, bukan sekadar daftar link. Diskusi & di-tes langsung:
@@ -257,9 +245,6 @@ with st.sidebar:
           <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Keluar", key="logout_btn", help="Keluar dari sesi"):
-            st.session_state.pop("ais_authenticated", None)
-            st.rerun()
 
     # Nama & subteks final hasil diskusi — subteksnya sengaja dibuat SAMA
     # PERSIS dengan subtitle di judul besar tiap halaman (lihat main-header
@@ -377,12 +362,17 @@ if page == "crawl":
     <style>
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
     html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
+    /* Gradien navy gelap + border-bottom amber disamakan persis dengan
+       .ais-topbar di dashboard_ais.py (halaman Klasterisasi & Analisis),
+       supaya ketiga judul halaman terasa satu sistem visual — sebelumnya
+       cuma halaman ini yang polos biru terang tanpa aksen amber. */
     .main-header {
-        background: linear-gradient(135deg, #1F3864 0%, #2d5299 100%);
-        color: white; padding: 14px 20px; border-radius: 10px; margin-bottom: 14px;
+        background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
+        padding: 14px 20px; border-radius: 10px; margin-bottom: 14px;
+        border-bottom: 3px solid #F5A623;
     }
-    .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; }
-    .main-header p  { font-size: 0.85rem; opacity: 0.75; margin: 0; font-family: 'IBM Plex Mono', monospace; }
+    .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; color: #F5A623; }
+    .main-header p  { font-size: 0.85rem; margin: 0; font-family: 'IBM Plex Mono', monospace; color: rgba(255,255,255,0.75); }
     /* Kartu panduan "Cara memulai" — dibuat setara gaya kartu "Belum Ada
        Data" di Dashboard AIS (border putus-putus, background transparan
        tipis, warna teks ikut tema dark via `inherit`/opacity) supaya kedua
