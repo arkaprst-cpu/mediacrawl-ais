@@ -1077,7 +1077,25 @@ with tab2:
                     # pertama) — user baru tidak langsung dihadapkan detail
                     # klaster + panel artikel di kanan sebelum sempat
                     # memindai daftar klaster yang ada.
-                    with st.expander(label_expander, expanded=False):
+                    #
+                    # key= di sini WAJIB ada — itu yang membuat status
+                    # buka/tutup expander ini kebaca balik lewat
+                    # st.session_state[expander_key] di bawah, dipakai untuk
+                    # mendeteksi kapan klaster ini BARU SAJA ditutup lagi
+                    # (lihat blok reset panel kanan setelah expander ini).
+                    #
+                    # on_change= (no-op) WAJIB ikut disertakan juga — di versi
+                    # Streamlit yang dipakai, expander dengan key= TAPI TANPA
+                    # on_change= tidak pernah benar-benar menulis nilainya ke
+                    # st.session_state; key-nya "mati", jadi .get() di bawah
+                    # selalu balik ke default False walau klaster sedang
+                    # terbuka. Efeknya panel kanan langsung ke-reset lagi
+                    # sesaat setelah "Lihat detail" diklik, padahal klasternya
+                    # belum ditutup. Menambahkan on_change (biar isinya no-op)
+                    # membuat Streamlit benar-benar menyinkronkan status
+                    # buka/tutup ke session_state seperti seharusnya.
+                    expander_key = f"exp_klaster_{nama}"
+                    with st.expander(label_expander, expanded=False, key=expander_key, on_change=lambda: None):
                         info_klaster = narasi_klaster.get(nama)
 
                         # Fallback: rekonstruksi field klaster dari data
@@ -1170,6 +1188,26 @@ with tab2:
                         for i, row in sub_idx.iterrows():
                             render_artikel_item(i, row, compact=True)
                         st.markdown("</div>", unsafe_allow_html=True)
+
+                    # Klaster ini sedang TERTUTUP (baik sejak awal, atau baru
+                    # saja ditutup ulang oleh user) — kalau panel kanan lagi
+                    # menampilkan sesuatu yang terkait klaster ini (artikel
+                    # anggotanya, atau form telaah klaster ini), reset ke
+                    # keadaan netral. Tanpa ini panel kanan "menggantung"
+                    # terus menampilkan detail dari klaster yang sudah
+                    # ditutup, padahal secara visual sudah tidak ada
+                    # hubungannya lagi dengan apa pun yang masih terbuka.
+                    if not st.session_state.get(expander_key, False):
+                        if st.session_state.get("selected_klaster") == nama:
+                            st.session_state["panel_mode"] = "detail"
+                            st.session_state["selected_klaster"] = None
+                        idx_sel = st.session_state.get("selected_idx")
+                        if (
+                            idx_sel is not None
+                            and 0 <= idx_sel < len(df_filtered_idx)
+                            and df_filtered_idx.iloc[idx_sel].get("Klaster") == nama
+                        ):
+                            st.session_state["selected_idx"] = None
 
         with col_detail:
             panel_mode = st.session_state.get("panel_mode", "detail")
@@ -1271,7 +1309,7 @@ with tab2:
                             letter-spacing:0.08em;color:#F5A623;font-weight:700;
                             text-transform:uppercase;
                         '>
-                          📋 Detail Analisis
+                          📋 Detail Artikel
                         </div>
 
                         <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
