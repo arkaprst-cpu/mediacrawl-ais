@@ -358,16 +358,6 @@ if page == "🔍 Crawl & Analisis":
     .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.75em; font-weight: 400; opacity: 0.4; margin-left: 4px; white-space: nowrap; }
     .artikel-meta  { font-size: 0.78rem; color: #64748b; margin-bottom: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
     .artikel-ringkasan { font-size: 0.88rem; color: #374151; line-height: 1.6; margin-bottom: 0.6rem; }
-    .artikel-risiko {
-        font-size: 0.85rem; color: #7c3aed; background: #f5f3ff;
-        border-left: 3px solid #7c3aed; padding: 0.5rem 0.8rem;
-        border-radius: 0 6px 6px 0; margin-bottom: 0.5rem;
-    }
-    .artikel-tindak {
-        font-size: 0.85rem; color: #065f46; background: #ecfdf5;
-        border-left: 3px solid #059669; padding: 0.5rem 0.8rem;
-        border-radius: 0 6px 6px 0;
-    }
     .tone-positif { background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
     .tone-netral  { background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
     .tone-negatif { background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
@@ -438,13 +428,13 @@ if page == "🔍 Crawl & Analisis":
 
 LANGKAH WAJIB — lakukan secara berurutan sebelum mengisi JSON:
 
-LANGKAH 1 — BACA JUDUL SECARA LITERAL
-Identifikasi: siapa yang disebut, apa yang terjadi, ada angka/besaran apa, ada kata kunci negatif apa (dugaan, korupsi, gagal, mangkrak, turun, naik, dll). Jangan tambahkan asumsi yang tidak ada di judul.
+LANGKAH 1 — BACA JUDUL DAN KONTEN SECARA LITERAL
+Identifikasi: siapa yang disebut, apa yang terjadi, ada angka/besaran/tanggal apa, ada kata kunci negatif apa (dugaan, korupsi, gagal, mangkrak, turun, naik, dll). Kalau field "Konten" tersedia, gali detail konkret di dalamnya (nominal, jumlah, nama pihak/jabatan spesifik, tahapan/kegiatan yang disebutkan) — jangan cuma parafrase judul. Jangan tambahkan asumsi yang tidak ada di judul/konten.
 
 LANGKAH 2 — ISI JSON
 Output harus berupa JSON murni tanpa teks apapun di luar kurung kurawal:
 {
-  "ringkasan_isu"  : "2-3 kalimat FAKTUAL: apa yang terjadi (sebutkan nama program/institusi/angka jika ada di judul), apa pemicunya. JANGAN simpulkan relevansi/prioritas bagi pengawasan BPKP di sini — itu dinilai belakangan di level klaster, dengan konteks seluruh artikel sejenis, bukan per-artikel.",
+  "ringkasan_isu"  : "3-4 kalimat FAKTUAL dan SEDETAIL MUNGKIN: apa yang terjadi, siapa pihak yang terlibat (sebutkan nama program/institusi/jabatan spesifik), angka/nominal/tanggal kalau disebutkan, apa pemicu atau konteksnya. Artikel ini harus bisa dipahami BERDIRI SENDIRI tanpa perlu membaca artikel lain di klasternya — utamakan detail konkret dari artikel ini sendiri, bukan kalimat generik yang bisa berlaku untuk artikel manapun di topik yang sama. JANGAN simpulkan risiko/relevansi/prioritas bagi pengawasan BPKP di sini — itu dinilai belakangan di level klaster, dengan konteks seluruh artikel sejenis, bukan per-artikel.",
   "isu_subisu"     : "Nama isu utama / subisu spesifik (gunakan istilah dari judul, bukan abstraksi)",
   "aktor_lokasi"   : "Nama institusi atau jabatan yang disebut dalam judul / lokasi spesifik",
   "tone"           : "Positif" atau "Netral" atau "Negatif"
@@ -452,8 +442,8 @@ Output harus berupa JSON murni tanpa teks apapun di luar kurung kurawal:
 
 Aturan tambahan:
 - Tone HANYA: Positif, Netral, atau Negatif
-- Gunakan nama program/instansi/angka yang ada di judul — jangan ganti dengan abstraksi
-- Jika judul tidak memberi cukup informasi, tetap isi semua field berdasarkan konteks topik crawl
+- Gunakan nama program/instansi/angka yang ada di judul/konten — jangan ganti dengan abstraksi
+- Jika judul/konten tidak memberi cukup informasi, tetap isi semua field berdasarkan konteks topik crawl — jangan mengarang detail yang tidak ada sumbernya
 - Bahasa Indonesia formal
 - Output HANYA JSON murni"""
 
@@ -1140,8 +1130,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 <div class="artikel-meta"><span class="artikel-tanggal">📅 {h.get('tanggal','-')}</span> &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
                 <div style="margin:2px 0 10px 0">{topik_badge}{aktor_pills}</div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
-                <div class="artikel-risiko">⚠️ <b>Risiko klaster:</b> {h.get('risiko','-')}</div>
-                <div class="artikel-tindak">🔍 <b>Area Perhatian klaster:</b> {h.get('area_perhatian','-')}</div>
                 <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8">🗂️ Klaster: {klaster_label}</div>
             </div>""", unsafe_allow_html=True)
 
