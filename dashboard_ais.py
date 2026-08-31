@@ -1000,10 +1000,22 @@ with tab1:
 # TAB 2 — DAFTAR ISU
 # ════════════════════════════════════════════
 with tab2:
-    st.markdown(f"**{len(df_filtered)} artikel** ditampilkan berdasarkan filter aktif")
+    # Teks lama ("... ditampilkan berdasarkan filter aktif") menyesatkan —
+    # filter_tone/filter_risiko di sidebar di-hardcode isi SEMUA nilai
+    # (lihat komentar di blok sidebar), jadi df_filtered TIDAK PERNAH benar-
+    # benar menyaring apa pun; sebutan "filter aktif" sisa dari versi lama
+    # yang dulu punya widget filter beneran. Diganti kalimat yang menjelaskan
+    # apa yang sebenarnya terjadi di halaman ini: artikel individual
+    # diagregasi jadi klaster isu di bawah.
+    ada_klaster_ringkas = 'Klaster' in df_filtered.columns and (df_filtered['Klaster'] != '-').any()
+    if ada_klaster_ringkas:
+        jml_klaster_ringkas = df_filtered.loc[df_filtered['Klaster'] != '-', 'Klaster'].nunique()
+        st.markdown(f"Ditemukan **{jml_klaster_ringkas} klaster isu** dari **{len(df_filtered)} artikel** yang di-crawl")
+    else:
+        st.markdown(f"**{len(df_filtered)} artikel** ditampilkan")
 
     if len(df_filtered) == 0:
-        st.info("Tidak ada artikel yang sesuai filter. Ubah filter di sidebar.")
+        st.info("Tidak ada artikel untuk data ini.")
     else:
         # Split: list kiri, detail kanan
         col_list, col_detail = st.columns([5, 4])
