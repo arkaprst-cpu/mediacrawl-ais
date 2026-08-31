@@ -249,7 +249,7 @@ def buat_excel(data: list, label_isu: str) -> bytes:
 
     C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
     TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
-    HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian","Kondisi/Pemicu Klaster","Relevansi Pengawasan",
+    HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian","Kondisi Klaster","Relevansi Pengawasan",
              "Sektor","Tema","Topik","Dampak/Implikasi (Final)","Gap Pengawasan","Usulan Pengawasan","Status Review",
              # Ditambahkan di paling AKHIR (kolom ke-22), SENGAJA bukan disisipkan
              # dekat "Relevansi Pengawasan" — supaya posisi kolom 1-21 (termasuk
@@ -510,7 +510,7 @@ Ini KLASIFIKASI, bukan narasi — jangan tulis penjelasan, cukup daftar nama dim
 
 FORMAT OUTPUT setiap klaster wajib diberi:
 - "nama": nama klaster singkat (maks 8 kata), mencerminkan isu utama bukan sekadar topik umum
-- "kondisi_pemicu": 1-2 kalimat kondisi/pemicu konkret yang menyatukan artikel-artikel ini
+- "kondisi_pemicu": 1-2 kalimat KONDISI/SITUASI konkret yang menyatukan artikel-artikel ini — NETRAL, sekadar menjelaskan latar/situasinya, TIDAK harus berupa "pemicu" atau kondisi negatif/kausal. Ikuti nada isi artikelnya apa adanya: kalau isunya soal upaya/program yang sedang berjalan (positif/netral), tulis apa adanya begitu — jangan dipaksa terdengar seperti ada yang salah. Framing risiko/kelemahan sepenuhnya jadi tugas "risiko" dan "area_perhatian" di bawah, bukan di sini.
 - "risiko": sesuai aturan Tugas 2 di atas
 - "area_perhatian": sesuai aturan Tugas 2 di atas
 - "relevansi_pengawasan": mengapa klaster ini relevan/tidak terlalu prioritas bagi pengawasan BPKP
