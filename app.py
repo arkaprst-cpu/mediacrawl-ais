@@ -255,11 +255,7 @@ def buat_excel(data: list, label_isu: str) -> bytes:
              # dekat "Relevansi Pengawasan" — supaya posisi kolom 1-21 (termasuk
              # blok telaah manusia Sektor..Status Review di 15-21) tidak bergeser
              # dan file lama (21 kolom) tetap terbaca benar oleh dashboard_ais.py.
-             "Dimensi Pengawasan (GRCC AnCoDe)",
-             # Sama prinsipnya: ditambahkan paling AKHIR lagi (kolom ke-23),
-             # bukan disisipkan dekat "Ringkasan Isu" — supaya file 22-kolom
-             # (sebelum field ini ada) tetap terbaca benar.
-             "Sudut Pandang Spesifik"]
+             "Dimensi Pengawasan (GRCC AnCoDe)"]
     NCOL=len(HEADERS)
     COL_STATUS_REVIEW = HEADERS.index("Status Review") + 1  # posisi eksplisit,
     # bukan diasumsikan "kolom terakhir" — supaya penambahan kolom baru di masa
@@ -296,8 +292,7 @@ def buat_excel(data: list, label_isu: str) -> bytes:
                d.get("sektor","-"),d.get("tema","-"),d.get("topik","-"),
                d.get("dampak_implikasi_final","-"),d.get("gap_pengawasan","-"),d.get("usulan_pengawasan","-"),
                d.get("status_review","Belum Direview"),
-               ", ".join(d.get("dimensi_pengawasan") or []),
-               d.get("sudut_pandang","")]
+               ", ".join(d.get("dimensi_pengawasan") or [])]
         for col,val in enumerate(baris,1):
             c=ws.cell(row=r,column=col,value=val); style(c,bg)
         tone_val=d.get("tone","Netral")
@@ -307,7 +302,7 @@ def buat_excel(data: list, label_isu: str) -> bytes:
         ws.cell(row=r,column=COL_STATUS_REVIEW).fill=PatternFill("solid",fgColor=STATUS_C.get(status_val,"F2F2F2"))
         ws.row_dimensions[r].height=60
 
-    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16,40,40],1):
+    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16,40],1):
         ws.column_dimensions[get_column_letter(col)].width=w
 
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
@@ -363,11 +358,6 @@ if page == "🔍 Crawl & Analisis":
     .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.75em; font-weight: 400; opacity: 0.4; margin-left: 4px; white-space: nowrap; }
     .artikel-meta  { font-size: 0.78rem; color: #64748b; margin-bottom: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
     .artikel-ringkasan { font-size: 0.88rem; color: #374151; line-height: 1.6; margin-bottom: 0.6rem; }
-    .artikel-sudut-pandang {
-        font-size: 0.83rem; color: #92400e; background: #fffbeb; font-style: italic;
-        border-left: 3px solid #F5A623; padding: 0.45rem 0.8rem;
-        border-radius: 0 6px 6px 0; margin-bottom: 0.6rem;
-    }
     .artikel-risiko {
         font-size: 0.85rem; color: #7c3aed; background: #f5f3ff;
         border-left: 3px solid #7c3aed; padding: 0.5rem 0.8rem;
@@ -503,12 +493,6 @@ Tandai klaster ini dengan dimensi pengawasan mana saja yang BENAR-BENAR didukung
 
 Ini KLASIFIKASI, bukan narasi — jangan tulis penjelasan, cukup daftar nama dimensi yang cocok.
 
-TUGAS 4 — CATATAN SUDUT PANDANG SPESIFIK PER ARTIKEL (OPSIONAL):
-Untuk artikel dalam klaster ini yang punya penekanan/sudut pandang BERBEDA secara nyata dari artikel lain di klaster yang sama (misalnya artikel lain fokus ke dampak konsumen, tapi artikel ini justru fokus ke kesiapan industri, atau angka/pihak yang disebut berbeda dari mayoritas), tulis SATU kalimat pendek yang menangkap sudut pandang spesifik itu.
-
-JANGAN dipaksakan — kalau sebuah artikel isinya cuma mengulang inti klaster tanpa penekanan yang beda, JANGAN sertakan artikel itu sama sekali di "catatan_spesifik" (bukan diisi string kosong). Wajar kalau banyak/semua artikel dalam satu klaster tidak punya catatan — itu berarti objeknya boleh kosong {}.
-JANGAN mengulang isi "risiko"/"kondisi_pemicu" klaster di sini — ini soal APA yang secara spesifik DIBAHAS artikel itu, bukan analisis risiko baru.
-
 FORMAT OUTPUT setiap klaster wajib diberi:
 - "nama": nama klaster singkat (maks 8 kata), mencerminkan isu utama bukan sekadar topik umum
 - "kondisi_pemicu": 1-2 kalimat kondisi/pemicu konkret yang menyatukan artikel-artikel ini
@@ -516,14 +500,13 @@ FORMAT OUTPUT setiap klaster wajib diberi:
 - "area_perhatian": sesuai aturan Tugas 2 di atas
 - "relevansi_pengawasan": mengapa klaster ini relevan/tidak terlalu prioritas bagi pengawasan BPKP
 - "dimensi_pengawasan": array sesuai aturan Tugas 3 di atas (bisa array kosong [])
-- "catatan_spesifik": objek sesuai aturan Tugas 4 di atas, key = nomor (No) artikel sebagai string, value = kalimat pendek (boleh objek kosong {})
 - "anggota": array berisi nomor (No) artikel yang masuk klaster ini
 
 Urutkan array klaster dari yang paling kritikal/prioritas bagi pengawasan BPKP ke yang paling rendah prioritas.
 Balas HANYA dalam format JSON murni, TANPA teks lain, TANPA markdown code fence, TANPA penjelasan di luar JSON.
 
 Format output:
-{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "dimensi_pengawasan": ["Governance"], "catatan_spesifik": {"3": "Menyoroti kesiapan industri dalam negeri, bukan besaran insentif"}, "anggota": [1,2,3]}]}
+{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "dimensi_pengawasan": ["Governance"], "anggota": [1,2,3]}]}
 """
 
     DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Korupsi", "Debottlenecking"}
@@ -751,23 +734,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     # list kosong, itu valid).
                     dimensi_mentah = kl.get("dimensi_pengawasan", [])
                     dimensi = [d for d in dimensi_mentah if isinstance(d, str) and d in DIMENSI_PENGAWASAN_VALID] if isinstance(dimensi_mentah, list) else []
-                    # Sanitasi catatan_spesifik: cuma terima entri yang key-nya
-                    # (nomor artikel) memang anggota klaster ini DAN value-nya
-                    # string berisi (bukan kosong/whitespace) — jaga-jaga AI
-                    # menaruh catatan untuk nomor yang bukan anggota klaster ini,
-                    # atau mengisi string kosong alih-alih tidak menyertakan
-                    # entrinya sama sekali.
-                    catatan_mentah = kl.get("catatan_spesifik", {})
-                    catatan = {}
-                    if isinstance(catatan_mentah, dict):
-                        for no_str, teks in catatan_mentah.items():
-                            try:
-                                no_int = int(no_str)
-                            except (TypeError, ValueError):
-                                continue
-                            if no_int in anggota and isinstance(teks, str) and teks.strip():
-                                catatan[str(no_int)] = teks.strip()
-                    klaster_valid.append({**kl, "anggota": anggota, "dimensi_pengawasan": dimensi, "catatan_spesifik": catatan})
+                    klaster_valid.append({**kl, "anggota": anggota, "dimensi_pengawasan": dimensi})
 
                 # Artikel yang tidak masuk klaster manapun -> klaster "Isu Lainnya"
                 sisa = [n for n in range(1, total_artikel + 1) if n not in anggota_terpakai]
@@ -779,7 +746,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "area_perhatian": "-",
                         "relevansi_pengawasan": "Perlu ditelaah manual — tidak teridentifikasi pola yang jelas.",
                         "dimensi_pengawasan": [],
-                        "catatan_spesifik": {},
                         "anggota": sisa,
                     })
 
@@ -797,7 +763,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "area_perhatian": "Perlu ditelaah manual per artikel — masing-masing berdiri sendiri tanpa pola dominan.",
                         "relevansi_pengawasan": "-",
                         "dimensi_pengawasan": [],
-                        "catatan_spesifik": {},
                         "anggota": anggota_gabungan,
                     })
                     klaster_valid = dipertahankan
@@ -1043,12 +1008,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
                         h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
                         h["dimensi_pengawasan"]    = kl.get("dimensi_pengawasan", [])
-                        # Beda dengan risiko/area_perhatian/dst di atas (yang
-                        # murni level klaster), ini catatan OPSIONAL per
-                        # artikel — cuma terisi kalau artikel ini punya sudut
-                        # pandang yang benar-benar beda dari artikel lain di
-                        # klaster yang sama. Lihat Tugas 4 di PROMPT_KLASTER.
-                        h["sudut_pandang"]         = kl.get("catatan_spesifik", {}).get(str(i + 1), "")
                     else:
                         h["klaster"]               = "-"
                         h["risiko"]                = "-"
@@ -1056,7 +1015,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         h["kondisi_pemicu"]        = "-"
                         h["relevansi_pengawasan"]  = "-"
                         h["dimensi_pengawasan"]    = []
-                        h["sudut_pandang"]         = ""
 
                 prog_bar.progress(100, text="✅ Selesai!")
                 status_tx.empty()
@@ -1182,7 +1140,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 <div class="artikel-meta"><span class="artikel-tanggal">📅 {h.get('tanggal','-')}</span> &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
                 <div style="margin:2px 0 10px 0">{topik_badge}{aktor_pills}</div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
-                {f'<div class="artikel-sudut-pandang">💡 {h.get("sudut_pandang")}</div>' if h.get('sudut_pandang') else ''}
                 <div class="artikel-risiko">⚠️ <b>Risiko klaster:</b> {h.get('risiko','-')}</div>
                 <div class="artikel-tindak">🔍 <b>Area Perhatian klaster:</b> {h.get('area_perhatian','-')}</div>
                 <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8">🗂️ Klaster: {klaster_label}</div>
