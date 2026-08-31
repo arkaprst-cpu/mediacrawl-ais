@@ -481,9 +481,10 @@ TUGAS 1 — KLASTERISASI:
 Kelompokkan artikel-artikel ini ke dalam klaster isu utama berdasarkan KESAMAAN AKAR PERSOALAN DAN ARAH ISU — bukan sekadar kesamaan kata kunci permukaan.
 
 ATURAN KLASTERISASI:
-1. JUMLAH KLASTER 3 SAMPAI 5 — INI BATAS KERAS. Tidak boleh kurang dari 3, tidak boleh lebih dari 5, berapa pun banyaknya artikel.
-2. JANGAN membuat klaster terlalu granular berdasarkan detail permukaan (nama tokoh, nama acara, judul spesifik). Klaster harus berdasarkan AKAR PERSOALAN/ARAH ISU yang sama — kalau dua artikel sama-sama soal "kepercayaan investor" atau "tata kelola internal", gabungkan jadi satu klaster meski judul dan tokoh yang disebut berbeda.
-3. Setiap artikel HARUS masuk tepat satu klaster (tidak ada yang terlewat, tidak ada duplikasi).
+1. JUMLAH KLASTER 3 SAMPAI 5 — INI BATAS KERAS. Tidak boleh kurang dari 3, tidak boleh lebih dari 5, berapa pun banyaknya artikel — TERMASUK kalau seluruh artikel terasa membahas satu peristiwa/narasi besar yang sama.
+2. Kalau artikel-artikelnya terasa homogen (satu topik/peristiwa besar yang sama), JANGAN jadikan itu alasan untuk menggabungkan semua jadi 1 klaster. Cari perbedaan SUDUT PANDANG, SKALA, atau FOKUS di antara artikel-artikel tersebut — misalnya: kasus/insiden spesifik vs tren atau daftar kumulatif yang berulang, fakta kejadian vs opini/analisis akar penyebab, level nasional vs level daerah/lokasi tertentu, atau tindakan pelaku vs respons institusi. Perbedaan semacam ini SELALU ada kalau dicari dengan teliti, dan itulah dasar pemecahan klasternya.
+3. JANGAN membuat klaster terlalu granular berdasarkan detail permukaan (nama tokoh, nama acara, judul spesifik). Klaster harus berdasarkan AKAR PERSOALAN/ARAH ISU yang sama — kalau dua artikel sama-sama soal "kepercayaan investor" atau "tata kelola internal", gabungkan jadi satu klaster meski judul dan tokoh yang disebut berbeda.
+4. Setiap artikel HARUS masuk tepat satu klaster (tidak ada yang terlewat, tidak ada duplikasi).
 
 TUGAS 2 — ANALISIS RISIKO & AREA PERHATIAN PER KLASTER:
 Untuk SETIAP klaster yang terbentuk, analisis berdasarkan KESELURUHAN artikel anggotanya (bukan satu artikel saja) untuk menjawab:
@@ -697,8 +698,10 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         ]
         prompt = json.dumps(ringkasan_list, ensure_ascii=False)
 
-        MAX_RETRY  = 4
-        BASE_DELAY = 6
+        MAX_RETRY   = 4
+        BASE_DELAY  = 6
+        MIN_KLASTER = 3  # selaras dengan "batas keras" di PROMPT_KLASTER
+        catatan_koreksi = ""
 
         for attempt in range(MAX_RETRY):
             try:
@@ -706,7 +709,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     model=DEEPSEEK_MODEL,
                     messages=[
                         {"role": "system", "content": PROMPT_KLASTER},
-                        {"role": "user",   "content": prompt},
+                        {"role": "user",   "content": prompt + catatan_koreksi},
                     ],
                     temperature=0.2,
                     max_tokens=3500,
@@ -749,6 +752,35 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     dimensi_mentah = kl.get("dimensi_pengawasan", [])
                     dimensi = [d for d in dimensi_mentah if isinstance(d, str) and d in DIMENSI_PENGAWASAN_VALID] if isinstance(dimensi_mentah, list) else []
                     klaster_valid.append({**kl, "anggota": anggota, "dimensi_pengawasan": dimensi})
+
+                # Tegakkan batas BAWAH (min 3 klaster) di kode, bukan cuma di
+                # prompt. PROMPT_KLASTER sudah menulis aturan ini sebagai
+                # "batas keras", tapi teks prompt saja tidak selalu ditaati:
+                # kalau kumpulan artikelnya sangat homogen (satu keyword besar
+                # yang menarik banyak berita dari satu narasi yang sama, mis.
+                # "OTT KPK" -> 25 artikel yang semuanya soal maraknya OTT
+                # kepala daerah 2026), model bisa memutuskan itu cukup 1
+                # klaster raksasa — padahal biasanya tetap ada sudut/skala
+                # berbeda (kasus spesifik vs tren umum, fakta vs analisis akar
+                # sebab, dst.) yang layak dipisah untuk kebutuhan pengawasan.
+                # Kalau ini kejadian, retry dengan teguran eksplisit alih-alih
+                # diam-diam meloloskan hasil yang melanggar aturannya sendiri
+                # (analog dengan penegakan batas ATAS/maks 5 klaster di bawah).
+                if len(klaster_valid) < MIN_KLASTER and attempt < MAX_RETRY - 1:
+                    catatan_koreksi = (
+                        f"\n\nPERINGATAN: Percobaan sebelumnya cuma menghasilkan "
+                        f"{len(klaster_valid)} klaster untuk {total_artikel} artikel — "
+                        f"ini MELANGGAR aturan wajib (JUMLAH KLASTER 3 SAMPAI 5, berapa "
+                        f"pun banyaknya artikel, bahkan kalau akar masalahnya terasa "
+                        f"sama). WAJIB pecah lebih detail kali ini: cari sudut pandang, "
+                        f"skala, atau fokus yang berbeda dalam kumpulan artikel ini — "
+                        f"misalnya kasus/insiden spesifik vs tren atau daftar kumulatif "
+                        f"yang berulang, fakta kejadian vs opini/analisis akar penyebab, "
+                        f"atau level nasional vs level daerah/lokasi tertentu — lalu "
+                        f"jadikan masing-masing sudut sebagai klaster terpisah."
+                    )
+                    time.sleep(BASE_DELAY)
+                    continue
 
                 # Artikel yang tidak masuk klaster manapun -> klaster "Isu Lainnya"
                 sisa = [n for n in range(1, total_artikel + 1) if n not in anggota_terpakai]
