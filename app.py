@@ -183,7 +183,7 @@ def cek_password():
             else:
                 st.error("Password salah.")
 
-        st.markdown("<div style='text-align:center;margin-top:16px;font-size:11px;opacity:0.5'>Mencari hasil analisis isu? <a href='?page=repositori' style='color:#F5A623'>Buka Repositori Isu publik →</a></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center;margin-top:16px;font-size:11px;opacity:0.5'>Mencari hasil analisis isu? <a href='?page=repositori' style='color:#F5A623'>Buka Repositori Isu Strategis publik →</a></div>", unsafe_allow_html=True)
 
     return False
 
@@ -218,27 +218,86 @@ with st.sidebar:
     .st-key-logout_btn button:hover {
         background: rgba(220,60,60,0.15); border-color: #dc3c3c; color: #ff9494;
     }
+    /* Navigasi 3-menu — "tile" bukan radio polos, biar 3 fungsi utama app
+       (crawl, klasterisasi/analisis, repositori) kelihatan sebagai 3 modul
+       yang setara, bukan sekadar daftar link. Diskusi & di-tes langsung:
+       st.radio TIDAK BISA dikasih subteks per-opsi (label-nya cuma teks
+       polos 1 baris), jadi diganti 3x st.button, masing-masing labelnya
+       pakai markdown 2 baris ("**Judul**\\n\\nSubteks kecil") — ini
+       DIDUKUNG native oleh st.button (dites di probe terpisah), jauh lebih
+       simpel & stabil daripada trik "tombol transparan ditumpuk di atas
+       markdown" yang sempat dipertimbangkan. Highlight tile yang lagi aktif
+       diatur lewat CSS dinamis di bawah (bukan di sini), karena butuh tahu
+       st.session_state["ais_page"] saat itu.
+    */
+    [class*="st-key-navtile_"] { margin-bottom: 6px; }
+    [class*="st-key-navtile_"] button {
+        width: 100% !important; text-align: left !important;
+        white-space: pre-wrap !important; height: auto !important;
+        line-height: 1.5 !important; padding: 10px 14px !important;
+        border-radius: 8px !important;
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+    }
+    [class*="st-key-navtile_"] button p:first-child { font-size: 13px !important; }
+    [class*="st-key-navtile_"] button p:last-child {
+        font-size: 11px !important; font-weight: 400 !important;
+        opacity: 0.55; margin-top: 2px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
     with st.container(key="sidebar_brand_row"):
         st.markdown("""
         <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
-                    border-radius:8px;padding:12px 16px;
+                    border-radius:8px;padding:14px 16px;
                     border-bottom:2px solid #F5A623'>
-          <div style='font-family:monospace;font-size:15px;font-weight:700;color:#F5A623'>AIS</div>
-          <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
+          <div style='font-family:monospace;font-size:36px;font-weight:800;color:#F5A623;line-height:1.1'>AIS</div>
+          <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Keluar", key="logout_btn", help="Keluar dari sesi"):
             st.session_state.pop("ais_authenticated", None)
             st.rerun()
 
-    page = st.radio(
-        "Navigasi",
-        options=["🔍 Crawl & Analisis", "📊 Dashboard AIS", "🗄️ Repositori Isu"],
-        label_visibility="collapsed"
-    )
+    # Nama & subteks final hasil diskusi — subteksnya sengaja dibuat SAMA
+    # PERSIS dengan subtitle di judul besar tiap halaman (lihat main-header
+    # / ais-topbar di app.py, dashboard_ais.py, repositori_isu.py), supaya
+    # nav sidebar & judul halaman "ngomong" hal yang sama dari 2 tempat.
+    NAV_ITEMS = [
+        {"id": "crawl",   "icon": "🔍", "label": "Crawl Berita",              "desc": "Tarik & analisis berita baru"},
+        {"id": "klaster", "icon": "📊", "label": "Klasterisasi dan Analisis", "desc": "Klasterisasi, tren & telaah"},
+        {"id": "repo",    "icon": "🗄️", "label": "Repositori Isu Strategis",  "desc": "Arsip hasil yang sudah direview"},
+    ]
+
+    if "ais_page" not in st.session_state:
+        st.session_state["ais_page"] = "crawl"
+
+    # Highlight tile aktif — di-generate dinamis tiap rerun karena butuh
+    # tahu halaman mana yang lagi aktif saat ini.
+    st.markdown(f"""
+    <style>
+    .st-key-navtile_{st.session_state['ais_page']} button {{
+        background: rgba(245,166,35,0.14) !important;
+        border: 1px solid rgba(245,166,35,0.45) !important;
+        border-left: 3px solid #F5A623 !important;
+    }}
+    .st-key-navtile_{st.session_state['ais_page']} button p:first-child {{ color: #F5A623 !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    for item in NAV_ITEMS:
+        with st.container(key=f"navtile_{item['id']}"):
+            if st.button(
+                f"{item['icon']} **{item['label']}**\n\n{item['desc']}",
+                key=f"navbtn_{item['id']}",
+                use_container_width=True,
+            ):
+                if st.session_state["ais_page"] != item["id"]:
+                    st.session_state["ais_page"] = item["id"]
+                    st.rerun()
+
+    page = st.session_state["ais_page"]
     st.divider()
 
 # ── Excel builder (top-level agar bisa dipanggil dari dashboard_ais.py) ──
@@ -311,7 +370,7 @@ def buat_excel(data: list, label_isu: str) -> bytes:
 # ══════════════════════════════════════════════════════════════════════════
 # HALAMAN 1 — CRAWL & ANALISIS
 # ══════════════════════════════════════════════════════════════════════════
-if page == "🔍 Crawl & Analisis":
+if page == "crawl":
 
     st.markdown("""
     <style>
@@ -319,9 +378,9 @@ if page == "🔍 Crawl & Analisis":
     html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
     .main-header {
         background: linear-gradient(135deg, #1F3864 0%, #2d5299 100%);
-        color: white; padding: 2rem 2.5rem; border-radius: 12px; margin-bottom: 2rem;
+        color: white; padding: 14px 20px; border-radius: 10px; margin-bottom: 14px;
     }
-    .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 0.3rem 0; }
+    .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; }
     .main-header p  { font-size: 0.85rem; opacity: 0.75; margin: 0; font-family: 'IBM Plex Mono', monospace; }
     /* Kartu panduan "Cara memulai" — dibuat setara gaya kartu "Belum Ada
        Data" di Dashboard AIS (border putus-putus, background transparan
@@ -907,8 +966,8 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
     # implementasi yang tidak perlu diketahui/dipikirkan user.
     st.markdown("""
     <div class="main-header">
-      <h1>📰 Analisis Isu Strategis Pengawasan</h1>
-      <p>Pemantauan media otomatis untuk pengawasan isu strategis.</p>
+      <h1>🔍 Crawl Berita</h1>
+      <p>Tarik & analisis berita baru</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1079,7 +1138,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 
                 if not klaster_list:
                     _catat_pesan("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.", level="warning")
-                _catat_pesan("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk visualisasi lengkap.", level="success")
+                _catat_pesan("✅ Analisis selesai. Buka **📊 Klasterisasi dan Analisis** di sidebar untuk visualisasi lengkap.", level="success")
             finally:
                 # WAJIB dilepas apa pun yang terjadi (termasuk kegagalan
                 # validasi/crawl di atas, atau error tak terduga) — kalau
@@ -1214,11 +1273,11 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 # ══════════════════════════════════════════════════════════════════════════
 # HALAMAN 2 — DASHBOARD AIS
 # ══════════════════════════════════════════════════════════════════════════
-elif page == "📊 Dashboard AIS":
+elif page == "klaster":
     exec(open('dashboard_ais.py').read())
 
 # ══════════════════════════════════════════════════════════════════════════
 # HALAMAN 3 — REPOSITORI ISU
 # ══════════════════════════════════════════════════════════════════════════
-elif page == "🗄️ Repositori Isu":
+elif page == "repo":
     exec(open('repositori_isu.py').read())
