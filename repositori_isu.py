@@ -29,11 +29,12 @@ st.markdown("""
      ulang di sini. Nilai persis disamakan dengan app.py biar konsisten.
   */
   .main-header {
-    background: linear-gradient(135deg, #1F3864 0%, #2d5299 100%);
-    color: white; padding: 14px 20px; border-radius: 10px; margin-bottom: 14px;
+    background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
+    padding: 14px 20px; border-radius: 10px; margin-bottom: 14px;
+    border-bottom: 3px solid #F5A623;
   }
-  .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; }
-  .main-header p  { font-size: 0.85rem; opacity: 0.75; margin: 0; font-family: 'IBM Plex Mono', monospace; }
+  .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; color: #F5A623; }
+  .main-header p  { font-size: 0.85rem; margin: 0; font-family: 'IBM Plex Mono', monospace; color: rgba(255,255,255,0.75); }
 
   .repo-card {
     border: 1px solid rgba(245,166,35,0.3);
