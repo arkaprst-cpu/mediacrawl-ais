@@ -842,9 +842,6 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         )
         max_art   = st.slider(
             "Maks. Artikel", min_value=5, max_value=25, value=20, step=5,
-            help="Jumlah artikel yang dicrawl dan dianalisis. Makin banyak, makin luas "
-                 "cakupan isunya — tapi di atas 25 artikel, hasil analisis per klaster "
-                 "cenderung kurang tajam. 15–25 biasanya sudah pas.",
         )
         st.divider()
         run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
