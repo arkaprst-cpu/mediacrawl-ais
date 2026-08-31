@@ -239,10 +239,11 @@ with st.sidebar:
     with st.container(key="sidebar_brand_row"):
         st.markdown("""
         <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
-                    border-radius:8px;padding:14px 16px;
+                    border-radius:8px;padding:14px 16px;text-align:left;
                     border-bottom:2px solid #F5A623'>
-          <div style='font-family:monospace;font-size:36px;font-weight:800;color:#F5A623;line-height:1.1'>AIS</div>
-          <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
+          <div style='font-family:monospace;font-size:22px;font-weight:800;color:#F5A623;line-height:1.1'>AIS</div>
+          <div style='font-size:11px;font-weight:600;color:rgba(255,255,255,0.85);margin-top:3px'>Analisis Isu Strategis</div>
+          <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
         </div>
         """, unsafe_allow_html=True)
 
