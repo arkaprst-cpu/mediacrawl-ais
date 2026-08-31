@@ -998,8 +998,11 @@ with tab2:
         col_list, col_detail = st.columns([5, 4])
 
         with col_list:
-            # Pilih artikel
-            selected_idx = st.session_state.get('selected_idx', 0)
+            # Pilih artikel — default None (belum ada yang diklik), BUKAN 0,
+            # supaya tidak ada artikel yang ke-highlight "terpilih" atau
+            # panel kanan menampilkan detail artikel acak sebelum user
+            # benar-benar mengklik "Lihat detail →".
+            selected_idx = st.session_state.get('selected_idx')
 
             ada_klaster = 'Klaster' in df_filtered.columns and (df_filtered['Klaster'] != '-').any()
 
@@ -1070,7 +1073,11 @@ with tab2:
                     dom_color = {'Negatif':'#E74C3C','Netral':'#95A5A6','Positif':'#27AE60'}.get(tone_dom,'#95A5A6')
 
                     label_expander = f"🗂️ **{nama}**  ·  :gray[{jumlah} artikel]"
-                    with st.expander(label_expander, expanded=(nama == nama_terurut[0])):
+                    # Semua klaster tertutup by default (bukan cuma klaster
+                    # pertama) — user baru tidak langsung dihadapkan detail
+                    # klaster + panel artikel di kanan sebelum sempat
+                    # memindai daftar klaster yang ada.
+                    with st.expander(label_expander, expanded=False):
                         info_klaster = narasi_klaster.get(nama)
 
                         # Fallback: rekonstruksi field klaster dari data
@@ -1241,8 +1248,8 @@ with tab2:
                         st.rerun()
 
                 else:
-                    idx = st.session_state.get('selected_idx', 0)
-                    if idx < len(df_filtered):
+                    idx = st.session_state.get('selected_idx')
+                    if idx is not None and idx < len(df_filtered):
                         row = df_filtered.iloc[idx]
                         tone_class = str(row['Tone']).lower()
                         judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
