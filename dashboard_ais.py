@@ -589,7 +589,7 @@ if not has_upload and not has_session:
     st.markdown("""
     <div class="ais-topbar">
       <div>
-        <div class="ais-logo">📊 Klasterisasi dan Analisis</div>
+        <div class="ais-logo">📊 Klasterisasi & Analisis</div>
         <div class="ais-subtitle">Klasterisasi, tren & telaah — Pusat Strategi Kebijakan Pengawasan BPKP</div>
       </div>
     </div>
@@ -792,7 +792,7 @@ df_filtered = df[
 st.markdown(f"""
 <div class="ais-topbar">
   <div>
-    <div class="ais-logo">📊 Klasterisasi dan Analisis</div>
+    <div class="ais-logo">📊 Klasterisasi & Analisis</div>
     <div class="ais-subtitle">Klasterisasi, tren & telaah — {meta.get('unit','Pusat Strategi Kebijakan Pengawasan BPKP')}</div>
   </div>
   <div>
