@@ -1136,34 +1136,49 @@ with tab2:
                         # jelas (list kosong) tidak dipaksa tampil baris kosong.
                         dimensi_list = info_klaster.get('dimensi_pengawasan') or []
                         dimensi_html = "".join(f'<span class="badge badge-dimensi">{d}</span>' for d in dimensi_list)
-                        dimensi_row = (
-                            f"<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-top:10px;margin-bottom:5px'>Dimensi Pengawasan</div>"
-                            f"<div>{dimensi_html}</div>"
-                        ) if dimensi_list else ""
+
+                        # Layout "Opsi B" (hasil diskusi redesain kartu Induk
+                        # Klaster): Kondisi/Pemicu diringkas jadi kalimat
+                        # pembuka bernada netral (bukan blok besar setara
+                        # field lain), Risiko & Area Perhatian ditonjolkan
+                        # sebagai dua kartu kecil berdampingan dengan warna
+                        # semantik sendiri (merah/biru) karena dua field
+                        # itulah yang paling menentukan reviewer perlu
+                        # bertindak atau tidak, dan Relevansi Pengawasan BPKP
+                        # diringkas jadi satu baris footer supaya tidak
+                        # bersaing bobot visualnya dengan dua kartu sorotan.
+                        dimensi_footer = f"<div style='display:flex;gap:6px;flex-wrap:wrap'>{dimensi_html}</div>" if dimensi_list else ""
 
                         st.markdown(f"""
                         <div style='
-                            border-left:6px solid #F5A623;
-                            border-radius:0 10px 10px 0;
-                            background:linear-gradient(135deg, rgba(245,166,35,0.10), rgba(245,166,35,0.03));
-                            padding:16px 20px;
+                            background:rgba(128,128,128,0.05);
+                            border:1px solid rgba(128,128,128,0.18);
+                            border-radius:10px;
+                            padding:16px 18px 18px;
                             margin-bottom:4px;
-                            box-shadow:0 2px 8px rgba(0,0,0,0.15);
                         '>
-                          <div style='display:flex;align-items:center;gap:6px;margin-bottom:12px'>
-                            <span style='font-size:10px;font-weight:800;letter-spacing:.1em;color:#F5A623;text-transform:uppercase;font-family:monospace'>📁 INDUK KLASTER</span>
-                            <span style='font-size:10px;opacity:0.4'>·</span>
-                            <span style='font-size:10px;opacity:0.55'>{jumlah} artikel anggota</span>
+                          <div style='font-size:10px;font-weight:800;letter-spacing:.1em;color:#F5A623;text-transform:uppercase;font-family:monospace;margin-bottom:10px;display:flex;align-items:center;gap:6px'>
+                            📁 INDUK KLASTER <span style='opacity:0.4'>·</span> <span style='opacity:0.55;font-weight:600;letter-spacing:normal;text-transform:none'>{jumlah} artikel anggota</span>
                           </div>
-                          <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Kondisi / Pemicu</div>
-                          <div style='font-size:14px;line-height:1.6;margin-bottom:10px;font-weight:600'>{info_klaster.get('kondisi_pemicu','-')}</div>
-                          <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Risiko</div>
-                          <div style='font-size:14px;line-height:1.6;margin-bottom:10px;font-weight:600'>{info_klaster.get('risiko','-')}</div>
-                          <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Area Perhatian</div>
-                          <div style='font-size:14px;line-height:1.6;margin-bottom:10px;font-weight:600'>{info_klaster.get('area_perhatian','-')}</div>
-                          <div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#F5A623;opacity:0.85;margin-bottom:3px'>Relevansi Pengawasan BPKP</div>
-                          <div style='font-size:14px;line-height:1.6;font-weight:600'>{info_klaster.get('relevansi_pengawasan','-')}</div>
-                          {dimensi_row}
+                          <div style='font-size:12.5px;line-height:1.6;opacity:0.7;margin-bottom:16px;padding-bottom:14px;border-bottom:1px dashed rgba(255,255,255,0.1)'>
+                            <b style='opacity:1;color:rgba(232,236,243,0.9);font-weight:600'>Pemicu:</b> {info_klaster.get('kondisi_pemicu','-')}
+                          </div>
+                          <div style='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px'>
+                            <div style='border-radius:8px;padding:12px 13px;background:rgba(231,76,60,0.09);border:1px solid rgba(231,76,60,0.3)'>
+                              <div style='font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#E74C3C'>⚠️ Risiko</div>
+                              <div style='font-size:13.5px;line-height:1.55;font-weight:500'>{info_klaster.get('risiko','-')}</div>
+                            </div>
+                            <div style='border-radius:8px;padding:12px 13px;background:rgba(93,173,226,0.09);border:1px solid rgba(93,173,226,0.3)'>
+                              <div style='font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#5DADE2'>🔍 Area Perhatian</div>
+                              <div style='font-size:13.5px;line-height:1.55;font-weight:500'>{info_klaster.get('area_perhatian','-')}</div>
+                            </div>
+                          </div>
+                          <div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>
+                            <div style='font-size:11.5px;opacity:0.65;line-height:1.5;flex:1;min-width:200px'>
+                              <b style='color:#F5A623;opacity:1;font-weight:700'>Relevansi BPKP:</b> {info_klaster.get('relevansi_pengawasan','-')}
+                            </div>
+                            {dimensi_footer}
+                          </div>
                         </div>
                         """, unsafe_allow_html=True)
 
