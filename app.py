@@ -255,7 +255,11 @@ def buat_excel(data: list, label_isu: str) -> bytes:
              # dekat "Relevansi Pengawasan" — supaya posisi kolom 1-21 (termasuk
              # blok telaah manusia Sektor..Status Review di 15-21) tidak bergeser
              # dan file lama (21 kolom) tetap terbaca benar oleh dashboard_ais.py.
-             "Dimensi Pengawasan (GRCC AnCoDe)"]
+             "Dimensi Pengawasan (GRCC AnCoDe)",
+             # Sama prinsipnya: ditambahkan paling AKHIR lagi (kolom ke-23),
+             # bukan disisipkan dekat "Ringkasan Isu" — supaya file 22-kolom
+             # (sebelum field ini ada) tetap terbaca benar.
+             "Sudut Pandang Spesifik"]
     NCOL=len(HEADERS)
     COL_STATUS_REVIEW = HEADERS.index("Status Review") + 1  # posisi eksplisit,
     # bukan diasumsikan "kolom terakhir" — supaya penambahan kolom baru di masa
@@ -292,7 +296,8 @@ def buat_excel(data: list, label_isu: str) -> bytes:
                d.get("sektor","-"),d.get("tema","-"),d.get("topik","-"),
                d.get("dampak_implikasi_final","-"),d.get("gap_pengawasan","-"),d.get("usulan_pengawasan","-"),
                d.get("status_review","Belum Direview"),
-               ", ".join(d.get("dimensi_pengawasan") or [])]
+               ", ".join(d.get("dimensi_pengawasan") or []),
+               d.get("sudut_pandang","")]
         for col,val in enumerate(baris,1):
             c=ws.cell(row=r,column=col,value=val); style(c,bg)
         tone_val=d.get("tone","Netral")
@@ -302,7 +307,7 @@ def buat_excel(data: list, label_isu: str) -> bytes:
         ws.cell(row=r,column=COL_STATUS_REVIEW).fill=PatternFill("solid",fgColor=STATUS_C.get(status_val,"F2F2F2"))
         ws.row_dimensions[r].height=60
 
-    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16,40],1):
+    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16,40,40],1):
         ws.column_dimensions[get_column_letter(col)].width=w
 
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
@@ -358,6 +363,11 @@ if page == "🔍 Crawl & Analisis":
     .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.75em; font-weight: 400; opacity: 0.4; margin-left: 4px; white-space: nowrap; }
     .artikel-meta  { font-size: 0.78rem; color: #64748b; margin-bottom: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
     .artikel-ringkasan { font-size: 0.88rem; color: #374151; line-height: 1.6; margin-bottom: 0.6rem; }
+    .artikel-sudut-pandang {
+        font-size: 0.83rem; color: #92400e; background: #fffbeb; font-style: italic;
+        border-left: 3px solid #F5A623; padding: 0.45rem 0.8rem;
+        border-radius: 0 6px 6px 0; margin-bottom: 0.6rem;
+    }
     .artikel-risiko {
         font-size: 0.85rem; color: #7c3aed; background: #f5f3ff;
         border-left: 3px solid #7c3aed; padding: 0.5rem 0.8rem;
@@ -493,6 +503,12 @@ Tandai klaster ini dengan dimensi pengawasan mana saja yang BENAR-BENAR didukung
 
 Ini KLASIFIKASI, bukan narasi — jangan tulis penjelasan, cukup daftar nama dimensi yang cocok.
 
+TUGAS 4 — CATATAN SUDUT PANDANG SPESIFIK PER ARTIKEL (OPSIONAL):
+Untuk artikel dalam klaster ini yang punya penekanan/sudut pandang BERBEDA secara nyata dari artikel lain di klaster yang sama (misalnya artikel lain fokus ke dampak konsumen, tapi artikel ini justru fokus ke kesiapan industri, atau angka/pihak yang disebut berbeda dari mayoritas), tulis SATU kalimat pendek yang menangkap sudut pandang spesifik itu.
+
+JANGAN dipaksakan — kalau sebuah artikel isinya cuma mengulang inti klaster tanpa penekanan yang beda, JANGAN sertakan artikel itu sama sekali di "catatan_spesifik" (bukan diisi string kosong). Wajar kalau banyak/semua artikel dalam satu klaster tidak punya catatan — itu berarti objeknya boleh kosong {}.
+JANGAN mengulang isi "risiko"/"kondisi_pemicu" klaster di sini — ini soal APA yang secara spesifik DIBAHAS artikel itu, bukan analisis risiko baru.
+
 FORMAT OUTPUT setiap klaster wajib diberi:
 - "nama": nama klaster singkat (maks 8 kata), mencerminkan isu utama bukan sekadar topik umum
 - "kondisi_pemicu": 1-2 kalimat kondisi/pemicu konkret yang menyatukan artikel-artikel ini
@@ -500,13 +516,14 @@ FORMAT OUTPUT setiap klaster wajib diberi:
 - "area_perhatian": sesuai aturan Tugas 2 di atas
 - "relevansi_pengawasan": mengapa klaster ini relevan/tidak terlalu prioritas bagi pengawasan BPKP
 - "dimensi_pengawasan": array sesuai aturan Tugas 3 di atas (bisa array kosong [])
+- "catatan_spesifik": objek sesuai aturan Tugas 4 di atas, key = nomor (No) artikel sebagai string, value = kalimat pendek (boleh objek kosong {})
 - "anggota": array berisi nomor (No) artikel yang masuk klaster ini
 
 Urutkan array klaster dari yang paling kritikal/prioritas bagi pengawasan BPKP ke yang paling rendah prioritas.
 Balas HANYA dalam format JSON murni, TANPA teks lain, TANPA markdown code fence, TANPA penjelasan di luar JSON.
 
 Format output:
-{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "dimensi_pengawasan": ["Governance"], "anggota": [1,2,3]}]}
+{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "dimensi_pengawasan": ["Governance"], "catatan_spesifik": {"3": "Menyoroti kesiapan industri dalam negeri, bukan besaran insentif"}, "anggota": [1,2,3]}]}
 """
 
     DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Korupsi", "Debottlenecking"}
@@ -734,7 +751,23 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     # list kosong, itu valid).
                     dimensi_mentah = kl.get("dimensi_pengawasan", [])
                     dimensi = [d for d in dimensi_mentah if isinstance(d, str) and d in DIMENSI_PENGAWASAN_VALID] if isinstance(dimensi_mentah, list) else []
-                    klaster_valid.append({**kl, "anggota": anggota, "dimensi_pengawasan": dimensi})
+                    # Sanitasi catatan_spesifik: cuma terima entri yang key-nya
+                    # (nomor artikel) memang anggota klaster ini DAN value-nya
+                    # string berisi (bukan kosong/whitespace) — jaga-jaga AI
+                    # menaruh catatan untuk nomor yang bukan anggota klaster ini,
+                    # atau mengisi string kosong alih-alih tidak menyertakan
+                    # entrinya sama sekali.
+                    catatan_mentah = kl.get("catatan_spesifik", {})
+                    catatan = {}
+                    if isinstance(catatan_mentah, dict):
+                        for no_str, teks in catatan_mentah.items():
+                            try:
+                                no_int = int(no_str)
+                            except (TypeError, ValueError):
+                                continue
+                            if no_int in anggota and isinstance(teks, str) and teks.strip():
+                                catatan[str(no_int)] = teks.strip()
+                    klaster_valid.append({**kl, "anggota": anggota, "dimensi_pengawasan": dimensi, "catatan_spesifik": catatan})
 
                 # Artikel yang tidak masuk klaster manapun -> klaster "Isu Lainnya"
                 sisa = [n for n in range(1, total_artikel + 1) if n not in anggota_terpakai]
@@ -746,6 +779,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "area_perhatian": "-",
                         "relevansi_pengawasan": "Perlu ditelaah manual — tidak teridentifikasi pola yang jelas.",
                         "dimensi_pengawasan": [],
+                        "catatan_spesifik": {},
                         "anggota": sisa,
                     })
 
@@ -763,6 +797,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "area_perhatian": "Perlu ditelaah manual per artikel — masing-masing berdiri sendiri tanpa pola dominan.",
                         "relevansi_pengawasan": "-",
                         "dimensi_pengawasan": [],
+                        "catatan_spesifik": {},
                         "anggota": anggota_gabungan,
                     })
                     klaster_valid = dipertahankan
@@ -844,7 +879,16 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             "Maks. Artikel", min_value=5, max_value=25, value=20, step=5,
         )
         st.divider()
-        run_btn = st.button("🔍 Mulai Crawl", use_container_width=True)
+        # disabled=True selama crawl_running True — supaya tombol ini betul-
+        # betul tidak bisa diklik lagi (bukan cuma "diabaikan") selama
+        # proses crawl+analisis AI sedang berjalan. Lihat komentar di trigger
+        # "if run_btn and not ... crawl_running" di bawah untuk alasan
+        # lengkap kenapa ini butuh 1x rerun ekstra sebelum proses berat
+        # mulai.
+        run_btn = st.button(
+            "🔍 Mulai Crawl", use_container_width=True,
+            disabled=st.session_state.get("crawl_running", False),
+        )
 
     # ── Main area ──────────────────────────────────────────────────────────
     # Provider AI (DeepSeek) sengaja tidak lagi ditampilkan sebagai pill di
@@ -856,6 +900,16 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
       <p>Pemantauan media otomatis untuk pengawasan isu strategis.</p>
     </div>
     """, unsafe_allow_html=True)
+
+    # Pesan hasil crawl sebelumnya (sukses/gagal/warning) — dicatat ke
+    # session_state alih-alih langsung st.success()/st.error() di tempat
+    # kejadian, karena alur proteksi klik-ganda di bawah SELALU diakhiri
+    # st.rerun() supaya tombol "Mulai Crawl" kembali aktif; pesan yang
+    # ditampilkan langsung sebelum rerun akan hilang sebelum sempat
+    # terbaca. Jadi ditulis dulu ke sini, baru ditampilkan di render
+    # berikutnya (persis setelah rerun).
+    for _level, _pesan in st.session_state.pop("_crawl_pesan", []):
+        getattr(st, _level)(_pesan)
 
     # Panduan awal — hanya tampil sebelum sesi ini pernah punya hasil crawl.
     # Begitu "hasil" masuk ke session_state (crawl pertama berhasil), guard
@@ -876,132 +930,171 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             </ol>
             """, unsafe_allow_html=True)
 
-    if run_btn:
-        if not active_key:
-            st.error("Masukkan API Key terlebih dahulu.")
-            st.stop()
-        if not keywords_raw.strip():
-            st.error("Masukkan minimal satu kata kunci.")
-            st.stop()
-        if not label_isu.strip():
-            st.error("Isi Label Isu untuk nama file Excel.")
-            st.stop()
+    # ── Trigger crawl ──────────────────────────────────────────────────────
+    # Klik pertama HANYA menyalakan flag lalu langsung st.rerun() — belum
+    # melakukan proses berat apa pun. Ini disengaja: tombol di sidebar
+    # sudah terlanjur ter-render "aktif" ke browser SEBELUM baris ini
+    # sempat dieksekusi, dan Streamlit tidak mengirim ulang status tombol
+    # di tengah eksekusi skrip yang sama. Kalau proses crawl+analisis AI
+    # (yang bisa makan waktu lama) langsung dijalankan di sini, tombolnya
+    # akan tetap terlihat aktif & bisa diklik lagi selama proses
+    # berlangsung — dan klik kedua itu BUKAN cuma diabaikan, tapi
+    # membatalkan proses yang sedang jalan lalu memulai crawl baru dari
+    # nol (buang kuota AI + waktu percuma). Rerun di sini memaksa render
+    # ulang SEBELUM proses berat dimulai, supaya tombol terkirim ke
+    # browser dalam kondisi disabled=True lebih dulu.
+    if run_btn and not st.session_state.get("crawl_running", False):
+        st.session_state["crawl_running"] = True
+        st.rerun()
 
-        keywords_input = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
+    if st.session_state.get("crawl_running", False):
+        def _catat_pesan(pesan, level="info"):
+            st.session_state.setdefault("_crawl_pesan", []).append((level, pesan))
 
-        ai_client = get_deepseek_client(active_key)
-
-        # ── Antrean crawl lintas-sesi ────────────────────────────────────
-        # Kalau slot sedang penuh (banyak orang crawl bersamaan), tunggu di
-        # sini dengan status yang jelas alih-alih membiarkan semua sesi
-        # membebani proses Streamlit sekaligus. Lihat _CrawlSlotManager di
-        # bagian atas file untuk alasan lengkapnya.
-        slot_mgr = _get_crawl_slot_manager()
-        antre_status = st.empty()
-        def _lapor_antre(active, mx):
-            antre_status.warning(
-                f"🕐 Sedang antre ({active}/{mx} slot terpakai). Permintaan Anda akan "
-                f"diproses otomatis begitu slot tersedia — mohon tunggu di halaman ini, "
-                f"jangan ditutup atau di-refresh."
-            )
-        slot_mgr.acquire_blocking(on_wait=_lapor_antre)
-        antre_status.empty()
+        def _gagal(pesan, level="error"):
+            _catat_pesan(pesan, level)
+            st.rerun()
 
         try:
-            st.subheader("⏳ Proses Crawl & Analisis")
+            if not active_key:
+                _gagal("Masukkan API Key terlebih dahulu.")
+            if not keywords_raw.strip():
+                _gagal("Masukkan minimal satu kata kunci.")
+            if not label_isu.strip():
+                _gagal("Isi Label Isu untuk nama file Excel.")
 
-            with st.spinner("Memperluas keyword..."):
-                all_queries = []
-                for kw in keywords_input:
-                    expanded = ekspansi_keyword_deepseek(ai_client, kw)
-                    all_queries.extend(expanded)
+            keywords_input = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
 
-            query_lines = "<br>".join(f"🔍 {q}" for q in all_queries)
-            st.markdown(f'<div class="query-box"><b>Query ({len(all_queries)} variasi):</b><br>{query_lines}</div>', unsafe_allow_html=True)
+            ai_client = get_deepseek_client(active_key)
 
-            prog_bar  = st.progress(0, text="Crawling Google News...")
-            status_tx = st.empty()
-            status_tx.info(f"Crawling {len(all_queries)} query...")
-            artikel_raw = crawl_google_news(all_queries, max_art)
+            # ── Antrean crawl lintas-sesi ────────────────────────────────────
+            # Kalau slot sedang penuh (banyak orang crawl bersamaan), tunggu di
+            # sini dengan status yang jelas alih-alih membiarkan semua sesi
+            # membebani proses Streamlit sekaligus. Lihat _CrawlSlotManager di
+            # bagian atas file untuk alasan lengkapnya.
+            slot_mgr = _get_crawl_slot_manager()
+            antre_status = st.empty()
+            def _lapor_antre(active, mx):
+                antre_status.warning(
+                    f"🕐 Sedang antre ({active}/{mx} slot terpakai). Permintaan Anda akan "
+                    f"diproses otomatis begitu slot tersedia — mohon tunggu di halaman ini, "
+                    f"jangan ditutup atau di-refresh."
+                )
+            slot_mgr.acquire_blocking(on_wait=_lapor_antre)
+            antre_status.empty()
 
-            if not artikel_raw:
-                st.warning("Tidak ada artikel ditemukan.")
-                st.stop()
+            try:
+                st.subheader("⏳ Proses Crawl & Analisis")
 
-            status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis...")
+                with st.spinner("Memperluas keyword..."):
+                    all_queries = []
+                    for kw in keywords_input:
+                        expanded = ekspansi_keyword_deepseek(ai_client, kw)
+                        all_queries.extend(expanded)
 
-            hasil_list  = []
-            rate_status = st.empty()
+                query_lines = "<br>".join(f"🔍 {q}" for q in all_queries)
+                st.markdown(f'<div class="query-box"><b>Query ({len(all_queries)} variasi):</b><br>{query_lines}</div>', unsafe_allow_html=True)
 
-            for idx, art in enumerate(artikel_raw):
-                pct = int((idx + 1) / len(artikel_raw) * 100)
-                prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
+                prog_bar  = st.progress(0, text="Crawling Google News...")
+                status_tx = st.empty()
+                status_tx.info(f"Crawling {len(all_queries)} query...")
+                artikel_raw = crawl_google_news(all_queries, max_art)
 
-                # DeepSeek berbayar, tanpa RPM ketat -> delay ringan cukup
-                time.sleep(0.3)
+                if not artikel_raw:
+                    _gagal("Tidak ada artikel ditemukan.", level="warning")
 
-                art["label_isu"] = label_isu.strip()
-                analisis = analisis_deepseek(ai_client, art, rate_status)
-                hasil_list.append({**art, **analisis})
+                status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis...")
 
-            rate_status.empty()
-            prog_bar.progress(100, text="✅ Mengelompokkan jadi klaster isu...")
+                hasil_list  = []
+                rate_status = st.empty()
 
-            with st.spinner("Mengelompokkan isu & menganalisis risiko per klaster..."):
-                klaster_list = klasterisasi_isu_deepseek(ai_client, hasil_list)
+                for idx, art in enumerate(artikel_raw):
+                    pct = int((idx + 1) / len(artikel_raw) * 100)
+                    prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
 
-            # Sebarkan nama klaster, risiko, area_perhatian, kondisi_pemicu, dan
-            # relevansi_pengawasan dari hasil klasterisasi ke setiap artikel
-            # anggotanya — semua field ini TIDAK lagi dianalisis per-artikel,
-            # melainkan diwarisi dari analisis tingkat klaster (lebih kaya
-            # konteks, lebih sedikit panggilan AI).
-            klaster_per_no = {}
-            for kl in klaster_list:
-                for no in kl.get("anggota", []):
-                    klaster_per_no[no] = kl
-            for i, h in enumerate(hasil_list):
-                kl = klaster_per_no.get(i + 1)
-                if kl:
-                    h["klaster"]               = kl.get("nama", "-")
-                    h["risiko"]                = kl.get("risiko", "-")
-                    h["area_perhatian"]        = kl.get("area_perhatian", "-")
-                    h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
-                    h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
-                    h["dimensi_pengawasan"]    = kl.get("dimensi_pengawasan", [])
-                else:
-                    h["klaster"]               = "-"
-                    h["risiko"]                = "-"
-                    h["area_perhatian"]        = "-"
-                    h["kondisi_pemicu"]        = "-"
-                    h["relevansi_pengawasan"]  = "-"
-                    h["dimensi_pengawasan"]    = []
+                    # DeepSeek berbayar, tanpa RPM ketat -> delay ringan cukup
+                    time.sleep(0.3)
 
-            prog_bar.progress(100, text="✅ Selesai!")
-            status_tx.empty()
+                    art["label_isu"] = label_isu.strip()
+                    analisis = analisis_deepseek(ai_client, art, rate_status)
+                    hasil_list.append({**art, **analisis})
 
-            st.session_state["hasil"]     = hasil_list
-            st.session_state["klaster"]   = klaster_list
-            st.session_state["label_isu"] = label_isu.strip()
-            st.session_state["ais_ready"] = True
-            st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
-            # Tandai crawl BARU ini sebagai sumber data TERAKTIF di Dashboard AIS
-            # — sebelumnya Dashboard AIS selalu mengutamakan Excel upload manual
-            # apa pun yang terjadi belakangan, jadi hasil crawl baru bisa
-            # "kalah" ditimpa tampilan upload lama yang masih tersimpan di
-            # sesi. Lihat dashboard_ais.py bagian "LOAD & PROCESS DATA".
-            st.session_state["_dash_last_source"] = "session"
+                rate_status.empty()
+                prog_bar.progress(100, text="✅ Mengelompokkan jadi klaster isu...")
 
-            if not klaster_list:
-                st.warning("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.")
-            st.success("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk visualisasi lengkap.")
+                with st.spinner("Mengelompokkan isu & menganalisis risiko per klaster..."):
+                    klaster_list = klasterisasi_isu_deepseek(ai_client, hasil_list)
+
+                # Sebarkan nama klaster, risiko, area_perhatian, kondisi_pemicu, dan
+                # relevansi_pengawasan dari hasil klasterisasi ke setiap artikel
+                # anggotanya — semua field ini TIDAK lagi dianalisis per-artikel,
+                # melainkan diwarisi dari analisis tingkat klaster (lebih kaya
+                # konteks, lebih sedikit panggilan AI).
+                klaster_per_no = {}
+                for kl in klaster_list:
+                    for no in kl.get("anggota", []):
+                        klaster_per_no[no] = kl
+                for i, h in enumerate(hasil_list):
+                    kl = klaster_per_no.get(i + 1)
+                    if kl:
+                        h["klaster"]               = kl.get("nama", "-")
+                        h["risiko"]                = kl.get("risiko", "-")
+                        h["area_perhatian"]        = kl.get("area_perhatian", "-")
+                        h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
+                        h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
+                        h["dimensi_pengawasan"]    = kl.get("dimensi_pengawasan", [])
+                        # Beda dengan risiko/area_perhatian/dst di atas (yang
+                        # murni level klaster), ini catatan OPSIONAL per
+                        # artikel — cuma terisi kalau artikel ini punya sudut
+                        # pandang yang benar-benar beda dari artikel lain di
+                        # klaster yang sama. Lihat Tugas 4 di PROMPT_KLASTER.
+                        h["sudut_pandang"]         = kl.get("catatan_spesifik", {}).get(str(i + 1), "")
+                    else:
+                        h["klaster"]               = "-"
+                        h["risiko"]                = "-"
+                        h["area_perhatian"]        = "-"
+                        h["kondisi_pemicu"]        = "-"
+                        h["relevansi_pengawasan"]  = "-"
+                        h["dimensi_pengawasan"]    = []
+                        h["sudut_pandang"]         = ""
+
+                prog_bar.progress(100, text="✅ Selesai!")
+                status_tx.empty()
+
+                st.session_state["hasil"]     = hasil_list
+                st.session_state["klaster"]   = klaster_list
+                st.session_state["label_isu"] = label_isu.strip()
+                st.session_state["ais_ready"] = True
+                st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
+                # Tandai crawl BARU ini sebagai sumber data TERAKTIF di Dashboard AIS
+                # — sebelumnya Dashboard AIS selalu mengutamakan Excel upload manual
+                # apa pun yang terjadi belakangan, jadi hasil crawl baru bisa
+                # "kalah" ditimpa tampilan upload lama yang masih tersimpan di
+                # sesi. Lihat dashboard_ais.py bagian "LOAD & PROCESS DATA".
+                st.session_state["_dash_last_source"] = "session"
+
+                if not klaster_list:
+                    _catat_pesan("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.", level="warning")
+                _catat_pesan("✅ Analisis selesai. Buka **📊 Dashboard AIS** di sidebar untuk visualisasi lengkap.", level="success")
+            finally:
+                # WAJIB dilepas apa pun yang terjadi (termasuk kegagalan
+                # validasi/crawl di atas, atau error tak terduga) — kalau
+                # slot bocor/tidak pernah dilepas, app ini akan makin
+                # "penuh" terus-menerus sampai di-restart, dan pengguna
+                # berikutnya antre selamanya walau sebenarnya tidak ada
+                # crawl lain yang benar-benar berjalan.
+                slot_mgr.release()
         finally:
-            # WAJIB dilepas apa pun yang terjadi (termasuk st.stop() di atas
-            # kalau tidak ada artikel ditemukan, atau error tak terduga) —
-            # kalau slot bocor/tidak pernah dilepas, app ini akan makin
-            # "penuh" terus-menerus sampai di-restart, dan pengguna
-            # berikutnya antre selamanya walau sebenarnya tidak ada crawl
-            # lain yang benar-benar berjalan.
-            slot_mgr.release()
+            # Tombol "Mulai Crawl" dikunci lagi ke kondisi bisa diklik, apa
+            # pun hasil akhirnya (sukses, gagal validasi via _gagal(), atau
+            # error tak terduga) — supaya user tidak pernah macet dengan
+            # tombol yang ke-disable permanen.
+            st.session_state["crawl_running"] = False
+        # Rerun terakhir supaya browser benar-benar menampilkan tombol
+        # dalam keadaan aktif kembali (nilai session_state saja tidak
+        # otomatis terkirim ulang ke frontend tanpa render baru), dan pesan
+        # di _crawl_pesan tampil bersih di render berikutnya.
+        st.rerun()
 
     # ── Error diagnostik ───────────────────────────────────────────────────
     if st.session_state.get("ais_errors"):
@@ -1089,6 +1182,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 <div class="artikel-meta"><span class="artikel-tanggal">📅 {h.get('tanggal','-')}</span> &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
                 <div style="margin:2px 0 10px 0">{topik_badge}{aktor_pills}</div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
+                {f'<div class="artikel-sudut-pandang">💡 {h.get("sudut_pandang")}</div>' if h.get('sudut_pandang') else ''}
                 <div class="artikel-risiko">⚠️ <b>Risiko klaster:</b> {h.get('risiko','-')}</div>
                 <div class="artikel-tindak">🔍 <b>Area Perhatian klaster:</b> {h.get('area_perhatian','-')}</div>
                 <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8">🗂️ Klaster: {klaster_label}</div>
