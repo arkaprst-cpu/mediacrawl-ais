@@ -344,8 +344,8 @@ st.markdown("""
 # ── DATA LOADER ──────────────────────────────────────────────
 def load_from_excel(uploaded_file):
     """Parse Excel output dari pipeline AIS. Mendukung dua format:
-    - 12 kolom (dengan Klaster Isu, tanpa Kondisi/Pemicu & Relevansi)
-    - 14 kolom (lengkap, dengan Kondisi/Pemicu Klaster & Relevansi Pengawasan)
+    - 12 kolom (dengan Klaster Isu, tanpa Kondisi & Relevansi)
+    - 14 kolom (lengkap, dengan Kondisi Klaster & Relevansi Pengawasan)
     Format lama 11 kolom (tanpa Klaster) tidak lagi didukung.
     """
     df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
@@ -1149,7 +1149,7 @@ with tab2:
                         dimensi_html = "".join(f'<span class="badge badge-dimensi">{d}</span>' for d in dimensi_list)
 
                         # Layout "Opsi B" (hasil diskusi redesain kartu Induk
-                        # Klaster): Kondisi/Pemicu diringkas jadi kalimat
+                        # Klaster): Kondisi diringkas jadi kalimat
                         # pembuka bernada netral (bukan blok besar setara
                         # field lain), Risiko & Area Perhatian ditonjolkan
                         # sebagai dua kartu kecil berdampingan dengan warna
@@ -1158,6 +1158,13 @@ with tab2:
                         # bertindak atau tidak, dan Relevansi Pengawasan BPKP
                         # diringkas jadi satu baris footer supaya tidak
                         # bersaing bobot visualnya dengan dua kartu sorotan.
+                        # Label kalimat pembuka ini sengaja "Kondisi", BUKAN
+                        # "Pemicu" — "pemicu" menyiratkan sesuatu yang
+                        # kausal/negatif, padahal field ini boleh netral
+                        # (mis. klaster soal upaya pencegahan yang sedang
+                        # berjalan, bukan insiden). Framing risiko/kelemahan
+                        # sudah jadi tugas kartu Risiko & Area Perhatian di
+                        # bawah, bukan di sini.
                         dimensi_footer = f"<div style='display:flex;gap:6px;flex-wrap:wrap'>{dimensi_html}</div>" if dimensi_list else ""
 
                         st.markdown(f"""
@@ -1172,7 +1179,7 @@ with tab2:
                             📁 INDUK KLASTER <span style='opacity:0.4'>·</span> <span style='opacity:0.55;font-weight:600;letter-spacing:normal;text-transform:none'>{jumlah} artikel anggota</span>
                           </div>
                           <div style='font-size:12.5px;line-height:1.6;opacity:0.7;margin-bottom:16px;padding-bottom:14px;border-bottom:1px dashed rgba(255,255,255,0.1)'>
-                            <b style='opacity:1;color:rgba(232,236,243,0.9);font-weight:600'>Pemicu:</b> {info_klaster.get('kondisi_pemicu','-')}
+                            <b style='opacity:1;color:rgba(232,236,243,0.9);font-weight:600'>Kondisi:</b> {info_klaster.get('kondisi_pemicu','-')}
                           </div>
                           <div style='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px'>
                             <div style='border-radius:8px;padding:12px 13px;background:rgba(231,76,60,0.09);border:1px solid rgba(231,76,60,0.3)'>
