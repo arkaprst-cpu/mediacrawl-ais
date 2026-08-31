@@ -230,20 +230,21 @@ with st.sidebar:
        diatur lewat CSS dinamis di bawah (bukan di sini), karena butuh tahu
        st.session_state["ais_page"] saat itu.
     */
-    [class*="st-key-navtile_"] { margin-bottom: 6px; }
+    /* Opsi 2 (revisi ruang sidebar): tile dipangkas jadi 1 baris (icon +
+       judul saja, subteks dihapus dari sini) — subteksnya sudah nongol lagi
+       persis sama di judul halaman utama, jadi di sidebar cukup labelnya
+       biar nggak makan tinggi. Ini yang bikin field Kata Kunci Isu & Nama
+       File nggak kegeser turun terlalu jauh. */
+    [class*="st-key-navtile_"] { margin-bottom: 4px; }
     [class*="st-key-navtile_"] button {
         width: 100% !important; text-align: left !important;
-        white-space: pre-wrap !important; height: auto !important;
-        line-height: 1.5 !important; padding: 10px 14px !important;
+        white-space: nowrap !important; height: auto !important;
+        line-height: 1.4 !important; padding: 8px 14px !important;
         border-radius: 8px !important;
         background: rgba(255,255,255,0.04) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
     }
-    [class*="st-key-navtile_"] button p:first-child { font-size: 13px !important; }
-    [class*="st-key-navtile_"] button p:last-child {
-        font-size: 11px !important; font-weight: 400 !important;
-        opacity: 0.55; margin-top: 2px !important;
-    }
+    [class*="st-key-navtile_"] button p { font-size: 13px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -266,7 +267,7 @@ with st.sidebar:
     # nav sidebar & judul halaman "ngomong" hal yang sama dari 2 tempat.
     NAV_ITEMS = [
         {"id": "crawl",   "icon": "🔍", "label": "Crawl Berita",              "desc": "Tarik & analisis berita baru"},
-        {"id": "klaster", "icon": "📊", "label": "Klasterisasi dan Analisis", "desc": "Klasterisasi, tren & telaah"},
+        {"id": "klaster", "icon": "📊", "label": "Klasterisasi & Analisis", "desc": "Klasterisasi, tren & telaah"},
         {"id": "repo",    "icon": "🗄️", "label": "Repositori Isu Strategis",  "desc": "Arsip hasil yang sudah direview"},
     ]
 
@@ -289,7 +290,7 @@ with st.sidebar:
     for item in NAV_ITEMS:
         with st.container(key=f"navtile_{item['id']}"):
             if st.button(
-                f"{item['icon']} **{item['label']}**\n\n{item['desc']}",
+                f"{item['icon']} **{item['label']}**",
                 key=f"navbtn_{item['id']}",
                 use_container_width=True,
             ):
@@ -1138,7 +1139,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
 
                 if not klaster_list:
                     _catat_pesan("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.", level="warning")
-                _catat_pesan("✅ Analisis selesai. Buka **📊 Klasterisasi dan Analisis** di sidebar untuk visualisasi lengkap.", level="success")
+                _catat_pesan("✅ Analisis selesai. Buka **📊 Klasterisasi & Analisis** di sidebar untuk visualisasi lengkap.", level="success")
             finally:
                 # WAJIB dilepas apa pun yang terjadi (termasuk kegagalan
                 # validasi/crawl di atas, atau error tak terduga) — kalau
