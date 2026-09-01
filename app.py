@@ -718,7 +718,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
     # ikut lolos walau umurnya sudah bertahun-tahun, meskipun query-nya
     # spesifik. Makanya filter umur di bawah ini perlu, bukan cuma dedup
     # link & skip video.
-    def crawl_google_news(queries: list, max_articles: int, max_umur_hari=None) -> list:
+    def crawl_google_news(queries: list, max_articles: int, max_umur_hari=None):
         articles   = []
         seen       = set()
         skipped    = 0   # video
@@ -726,11 +726,16 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         headers    = {"User-Agent": "Mozilla/5.0 (compatible; AIS-Crawler/1.0)"}
         hari_ini   = datetime.now()
 
+        # total_kandidat = semua artikel unik & bukan-video yang match query,
+        # SEBELUM difilter tanggal — dipakai supaya pesan hasil akhir bisa
+        # bilang "X ditemukan, Y dalam rentang waktu" sekaligus, bukan dua
+        # angka terpisah yang harus dijumlah manual sama user.
+        def _total_kandidat():
+            return len(articles) + skipped_lawas
+
         def _lapor_skip():
             if skipped > 0:
                 st.caption(f"ℹ️ {skipped} artikel video dilewati.")
-            if skipped_lawas > 0:
-                st.caption(f"ℹ️ {skipped_lawas} artikel lawas dilewati (di luar rentang waktu yang dipilih).")
 
         for q in queries:
             url = f"https://news.google.com/rss/search?q={quote_plus(q)}&hl=id&gl=ID&ceid=ID:id"
@@ -770,12 +775,12 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                     })
                     if len(articles) >= max_articles:
                         _lapor_skip()
-                        return articles
+                        return articles, _total_kandidat()
             except Exception as e:
                 st.warning(f"Gagal crawl '{q}': {e}")
 
         _lapor_skip()
-        return articles
+        return articles, _total_kandidat()
 
     # ── Analisis: DeepSeek ─────────────────────────────────────────────────
     def analisis_deepseek(client, artikel: dict, rate_status=None) -> dict:
@@ -1185,12 +1190,22 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 prog_bar  = st.progress(0, text="Crawling Google News...")
                 status_tx = st.empty()
                 status_tx.info(f"Crawling {len(all_queries)} query...")
-                artikel_raw = crawl_google_news(all_queries, max_art, max_umur_hari)
+                artikel_raw, total_kandidat = crawl_google_news(all_queries, max_art, max_umur_hari)
 
                 if not artikel_raw:
                     _gagal("Tidak ada artikel ditemukan.", level="warning")
 
-                status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis...")
+                # Kalau ada artikel yang dibuang karena kelewat lawas, sebutkan
+                # dua angkanya sekaligus (total kandidat vs. yang lolos rentang
+                # waktu) supaya user tidak perlu jumlah manual dari caption
+                # terpisah.
+                if total_kandidat > len(artikel_raw):
+                    status_tx.success(
+                        f"✅ {total_kandidat} artikel ditemukan, {len(artikel_raw)} di antaranya "
+                        f"dalam {_label_umur.lower()}. Memulai analisis..."
+                    )
+                else:
+                    status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis...")
 
                 hasil_list  = []
                 rate_status = st.empty()
