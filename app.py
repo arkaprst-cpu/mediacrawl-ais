@@ -6,12 +6,22 @@ default "deepseek-v4-flash" — lihat _baca_deepseek_model())
 """
 
 import streamlit as st
-import feedparser, json, time, re, io, threading
+import feedparser, json, time, re, io, threading, base64, os
 from datetime import datetime
 from urllib.parse import quote_plus
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# ── Logo BPKP (dipakai di kartu brand sidebar) — dibaca sekali & di-cache
+# sebagai base64 supaya bisa ditempel langsung di HTML markdown (st.image
+# nggak bisa disandingkan rapi dalam satu baris flex sama teks "AIS"). File
+# asetnya ada di assets/logo_bpkp.png, background transparan.
+@st.cache_data
+def _logo_bpkp_base64():
+    path = os.path.join(os.path.dirname(__file__), "assets", "logo_bpkp.png")
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
 
 # ── Klien DeepSeek (lazy import) ──
 def get_deepseek_client(api_key: str):
@@ -248,13 +258,23 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     with st.container(key="sidebar_brand_row"):
-        st.markdown("""
+        # Logo BPKP ditempel sebagai lockup di kiri teks "AIS" (bukan
+        # menggantikan wordmark AIS-nya) — hasil diskusi: ini satu-satunya
+        # tempat yang selalu kelihatan di semua halaman, jadi paling pas
+        # buat identitas institusional. File aset transparan (lihat
+        # _logo_bpkp_base64()), di-render kecil (~34px tinggi) biar nggak
+        # dominan dibanding wordmark & keterangan di sebelahnya.
+        st.markdown(f"""
         <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
                     border-radius:8px;padding:14px 16px;text-align:left;
-                    border-bottom:2px solid #F5A623'>
-          <div style='font-family:monospace;font-size:22px;font-weight:800;color:#F5A623;line-height:1.1'>AIS</div>
-          <div style='font-size:11px;font-weight:600;color:rgba(255,255,255,0.85);margin-top:3px'>Analisis Isu Strategis</div>
-          <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
+                    border-bottom:2px solid #F5A623;
+                    display:flex;align-items:center;gap:10px'>
+          <img src='data:image/png;base64,{_logo_bpkp_base64()}' style='height:34px;width:auto;flex-shrink:0'>
+          <div>
+            <div style='font-family:monospace;font-size:16px;font-weight:800;letter-spacing:0.03em;color:#F5A623;line-height:1.1'>AIS</div>
+            <div style='font-size:11px;font-weight:600;color:rgba(255,255,255,0.85);margin-top:3px'>Analisis Isu Strategis</div>
+            <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
+          </div>
         </div>
         """, unsafe_allow_html=True)
 
