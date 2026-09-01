@@ -246,8 +246,15 @@ with st.sidebar:
     [class*="st-key-navtile_"] button {
         width: 100% !important; text-align: left !important;
         justify-content: flex-start !important;
-        white-space: nowrap !important; height: auto !important;
-        line-height: 1.4 !important; padding: 8px 14px !important;
+        /* white-space:nowrap DIHAPUS — badge nomor (di bawah) makan ~28px
+           ruang horizontal yang sebelumnya nggak diperhitungkan. Di layar
+           sempit (HP), label terpanjang ("Repositori Isu Strategis") jadi
+           kepotong/ke-clip di tepi tombol karena dipaksa 1 baris tapi
+           nggak muat. Ganti ke normal supaya label yang kepanjangan
+           WRAP ke baris ke-2 (aman, height:auto sudah nampung), bukan
+           malah kepotong hilang sebagian hurufnya. */
+        white-space: normal !important; height: auto !important;
+        line-height: 1.35 !important; padding: 8px 14px !important;
         border-radius: 8px !important;
         background: rgba(255,255,255,0.04) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
@@ -279,7 +286,7 @@ with st.sidebar:
         counter-increment: navstep;
         content: counter(navstep);
         display: inline-flex; align-items: center; justify-content: center;
-        width: 20px; height: 20px; flex-shrink: 0; margin-right: 10px;
+        width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px; margin-top: 1px;
         border-radius: 50%;
         border: 1.5px solid rgba(255,255,255,0.35);
         color: rgba(255,255,255,0.75);
