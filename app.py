@@ -594,7 +594,7 @@ Contoh BENAR (langsung ke fakta): 'Calon manajer Koperasi Desa (Kopdes) Merah Pu
 Aturan tambahan:
 - Tone HANYA: Positif, Netral, atau Negatif
 - Gunakan nama program/instansi/angka yang ada di judul/konten — jangan ganti dengan abstraksi
-- Jika judul/konten tidak memberi cukup informasi, tetap isi semua field berdasarkan konteks topik crawl — jangan mengarang detail yang tidak ada sumbernya
+- Kalau judul & konten SAMA-SAMA tidak cukup untuk memastikan artikel ini benar-benar membahas topik crawl (mis. konten kosong, judul cuma nama instansi/halaman umum tanpa menyebut isu spesifik), JANGAN paksakan framing topik crawl ke "ringkasan_isu"/"isu_subisu" seolah pasti nyambung — tulis apa adanya dari yang BENAR-BENAR diketahui (instansi, jenis publikasi, tanggal), dan nyatakan eksplisit keterkaitannya ke topik crawl belum bisa dipastikan. Contoh isu_subisu yang BENAR untuk kasus begini: "Publikasi resmi [instansi] — substansi belum dapat dipastikan" (bukan dipaksa jadi nama topik crawl-nya).
 - Bahasa Indonesia formal
 - Output HANYA JSON murni"""
 
@@ -1101,7 +1101,18 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             if not label_isu.strip():
                 _gagal("Isi Label Isu untuk nama file Excel.")
 
-            keywords_input = [k.strip() for k in re.split(r"[\n,]+", keywords_raw) if k.strip()]
+            # Split HANYA di baris baru — koma dalam satu baris SENGAJA
+            # dipertahankan (bukan dianggap pemisah), karena placeholder di
+            # atas sendiri nyontohin "MBG, makan bergizi gratis" sebagai SATU
+            # topik gabungan (akronim + kepanjangannya). Versi lama split di
+            # koma JUGA, jadi "MBG, makan bergizi gratis" kepotong jadi dua
+            # keyword lepas ("MBG" dan "makan bergizi gratis") sebelum sempat
+            # di-blend — akibatnya ekspansi_keyword_deepseek() cuma nerima
+            # potongan kata sendirian tanpa konteks temannya, query hasil
+            # ekspansinya generik/nggak nyambung ke topik gabungannya (mis.
+            # "PPATK, Judol" kepotong jadi "PPATK" sendirian, nariknya jadi
+            # berita PPATK apa pun — bukan spesifik soal judol).
+            keywords_input = [k.strip() for k in keywords_raw.splitlines() if k.strip()]
 
             ai_client = get_deepseek_client(active_key)
 
