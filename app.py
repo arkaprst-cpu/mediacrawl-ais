@@ -712,11 +712,25 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         return teks
 
     # ── Crawl Google News RSS ──────────────────────────────────────────────
-    def crawl_google_news(queries: list, max_articles: int) -> list:
-        articles = []
-        seen     = set()
-        skipped  = 0
-        headers  = {"User-Agent": "Mozilla/5.0 (compatible; AIS-Crawler/1.0)"}
+    # Catatan penting: pencarian Google News RSS TIDAK mengurutkan/membatasi
+    # berdasarkan tanggal — hasil di-ranking berdasarkan relevansi teks saja.
+    # Artinya artikel lama (evergreen/feature) yang kata kuncinya cocok bisa
+    # ikut lolos walau umurnya sudah bertahun-tahun, meskipun query-nya
+    # spesifik. Makanya filter umur di bawah ini perlu, bukan cuma dedup
+    # link & skip video.
+    def crawl_google_news(queries: list, max_articles: int, max_umur_hari=None) -> list:
+        articles   = []
+        seen       = set()
+        skipped    = 0   # video
+        skipped_lawas = 0
+        headers    = {"User-Agent": "Mozilla/5.0 (compatible; AIS-Crawler/1.0)"}
+        hari_ini   = datetime.now()
+
+        def _lapor_skip():
+            if skipped > 0:
+                st.caption(f"ℹ️ {skipped} artikel video dilewati.")
+            if skipped_lawas > 0:
+                st.caption(f"ℹ️ {skipped_lawas} artikel lawas dilewati (di luar rentang waktu yang dipilih).")
 
         for q in queries:
             url = f"https://news.google.com/rss/search?q={quote_plus(q)}&hl=id&gl=ID&ceid=ID:id"
@@ -733,11 +747,18 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         skipped += 1
                         continue
 
+                    tanggal_dt = None
                     try:
-                        tanggal = datetime(*entry.published_parsed[:3]).strftime("%d %b %Y")
+                        tanggal_dt = datetime(*entry.published_parsed[:3])
+                        tanggal    = tanggal_dt.strftime("%d %b %Y")
                     except Exception:
                         pub = entry.get("published","")
                         tanggal = pub[:10] if pub else "-"
+
+                    if max_umur_hari is not None and tanggal_dt is not None:
+                        if (hari_ini - tanggal_dt).days > max_umur_hari:
+                            skipped_lawas += 1
+                            continue
 
                     konten      = bersihkan_snippet(re.sub(r"<[^>]+>","",entry.get("summary","")), judul)
                     sumber_nama = extract_sumber_dari_judul(judul) or re.sub(r"https?://(www\.)?","",link).split("/")[0]
@@ -748,14 +769,12 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         "sumber": sumber_nama, "snippet": konten, "tier": tier_asli,
                     })
                     if len(articles) >= max_articles:
-                        if skipped > 0:
-                            st.caption(f"ℹ️ {skipped} artikel video dilewati.")
+                        _lapor_skip()
                         return articles
             except Exception as e:
                 st.warning(f"Gagal crawl '{q}': {e}")
 
-        if skipped > 0:
-            st.caption(f"ℹ️ {skipped} artikel video dilewati.")
+        _lapor_skip()
         return articles
 
     # ── Analisis: DeepSeek ─────────────────────────────────────────────────
@@ -1016,6 +1035,25 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         max_art   = st.slider(
             "Maks. Artikel", min_value=5, max_value=25, value=20, step=5,
         )
+        # Google News RSS me-ranking hasil berdasarkan relevansi teks, BUKAN
+        # tanggal — artikel lawas yang kata kuncinya cocok bisa ikut lolos
+        # walau sudah bertahun-tahun. Filter ini membuang artikel di luar
+        # rentang waktu yang dipilih setelah crawl (mirip filter video).
+        st.markdown('<div class="sidebar-section-label">🕒 Rentang Waktu Artikel</div>', unsafe_allow_html=True)
+        _opsi_umur = {
+            "30 hari terakhir": 30,
+            "90 hari terakhir": 90,
+            "180 hari terakhir": 180,
+            "1 tahun terakhir": 365,
+            "Semua (tanpa batas)": None,
+        }
+        _label_umur = st.select_slider(
+            "Rentang Waktu Artikel",
+            options=list(_opsi_umur.keys()),
+            value="90 hari terakhir",
+            label_visibility="collapsed",
+        )
+        max_umur_hari = _opsi_umur[_label_umur]
         st.divider()
         # disabled=True selama crawl_running True — supaya tombol ini betul-
         # betul tidak bisa diklik lagi (bukan cuma "diabaikan") selama
@@ -1147,7 +1185,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 prog_bar  = st.progress(0, text="Crawling Google News...")
                 status_tx = st.empty()
                 status_tx.info(f"Crawling {len(all_queries)} query...")
-                artikel_raw = crawl_google_news(all_queries, max_art)
+                artikel_raw = crawl_google_news(all_queries, max_art, max_umur_hari)
 
                 if not artikel_raw:
                     _gagal("Tidak ada artikel ditemukan.", level="warning")
