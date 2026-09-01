@@ -17,11 +17,20 @@ from openpyxl.utils import get_column_letter
 # sebagai base64 supaya bisa ditempel langsung di HTML markdown (st.image
 # nggak bisa disandingkan rapi dalam satu baris flex sama teks "AIS"). File
 # asetnya ada di assets/logo_bpkp.png, background transparan.
+#
+# Sengaja dibungkus try/except & balikin None kalau filenya nggak ketemu
+# (bukan biarin exception nyebar) — supaya kalau suatu saat folder assets/
+# ketinggalan pas deploy/sync manual (pernah kejadian: cuma app.py yang
+# ke-update, assets/logo_bpkp.png-nya lupa ikut), app tetap jalan normal
+# tanpa logo, bukan crash total nutup seluruh halaman.
 @st.cache_data
 def _logo_bpkp_base64():
     path = os.path.join(os.path.dirname(__file__), "assets", "logo_bpkp.png")
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
+        return None
 
 # ── Klien DeepSeek (lazy import) ──
 def get_deepseek_client(api_key: str):
@@ -228,7 +237,7 @@ with st.sidebar:
        diatur lewat CSS dinamis di bawah (bukan di sini), karena butuh tahu
        st.session_state["ais_page"] saat itu.
     */
-    /* Opsi 2 (revisi ruang sidebar): tile dipangkas jadi 1 baris (icon +
+    /* Opsi 2 (revisi ruang sidebar): tile dipangkas jadi 1 baris (badge +
        judul saja, subteks dihapus dari sini) — subteksnya sudah nongol lagi
        persis sama di judul halaman utama, jadi di sidebar cukup labelnya
        biar nggak makan tinggi. Ini yang bikin field Kata Kunci Isu & Nama
@@ -254,6 +263,28 @@ with st.sidebar:
        Perbaikannya: paksa div anak langsung ini juga rata kiri. */
     [class*="st-key-navtile_"] button > div { justify-content: flex-start !important; }
     [class*="st-key-navtile_"] button p { font-size: 13px !important; }
+    /* Badge nomor urut 1/2/3 (gaya "stepper", hasil diskusi) — dibuat pakai
+       CSS counter di ::before <button>, BUKAN emoji ikon lagi, supaya
+       nomornya selalu sinkron sama urutan render NAV_ITEMS tanpa perlu
+       di-hardcode manual. counter-reset di scope stSidebar (bukan di
+       elemen tile-nya sendiri) supaya hitungannya jalan berurutan lintas
+       3 tile yang tiap-tiap punya class unik sendiri (st-key-navtile_crawl
+       dkk), bukan ke-reset ulang tiap tile. Garis penghubung ala stepper
+       di mockup SENGAJA tidak dibuat — tile di sini masing-masing punya
+       kartu/border sendiri (beda dari mockup yang list polos tanpa kartu),
+       jadi garis lurus bakal kepotong-potong nembus border tiap kartu dan
+       malah kelihatan rusak, bukan rapi. */
+    [data-testid="stSidebar"] { counter-reset: navstep 0; }
+    [class*="st-key-navtile_"] button::before {
+        counter-increment: navstep;
+        content: counter(navstep);
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 20px; height: 20px; flex-shrink: 0; margin-right: 10px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(255,255,255,0.35);
+        color: rgba(255,255,255,0.75);
+        font-family: monospace; font-size: 11px; font-weight: 700;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -264,12 +295,14 @@ with st.sidebar:
         # buat identitas institusional. File aset transparan (lihat
         # _logo_bpkp_base64()), di-render kecil (~34px tinggi) biar nggak
         # dominan dibanding wordmark & keterangan di sebelahnya.
+        _logo_b64 = _logo_bpkp_base64()
+        _logo_tag = f"<img src='data:image/png;base64,{_logo_b64}' style='height:34px;width:auto;flex-shrink:0'>" if _logo_b64 else ""
         st.markdown(f"""
         <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
                     border-radius:8px;padding:14px 16px;text-align:left;
                     border-bottom:2px solid #F5A623;
                     display:flex;align-items:center;gap:10px'>
-          <img src='data:image/png;base64,{_logo_bpkp_base64()}' style='height:34px;width:auto;flex-shrink:0'>
+          {_logo_tag}
           <div>
             <div style='font-family:monospace;font-size:16px;font-weight:800;letter-spacing:0.03em;color:#F5A623;line-height:1.1'>AIS</div>
             <div style='font-size:11px;font-weight:600;color:rgba(255,255,255,0.85);margin-top:3px'>Analisis Isu Strategis</div>
@@ -278,14 +311,16 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
 
-    # Nama & subteks final hasil diskusi — subteksnya sengaja dibuat SAMA
-    # PERSIS dengan subtitle di judul besar tiap halaman (lihat main-header
-    # / ais-topbar di app.py, dashboard_ais.py, repositori_isu.py), supaya
-    # nav sidebar & judul halaman "ngomong" hal yang sama dari 2 tempat.
+    # Nama final hasil diskusi — dulunya tiap item juga punya "desc" (subteks
+    # fungsi, sama persis dengan subtitle judul halaman) tapi itu sudah
+    # dihapus dari tampilan sidebar sejak Opsi 2 (soal ruang), begitu juga
+    # "icon" emoji per-item — sekarang diganti badge nomor urut 1/2/3 (CSS
+    # counter, lihat ::before di atas), jadi field-field itu tidak
+    # dipertahankan lagi di sini.
     NAV_ITEMS = [
-        {"id": "crawl",   "icon": "🔍", "label": "Crawl Berita",              "desc": "Tarik & analisis berita baru"},
-        {"id": "klaster", "icon": "📊", "label": "Klasterisasi & Analisis", "desc": "Klasterisasi, tren & telaah"},
-        {"id": "repo",    "icon": "🗄️", "label": "Repositori Isu Strategis",  "desc": "Arsip hasil yang sudah direview"},
+        {"id": "crawl",   "label": "Crawl Berita"},
+        {"id": "klaster", "label": "Klasterisasi & Analisis"},
+        {"id": "repo",    "label": "Repositori Isu Strategis"},
     ]
 
     if "ais_page" not in st.session_state:
@@ -301,13 +336,16 @@ with st.sidebar:
         border-left: 3px solid #F5A623 !important;
     }}
     .st-key-navtile_{st.session_state['ais_page']} button p:first-child {{ color: #F5A623 !important; }}
+    .st-key-navtile_{st.session_state['ais_page']} button::before {{
+        background: #F5A623 !important; border-color: #F5A623 !important; color: #0D1B2A !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
     for item in NAV_ITEMS:
         with st.container(key=f"navtile_{item['id']}"):
             if st.button(
-                f"{item['icon']} **{item['label']}**",
+                f"**{item['label']}**",
                 key=f"navbtn_{item['id']}",
                 use_container_width=True,
             ):
