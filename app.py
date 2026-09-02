@@ -315,33 +315,36 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     with st.container(key="sidebar_brand_row"):
-        # Logo BPKP — dulu disandingkan SEBARIS dengan teks "AIS" pakai
-        # flex row. Dilaporkan pecah di layar sempit sungguhan (bukan cuma
-        # preview lebar standar): kolom teks ketiban gara-gara logo fixed-
-        # width di sebelahnya, jadi "Pusat Strategi Kebijakan Pengawasan
-        # BPKP" ke-wrap sampai 5 baris kata-per-kata. Selain itu logo-nya
-        # (PNG transparan, elemen "bpkp" di dalamnya gelap) nyaris tidak
-        # kelihatan ditumpuk langsung di atas gradient navy card — kontras-
-        # nya terlalu rendah.
-        # Diganti jadi stacked (logo di baris sendiri paling atas, teks di
-        # bawahnya full-width) + logo dikasih chip background putih supaya
-        # dia selalu punya kontras terang terlepas dari warna elemen di
-        # dalam logo itu sendiri.
+        # Round 2 redesign — kartu ini diubah TERANG, bukan lagi gradient
+        # navy gelap. Alasannya persis yang dilaporkan: logo PNG transparan
+        # itu elemen "bpkp"-nya gelap, jadi chip putih di belakangnya
+        # (round 1) kelihatan seperti stiker ditempel di atas card navy —
+        # ada kotak putih yang mencolok sendiri. Dengan card-nya sendiri
+        # dibikin terang, logo tidak butuh chip terpisah lagi (background-
+        # nya sudah sewarna dari sononya) — jadi logo langsung ditaruh di
+        # atas tanpa div pembungkus tambahan, otomatis nyatu tanpa
+        # terlihat "tempelan".
+        # Putih polos (round 2 awal) dirasa kurang elegan — diganti krem
+        # hangat (#F5F0E6), senada sama aksen amber (#F5A623) yang sudah
+        # dipakai di seluruh app, supaya kartu ini kerasa "institusional"
+        # bukan steril. Masih cukup terang jadi teks navy & logo gelap
+        # tetap kontras jelas — nggak perlu ganti warna teks lain.
+        # "AIS" (wordmark singkat) dihapus total — "Analisis Isu Strategis"
+        # sekarang jadi judul utama, dibuat bold & agak besar tapi
+        # font-size-nya sengaja dites supaya tetap muat 1 baris (bukan
+        # dipaksa nowrap yang berisiko malah kepotong di layar sempit).
+        # Kata "BPKP" di baris bawah dihapus juga — sudah terwakili oleh
+        # logo itu sendiri, jadi redundan kalau diulang di teks.
         _logo_b64 = _logo_bpkp_base64()
-        _logo_tag = f"""<div style='display:inline-block;background:#FFFFFF;
-                    border-radius:6px;padding:5px 10px;margin-bottom:10px;
-                    line-height:0'>
-          <img src='data:image/png;base64,{_logo_b64}' style='height:26px;width:auto'>
-        </div>""" if _logo_b64 else ""
+        _logo_tag = f"<img src='data:image/png;base64,{_logo_b64}' style='height:28px;width:auto;display:block;margin-bottom:10px'>" if _logo_b64 else ""
         st.markdown(f"""
-        <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
+        <div style='background:#F5F0E6;
                     border-radius:8px;padding:14px 16px;text-align:left;
-                    border-bottom:2px solid #F5A623'>
+                    border-bottom:3px solid #F5A623'>
           {_logo_tag}
           <div>
-            <div style='font-family:monospace;font-size:16px;font-weight:800;letter-spacing:0.03em;color:#F5A623;line-height:1.1'>AIS</div>
-            <div style='font-size:11px;font-weight:600;color:rgba(255,255,255,0.85);margin-top:3px'>Analisis Isu Strategis</div>
-            <div style='font-size:10px;color:rgba(255,255,255,0.6);margin-top:2px'>Pusat Strategi Kebijakan Pengawasan BPKP</div>
+            <div style='font-size:15px;font-weight:800;letter-spacing:0.01em;color:#0D1B2A;line-height:1.25'>Analisis Isu Strategis</div>
+            <div style='font-size:11px;font-weight:500;color:rgba(13,27,42,0.6);margin-top:4px;line-height:1.4'>Pusat Strategi Kebijakan Pengawasan</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
