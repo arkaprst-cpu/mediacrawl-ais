@@ -225,6 +225,14 @@ with st.sidebar:
         margin: 2px 0 4px 0;
     }
     .st-key-sidebar_brand_row { margin-bottom: 12px; }
+    /* Streamlit menampilkan label min/max slider ("stSliderTickBar") secara
+       default HANYA saat hover/drag (opacity:0 -> 1), termasuk untuk
+       select_slider Rentang Waktu Artikel ("1 hari" ... "Semua (tanpa
+       batas)"). Di sidebar yang sempit, dua label itu berdempetan dan
+       terlihat kebesaran/berantakan begitu muncul — jadi dimatikan total,
+       bukan cuma dikecilkan, karena nilai yang aktif sudah selalu
+       ditampilkan lewat stSliderThumbValue (teks oranye di atas thumb). */
+    [data-testid="stSidebar"] [data-testid="stSliderTickBar"] { display: none !important; }
     /* Navigasi 3-menu — "tile" bukan radio polos, biar 3 fungsi utama app
        (crawl, klasterisasi/analisis, repositori) kelihatan sebagai 3 modul
        yang setara, bukan sekadar daftar link. Diskusi & di-tes langsung:
@@ -1046,6 +1054,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         # rentang waktu yang dipilih setelah crawl (mirip filter video).
         st.markdown('<div class="sidebar-section-label">🕒 Rentang Waktu Artikel</div>', unsafe_allow_html=True)
         _opsi_umur = {
+            "1 hari": 2,
             "7 hari terakhir": 7,
             "30 hari terakhir": 30,
             "90 hari terakhir": 90,
@@ -1056,7 +1065,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         _label_umur = st.select_slider(
             "Rentang Waktu Artikel",
             options=list(_opsi_umur.keys()),
-            value="90 hari terakhir",
+            value="7 hari terakhir",
             label_visibility="collapsed",
         )
         max_umur_hari = _opsi_umur[_label_umur]
