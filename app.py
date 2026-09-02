@@ -315,19 +315,28 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     with st.container(key="sidebar_brand_row"):
-        # Logo BPKP ditempel sebagai lockup di kiri teks "AIS" (bukan
-        # menggantikan wordmark AIS-nya) — hasil diskusi: ini satu-satunya
-        # tempat yang selalu kelihatan di semua halaman, jadi paling pas
-        # buat identitas institusional. File aset transparan (lihat
-        # _logo_bpkp_base64()), di-render kecil (~34px tinggi) biar nggak
-        # dominan dibanding wordmark & keterangan di sebelahnya.
+        # Logo BPKP — dulu disandingkan SEBARIS dengan teks "AIS" pakai
+        # flex row. Dilaporkan pecah di layar sempit sungguhan (bukan cuma
+        # preview lebar standar): kolom teks ketiban gara-gara logo fixed-
+        # width di sebelahnya, jadi "Pusat Strategi Kebijakan Pengawasan
+        # BPKP" ke-wrap sampai 5 baris kata-per-kata. Selain itu logo-nya
+        # (PNG transparan, elemen "bpkp" di dalamnya gelap) nyaris tidak
+        # kelihatan ditumpuk langsung di atas gradient navy card — kontras-
+        # nya terlalu rendah.
+        # Diganti jadi stacked (logo di baris sendiri paling atas, teks di
+        # bawahnya full-width) + logo dikasih chip background putih supaya
+        # dia selalu punya kontras terang terlepas dari warna elemen di
+        # dalam logo itu sendiri.
         _logo_b64 = _logo_bpkp_base64()
-        _logo_tag = f"<img src='data:image/png;base64,{_logo_b64}' style='height:34px;width:auto;flex-shrink:0'>" if _logo_b64 else ""
+        _logo_tag = f"""<div style='display:inline-block;background:#FFFFFF;
+                    border-radius:6px;padding:5px 10px;margin-bottom:10px;
+                    line-height:0'>
+          <img src='data:image/png;base64,{_logo_b64}' style='height:26px;width:auto'>
+        </div>""" if _logo_b64 else ""
         st.markdown(f"""
         <div style='background:linear-gradient(135deg,#0D1B2A,#1C3D5A);
                     border-radius:8px;padding:14px 16px;text-align:left;
-                    border-bottom:2px solid #F5A623;
-                    display:flex;align-items:center;gap:10px'>
+                    border-bottom:2px solid #F5A623'>
           {_logo_tag}
           <div>
             <div style='font-family:monospace;font-size:16px;font-weight:800;letter-spacing:0.03em;color:#F5A623;line-height:1.1'>AIS</div>
