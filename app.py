@@ -174,6 +174,7 @@ def cek_password():
         border-radius: 14px; border-top: 3px solid #F5A623;
         box-shadow: 0 12px 40px rgba(0,0,0,0.35);
         padding: 8px 8px 20px;
+        position: relative;
     }
     .login-kicker {
         font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700;
@@ -182,6 +183,17 @@ def cek_password():
     .login-title { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.3; margin-bottom: 6px; }
     .login-org   { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55); margin-bottom: 14px; }
     .login-desc  { font-size: 12.5px; color: rgba(255,255,255,0.68); line-height: 1.6; max-width: 320px; margin: 0 auto 22px; }
+    /* Badge status "Beta" — dipasang pojok kanan-atas kartu login (bukan
+       nempel di judul) supaya tidak menambah risiko wrap 2 baris pada
+       "Analisis Isu Strategis Pengawasan" di layar sempit. Netral abu-abu:
+       ini penanda status internal, bukan ajakan aksi seperti tombol/link
+       oranye di kartu ini. */
+    .login-badge-beta {
+        position: absolute; top: 14px; right: 14px;
+        font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+        color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.14);
+        border-radius: 4px; padding: 3px 7px; text-transform: uppercase;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -192,6 +204,7 @@ def cek_password():
     # menyodorkan form login tanpa info apa pun soal aplikasinya sendiri.
     with st.container(key="login_card"):
         st.markdown("""
+        <div class="login-badge-beta">Beta</div>
         <div style='text-align:center'>
           <div class="login-kicker">AIS</div>
           <div class="login-title">Analisis Isu Strategis Pengawasan</div>
@@ -213,7 +226,21 @@ def cek_password():
             else:
                 st.error("Password salah.")
 
-        st.markdown("<div style='text-align:center;margin-top:16px;font-size:11px;opacity:0.5'>Mencari hasil analisis isu? <a href='?page=repositori' style='color:#F5A623'>Buka Repositori Isu Strategis publik →</a></div>", unsafe_allow_html=True)
+        # Link Repositori publik — diperbesar & ditegaskan (dulu 11px/opacity
+        # 0.5, nyaris tak kelihatan). Badge "PUBLIK" dipisah dari teks link
+        # supaya info "bisa diakses tanpa login" kebaca sekilas tanpa perlu
+        # baca seluruh kalimat dulu — bukan metanarasi, ini penanda status
+        # akses (sama fungsinya dengan badge "Beta" di atas, tapi oranye
+        # karena ini mengarah ke aksi/link, bukan sekadar info status).
+        st.markdown("""
+        <div style='text-align:center;margin-top:16px;font-size:13px'>
+          <span style='color:rgba(255,255,255,0.6)'>Mencari hasil analisis isu?</span>
+          <a href='?page=repositori' style='color:#F5A623;font-weight:600;text-decoration:none'>
+            <span style='display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.06em;color:#0D1B2A;background:#F5A623;border-radius:4px;padding:2px 6px;text-transform:uppercase;margin:0 2px 0 6px;vertical-align:middle'>Publik</span>
+            Buka Repositori Isu Strategis →
+          </a>
+        </div>
+        """, unsafe_allow_html=True)
 
     return False
 
@@ -335,12 +362,17 @@ with st.sidebar:
         # dipaksa nowrap yang berisiko malah kepotong di layar sempit).
         # Kata "BPKP" di baris bawah dihapus juga — sudah terwakili oleh
         # logo itu sendiri, jadi redundan kalau diulang di teks.
+        # Badge "Beta" dipasang pojok kanan-atas kartu (position:absolute),
+        # bukan nempel di sebelah judul — supaya tidak menambah risiko wrap
+        # 2 baris pada "Analisis Isu Strategis" yang sudah pas-pasan muat 1
+        # baris di layar sempit (lihat catatan font-size 13px di atas).
         _logo_b64 = _logo_bpkp_base64()
         _logo_tag = f"<img src='data:image/png;base64,{_logo_b64}' style='height:28px;width:auto;display:block;margin-bottom:10px'>" if _logo_b64 else ""
         st.markdown(f"""
         <div style='background:#F5F0E6;
                     border-radius:8px;padding:14px 16px;text-align:left;
-                    border-bottom:3px solid #F5A623'>
+                    border-bottom:3px solid #F5A623;position:relative'>
+          <div style='position:absolute;top:10px;right:10px;font-size:9px;font-weight:700;letter-spacing:0.06em;color:rgba(13,27,42,0.55);background:rgba(13,27,42,0.08);border-radius:4px;padding:2px 6px;text-transform:uppercase'>Beta</div>
           {_logo_tag}
           <div>
             <div style='font-size:13px;font-weight:800;letter-spacing:0;color:#0D1B2A;line-height:1.25'>Analisis Isu Strategis</div>
