@@ -310,6 +310,45 @@ st.markdown("""
     color: #8ECBFA !important;
   }
 
+  /* Dropdown Sektor/Tema/Topik di form Telaah — kolomnya sempit (3
+     sejajar), jadi opsi macam "A. Pembangunan Sumber Daya Manusia (SDM)
+     Unggul dan Berdaya Saing" kepotong "..." saat listbox dibuka. Panel
+     pilihan (stSelectboxVirtualDropdown) itu portal terapung yang lebarnya
+     di-set inline oleh Streamlit mengikuti lebar kolom trigger (150px) --
+     dilebarkan di sini via !important (mengalahkan inline style).
+     SENGAJA TETAP 1 BARIS (white-space: nowrap, bukan normal/wrap) --
+     listbox ini virtualized, tinggi tiap baris opsi sudah dihitung &
+     dikunci di awal (40px), jadi kalau teks dibiarkan wrap ke 2 baris dia
+     bakal tumpang-tindih sama opsi di bawahnya, bukan mendorongnya turun.
+     Lebar di-set FIXED (bukan max-content) supaya ellipsis-nya kebaca
+     benar relatif ke lebar itu, bukan cuma "auto" yang tidak pernah
+     mentok. Ceknya di struktur_app.py: median panjang opsi ~43 karakter,
+     90 persen di bawah ~78 karakter, jadi 620px (muat sekitar itu di
+     font form ini) menuntaskan mayoritas kasus tanpa terpotong sama
+     sekali -- sisanya (segelintir topik yang memang satu kalimat penuh,
+     ada yang sampai 175 karakter) tetap dapat "..." di ujung, bukan
+     dipotong mendadak tanpa tanda. */
+  [data-testid="stSelectboxVirtualDropdown"] {
+    width: min(620px, 92vw) !important;
+    min-width: 260px !important;
+  }
+  [data-testid="stSelectboxVirtualDropdown"] [role="presentation"] {
+    width: 100% !important;
+  }
+  [data-testid="stSelectboxVirtualDropdown"] [role="option"] {
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  [data-testid="stSelectboxVirtualDropdown"] [data-item-hl] {
+    display: block !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
   /* Pill sumber — nama media (Kompas, CNN, Tempo, dst.) ditonjolkan di
      awal judul supaya pembaca langsung tahu asal beritanya. */
   .pill-sumber {
