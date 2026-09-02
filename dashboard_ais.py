@@ -290,6 +290,24 @@ st.markdown("""
     color: #63B3ED; opacity: 1;
   }
 
+  /* Tombol "Telaah klaster ini →" — sengaja BUKAN type="primary" (oranye
+     solid dipakai khusus buat aksi commit: Masuk, Mulai Crawl, Submit
+     Telaah). Tapi karena tombol default Streamlit (abu-abu polos) kurang
+     terlihat sebagai satu-satunya aksi per kartu klaster, dikasih aksen
+     biru (senada hover kartu artikel di atas) — beda kelas dari oranye
+     tapi tetap "hidup", bukan afterthought. */
+  [class*="st-key-buka_telaah_"] button {
+    border: 1.5px solid rgba(99,179,237,0.55) !important;
+    background: rgba(99,179,237,0.08) !important;
+    color: #63B3ED !important;
+    font-weight: 600 !important;
+  }
+  [class*="st-key-buka_telaah_"] button:hover {
+    background: rgba(99,179,237,0.2) !important;
+    border-color: rgba(99,179,237,0.85) !important;
+    color: #8ECBFA !important;
+  }
+
   /* Pill sumber — nama media (Kompas, CNN, Tempo, dst.) ditonjolkan di
      awal judul supaya pembaca langsung tahu asal beritanya. */
   .pill-sumber {
@@ -1184,7 +1202,19 @@ with tab2:
                     tone_dom = sub_idx['Tone'].value_counts().idxmax() if jumlah else 'Netral'
                     dom_color = {'Negatif':'#E74C3C','Netral':'#95A5A6','Positif':'#27AE60'}.get(tone_dom,'#95A5A6')
 
-                    label_expander = f"🗂️ **{nama}**  ·  :gray[{jumlah} artikel]"
+                    # Status review dipindah ke judul expander (round diskusi
+                    # "belum direview taruh di atas?") — sebelumnya cuma
+                    # muncul di baris paling bawah kartu yang sudah dibuka
+                    # (setelah Kondisi + Risiko/Area Perhatian + Relevansi
+                    # BPKP), jadi reviewer harus expand SEMUA klaster satu-
+                    # satu cuma buat tahu mana yang belum digarap. Dengan
+                    # ditaruh di judul collapsed, seluruh daftar klaster bisa
+                    # di-scan tanpa expand apa pun. Dihapus dari posisi lama
+                    # supaya tidak dobel info yang sama persis di 1 kartu.
+                    review_tersimpan_hdr = st.session_state.get("review_klaster", {}).get(nama, {})
+                    sudah_direview_hdr = bool(review_tersimpan_hdr.get("status_review") == "Sudah Direview")
+                    status_hdr = ":green[🟢 Sudah Direview]" if sudah_direview_hdr else ":gray[⚪ Belum Direview]"
+                    label_expander = f"🗂️ **{nama}**  ·  :gray[{jumlah} artikel]  ·  {status_hdr}"
                     # Semua klaster tertutup by default (bukan cuma klaster
                     # pertama) — user baru tidak langsung dihadapkan detail
                     # klaster + panel artikel di kanan sebelum sempat
@@ -1303,18 +1333,13 @@ with tab2:
 
                         # Tombol buka telaah — form lengkap ada di panel kanan
                         # (col_detail), diaktifkan lewat panel_mode="telaah".
-                        review_tersimpan = st.session_state.get("review_klaster", {}).get(nama, {})
-                        sudah_direview = bool(review_tersimpan.get("status_review") == "Sudah Direview")
-                        badge_review = "🟢 Sudah Direview" if sudah_direview else "⚪ Belum Direview"
-
-                        c_badge, c_btn = st.columns([2, 1.6])
-                        with c_badge:
-                            st.markdown(f"<div style='font-size:11px;font-weight:700;opacity:0.7;padding-top:8px'>{badge_review}</div>", unsafe_allow_html=True)
-                        with c_btn:
-                            if st.button("✏️ Telaah klaster ini →", key=f"buka_telaah_{nama}", use_container_width=True):
-                                st.session_state["panel_mode"] = "telaah"
-                                st.session_state["selected_klaster"] = nama
-                                st.rerun()
+                        # Status review sudah dipindah ke judul expander di
+                        # atas (lihat status_hdr) — tidak diulang lagi di
+                        # sini, jadi tombol ini full-width sendirian.
+                        if st.button("✏️ Telaah klaster ini →", key=f"buka_telaah_{nama}", use_container_width=True):
+                            st.session_state["panel_mode"] = "telaah"
+                            st.session_state["selected_klaster"] = nama
+                            st.rerun()
 
                         st.markdown("<div style='display:flex;align-items:center;gap:10px;margin:14px 0 10px 4px'><span style='font-size:10px;font-weight:700;letter-spacing:.08em;opacity:0.45;text-transform:uppercase;white-space:nowrap'>↳ Artikel Anggota</span><div style='flex:1;height:1px;background:rgba(128,128,128,0.25)'></div></div>", unsafe_allow_html=True)
 
