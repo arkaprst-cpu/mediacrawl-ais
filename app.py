@@ -1046,6 +1046,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         # rentang waktu yang dipilih setelah crawl (mirip filter video).
         st.markdown('<div class="sidebar-section-label">🕒 Rentang Waktu Artikel</div>', unsafe_allow_html=True)
         _opsi_umur = {
+            "7 hari terakhir": 7,
             "30 hari terakhir": 30,
             "90 hari terakhir": 90,
             "180 hari terakhir": 180,
