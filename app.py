@@ -343,7 +343,7 @@ with st.sidebar:
                     border-bottom:3px solid #F5A623'>
           {_logo_tag}
           <div>
-            <div style='font-size:15px;font-weight:800;letter-spacing:0.01em;color:#0D1B2A;line-height:1.25'>Analisis Isu Strategis</div>
+            <div style='font-size:13px;font-weight:800;letter-spacing:0;color:#0D1B2A;line-height:1.25'>Analisis Isu Strategis</div>
             <div style='font-size:11px;font-weight:500;color:rgba(13,27,42,0.6);margin-top:4px;line-height:1.4'>Pusat Strategi Kebijakan Pengawasan</div>
           </div>
         </div>
@@ -1068,14 +1068,24 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             placeholder="Contoh: Pertamax BBM Juni 2026",
             label_visibility="collapsed",
         )
+        # Label native st.slider (default) fontnya beda sendiri dari label
+        # custom lain di sidebar ("Kata Kunci Isu", "Rentang Waktu", dst
+        # yang semuanya pakai class sidebar-section-label) — disamakan di
+        # sini biar konsisten, pakai pola yang sama: markdown custom +
+        # label_visibility="collapsed" di widgetnya.
+        st.markdown('<div class="sidebar-section-label">🎚️ Maks. Artikel</div>', unsafe_allow_html=True)
         max_art   = st.slider(
             "Maks. Artikel", min_value=5, max_value=25, value=20, step=5,
+            label_visibility="collapsed",
         )
         # Google News RSS me-ranking hasil berdasarkan relevansi teks, BUKAN
         # tanggal — artikel lawas yang kata kuncinya cocok bisa ikut lolos
         # walau sudah bertahun-tahun. Filter ini membuang artikel di luar
         # rentang waktu yang dipilih setelah crawl (mirip filter video).
-        st.markdown('<div class="sidebar-section-label">🕒 Rentang Waktu Artikel</div>', unsafe_allow_html=True)
+        # Label dipendekkan jadi "Rentang Waktu" saja (kata "Artikel" di
+        # akhir dihapus, sudah cukup jelas dari konteks di bawah "Maks.
+        # Artikel").
+        st.markdown('<div class="sidebar-section-label">🕒 Rentang Waktu</div>', unsafe_allow_html=True)
         _opsi_umur = {
             "1 hari": 2,
             "7 hari terakhir": 7,
