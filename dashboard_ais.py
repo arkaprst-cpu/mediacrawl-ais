@@ -290,19 +290,21 @@ st.markdown("""
     color: #63B3ED; opacity: 1;
   }
 
-  /* Tombol "Telaah klaster ini →" — sengaja BUKAN type="primary" (oranye
-     solid dipakai khusus buat aksi commit: Masuk, Mulai Crawl, Submit
-     Telaah). Tapi karena tombol default Streamlit (abu-abu polos) kurang
-     terlihat sebagai satu-satunya aksi per kartu klaster, dikasih aksen
-     biru (senada hover kartu artikel di atas) — beda kelas dari oranye
-     tapi tetap "hidup", bukan afterthought. */
-  [class*="st-key-buka_telaah_"] button {
+  /* Tombol "Telaah klaster ini →" dan "← Tutup telaah, lihat detail
+     artikel" — sengaja BUKAN type="primary" (oranye solid dipakai khusus
+     buat aksi commit: Masuk, Mulai Crawl, Submit Telaah). Keduanya sama-
+     sama aksi navigasi buka/tutup panel telaah, jadi disamakan satu gaya:
+     aksen biru (senada hover kartu artikel di atas) — beda kelas dari
+     oranye tapi tetap "hidup", bukan afterthought abu-abu default. */
+  [class*="st-key-buka_telaah_"] button,
+  [class*="st-key-tutup_telaah"] button {
     border: 1.5px solid rgba(99,179,237,0.55) !important;
     background: rgba(99,179,237,0.08) !important;
     color: #63B3ED !important;
     font-weight: 600 !important;
   }
-  [class*="st-key-buka_telaah_"] button:hover {
+  [class*="st-key-buka_telaah_"] button:hover,
+  [class*="st-key-tutup_telaah"] button:hover {
     background: rgba(99,179,237,0.2) !important;
     border-color: rgba(99,179,237,0.85) !important;
     color: #8ECBFA !important;
@@ -1421,7 +1423,7 @@ with tab2:
                         topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
 
                     dampak_default = review_tersimpan.get("dampak_implikasi_final") or risiko_draft
-                    dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf AI)", value=dampak_default, key=f"{review_key}_dampak", height=110)
+                    dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf awal)", value=dampak_default, key=f"{review_key}_dampak", height=110)
 
                     gap_pilih = st.text_area("Gap Pengawasan", value=review_tersimpan.get("gap_pengawasan", ""), key=f"{review_key}_gap", height=90,
                                                placeholder="Apa yang belum tercakup dalam pengawasan eksisting BPKP terhadap isu ini?")
