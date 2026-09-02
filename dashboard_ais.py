@@ -126,6 +126,13 @@ st.markdown("""
   .st-key-sidebar_fn_upload [data-testid="stPopover"] button {
     width: 100% !important; text-align: left !important; justify-content: flex-start !important;
   }
+  /* Font default tombol Streamlit (~16px) kegedean buat lebar sidebar yang
+     sempit — label 2 kata ("Perbarui Excel", "Folder Drive") jadi wrap ke
+     2 baris & bikin tombol lebih tinggi dari yang perlu. Dikecilkan ke
+     12px (dekat sama .sidebar-fn-desc 11px) supaya proporsional & muat
+     1 baris. Berlaku untuk semua tombol di 3 kartu ini: st.button,
+     st.download_button, st.link_button, & tombol popover. */
+  [class*="st-key-sidebar_fn_"] button p { font-size: 12px !important; }
 
   /* Topbar */
   .ais-topbar {
@@ -789,7 +796,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    if fn_update.button("📊 Generate Excel Terbaru", use_container_width=True):
+    if fn_update.button("🔄 Perbarui Excel", use_container_width=True):
         # Dicek dari sumber_data (hasil resolusi df_raw/meta di atas),
         # bukan dari nilai widget "uploaded" — widget itu bisa kosong
         # walau datanya berasal dari upload (lihat catatan panjang soal
@@ -853,7 +860,7 @@ with st.sidebar:
     <div class='sidebar-fn-desc'>Unggah hasil telaah Anda ke folder ini.</div>
     """, unsafe_allow_html=True)
     fn_drive.link_button(
-        "🔗 Buka Folder Drive",
+        "📂 Folder Drive",
         "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
         use_container_width=True,
     )
