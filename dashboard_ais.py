@@ -89,6 +89,44 @@ st.markdown("""
     padding: 24px 24px 16px !important;
   }
 
+  /* 3 kartu fungsi di sidebar (Upload Data / Update Excel / Drive Hasil
+     Telaah) — sebelumnya bobot visualnya beda jauh (dropzone native
+     Streamlit yang tinggi vs. kartu status+tombol vs. cuma caption+tombol),
+     jadi sekarang disamakan lewat 1 struktur kartu (judul+deskripsi+aksi)
+     & padding/margin yang identik. Upload Data khusus pakai st.popover
+     supaya elemennya SETINGGI 2 kartu lain (dropzone native tidak bisa
+     dipangkas jadi setipis itu lewat CSS saja) — file_uploader-nya baru
+     muncul mengambang saat tombol popover diklik.
+     Update Excel SEBELUMNYA dikasih aksen amber (border-left + tint +
+     tombol type="primary") dengan asumsi ini aksi paling sering dipakai —
+     ternyata salah, faktanya justru paling jarang dipakai (Update Excel
+     cuma perlu dijalankan sesekali setelah telaah klaster, bukan tiap buka
+     dashboard). Kombinasi border+background+tombol yang SAMA-SAMA amber
+     itu juga yang bikin kartu ini kelihatan paling mencolok/silau
+     dibanding 2 kartu lain. Jadi disamakan total ke gaya netral seperti
+     Upload Data & Drive — nggak ada lagi kartu yang "dibedakan level
+     pentingnya" lewat warna. */
+  [class*="st-key-sidebar_fn_"] {
+    border: 1px solid rgba(128,128,128,0.25) !important;
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+    margin-bottom: 10px !important;
+    background: rgba(128,128,128,0.04) !important;
+    /* min-height, bukan cuma padding seragam — teks deskripsi Update
+       Excel dinamis (1 atau 2 baris tergantung jumlah klaster yang sudah
+       ditelaah), jadi tanpa ini tinggi 3 kartu bisa geser beberapa piksel
+       tergantung isi. Dites: 132px pas untuk kasus deskripsi 2 baris. */
+    min-height: 132px !important;
+  }
+  .sidebar-fn-title { font-size: 13px; font-weight: 700; color: #F5A623; margin-bottom: 4px; }
+  .sidebar-fn-desc { font-size: 11px; opacity: 0.7; line-height: 1.4; margin-bottom: 10px; }
+  /* Tombol popover Upload Data disamakan gayanya dengan tombol lain di
+     dalam kartu (full-width, rata kiri, bukan style default popover yang
+     ditengahkan). */
+  .st-key-sidebar_fn_upload [data-testid="stPopover"] button {
+    width: 100% !important; text-align: left !important; justify-content: flex-start !important;
+  }
+
   /* Topbar */
   .ais-topbar {
     background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
@@ -576,21 +614,31 @@ uploader_di_sidebar = has_session or has_upload
 
 with st.sidebar:
     if uploader_di_sidebar:
-        st.markdown("### 📂 Upload Data")
-        st.markdown("<div style='font-size:11px;color:#888;margin-bottom:8px'>Upload file Excel hasil pipeline crawl AIS (.xlsx)</div>", unsafe_allow_html=True)
-        uploaded = st.file_uploader(
-            "Pilih file Excel", type=["xlsx"],
-            label_visibility="collapsed", key="uploader_xlsx"
-        )
+        with st.container(key="sidebar_fn_upload"):
+            st.markdown("""
+            <div class='sidebar-fn-title'>📂 Upload Data</div>
+            <div class='sidebar-fn-desc'>Ganti data dengan file Excel hasil crawl (.xlsx) lain.</div>
+            """, unsafe_allow_html=True)
+            # Dropzone native st.file_uploader tidak bisa dipangkas jadi
+            # setipis 2 kartu lain lewat CSS saja — dibungkus st.popover
+            # supaya elemen yang kelihatan di kartu cuma tombol kecil
+            # (setinggi kartu Update Excel/Drive), dropzone-nya baru
+            # muncul mengambang saat diklik.
+            with st.popover("📤 Pilih File", use_container_width=True):
+                uploaded = st.file_uploader(
+                    "Pilih file Excel", type=["xlsx"],
+                    label_visibility="collapsed", key="uploader_xlsx"
+                )
     else:
         uploaded = None
 
     # Semua tone & level risiko ditampilkan (tidak ada filter sidebar aktif)
     filter_tone = ["Negatif", "Netral", "Positif"]
     filter_risiko = ["Tinggi", "Sedang", "Rendah"]
-
-    st.markdown("---")
-    st.markdown("<div style='font-size:10px;color:#aaa;line-height:1.6'>Analisis Isu Strategis Pengawasan<br>Pusat Strategi Kebijakan Pengawasan BPKP</div>", unsafe_allow_html=True)
+    # Divider + caption "Analisis Isu Strategis Pengawasan..." yang dulu di
+    # sini DIHAPUS — sudah duplikat dengan brand card "AIS" di paling atas
+    # sidebar (app.py), dan bikin 3 kartu fungsi kelihatan kepisah-pisah
+    # padahal sekarang sudah seragam satu grup.
 
 # File baru dari uploader sidebar (mis. user ganti file) langsung
 # di-parse & disimpan ke session_state — lihat catatan panjang di atas.
@@ -733,23 +781,15 @@ with st.sidebar:
     review_klaster = st.session_state.get("review_klaster", {})
     jml_direview = len(review_klaster)
 
-    st.markdown(f"""
-    <div style='
-        border:1px solid rgba(245,166,35,0.4);
-        border-left:4px solid #F5A623;
-        border-radius:8px;
-        background:rgba(245,166,35,0.08);
-        padding:12px 14px;
-        margin:14px 0 10px 0;
-    '>
-      <div style='font-size:13px;font-weight:700;color:#F5A623;margin-bottom:4px'>📥 Update Excel</div>
-      <div style='font-size:11px;opacity:0.75;line-height:1.4'>
-        {f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel." if jml_direview > 0 else "Belum ada klaster yang ditelaah. Isi form telaah di Tab Klasterisasi Isu."}
-      </div>
+    fn_update = st.container(key="sidebar_fn_update")
+    fn_update.markdown(f"""
+    <div class='sidebar-fn-title'>📥 Update Excel</div>
+    <div class='sidebar-fn-desc'>
+      {f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel." if jml_direview > 0 else "Belum ada klaster yang ditelaah. Isi form telaah di Tab Klasterisasi Isu."}
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("📊 Generate Excel Terbaru", use_container_width=True, type="primary"):
+    if fn_update.button("📊 Generate Excel Terbaru", use_container_width=True):
         # Dicek dari sumber_data (hasil resolusi df_raw/meta di atas),
         # bukan dari nilai widget "uploaded" — widget itu bisa kosong
         # walau datanya berasal dari upload (lihat catatan panjang soal
@@ -799,7 +839,7 @@ with st.sidebar:
 
         # buat_excel() dari app.py (scope sama, dieksekusi via exec())
         excel_bytes = buat_excel(hasil_terbaru, label_file)
-        st.download_button(
+        fn_update.download_button(
             "⬇️ Download Excel",
             data=excel_bytes,
             file_name=f"MediaCrawl_AIS_{str(label_file).replace(' ','_')}_telaah.xlsx",
@@ -807,9 +847,13 @@ with st.sidebar:
             use_container_width=True,
         )
 
-    st.markdown("<div style='font-size:10px;opacity:0.55;margin:10px 0 4px 2px'>Unggah hasil telaah Anda di sini ⬇️</div>", unsafe_allow_html=True)
-    st.link_button(
-        "📁 Drive Hasil Telaah",
+    fn_drive = st.container(key="sidebar_fn_drive")
+    fn_drive.markdown("""
+    <div class='sidebar-fn-title'>📁 Drive Hasil Telaah</div>
+    <div class='sidebar-fn-desc'>Unggah hasil telaah Anda ke folder ini.</div>
+    """, unsafe_allow_html=True)
+    fn_drive.link_button(
+        "🔗 Buka Folder Drive",
         "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
         use_container_width=True,
     )
