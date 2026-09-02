@@ -623,7 +623,7 @@ with st.sidebar:
     if uploader_di_sidebar:
         with st.container(key="sidebar_fn_upload"):
             st.markdown("""
-            <div class='sidebar-fn-title'>📂 Upload Data</div>
+            <div class='sidebar-fn-title'>📤 Upload Data</div>
             <div class='sidebar-fn-desc'>Ganti data dengan file Excel hasil crawl (.xlsx) lain.</div>
             """, unsafe_allow_html=True)
             # Dropzone native st.file_uploader tidak bisa dipangkas jadi
@@ -790,7 +790,7 @@ with st.sidebar:
 
     fn_update = st.container(key="sidebar_fn_update")
     fn_update.markdown(f"""
-    <div class='sidebar-fn-title'>📥 Update Excel</div>
+    <div class='sidebar-fn-title'>🔄 Update Excel</div>
     <div class='sidebar-fn-desc'>
       {f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel." if jml_direview > 0 else "Belum ada klaster yang ditelaah. Isi form telaah di Tab Klasterisasi Isu."}
     </div>
@@ -860,7 +860,7 @@ with st.sidebar:
     <div class='sidebar-fn-desc'>Unggah hasil telaah Anda ke folder ini.</div>
     """, unsafe_allow_html=True)
     fn_drive.link_button(
-        "📂 Folder Drive",
+        "📁 Folder Drive",
         "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
         use_container_width=True,
     )
