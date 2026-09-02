@@ -35,6 +35,16 @@ def pill_sumber_html(sumber: str, compact: bool = False) -> str:
     return f'<span class="{cls}">{sumber}</span>'
 
 
+def judul_link_html(judul: str, link: str) -> str:
+    """Bungkus teks judul dengan <a> ke artikel asli kalau link-nya valid.
+    Kalau link kosong/'-' (mis. data lama sebelum kolom Link ada), fallback
+    ke teks polos supaya tidak menghasilkan <a href="-"> yang rusak."""
+    link = str(link or "").strip()
+    if not link or link == "-":
+        return judul
+    return f'<a href="{link}" target="_blank" rel="noopener" class="judul-link">{judul}</a>'
+
+
 # ── CUSTOM CSS ───────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -115,6 +125,32 @@ st.markdown("""
   }
   .spotlight-title { font-size: 16px; font-weight: 700; color: white; line-height: 1.3; margin-bottom: 10px; }
   .spotlight-body { font-size: 12px; color: rgba(255,255,255,0.75); line-height: 1.65; }
+  /* Kalimat Risiko dipisah jadi sub-box sendiri (bukan cuma "Risiko:" bold
+     inline di tengah paragraf) supaya langsung kelihatan beda dari
+     ringkasan isu di atasnya — polanya sama seperti border-kiri berwarna
+     di .issue-card, tapi merah (#E74C3C) karena ini murni penanda visual
+     "bagian risiko", bukan skor/kode tingkat keparahan (itu tetap tidak
+     dipakai di sini — lihat keputusan sebelumnya soal tone/risk coloring). */
+  .spotlight-risiko-box {
+    margin-top: 12px; background: rgba(231,76,60,0.12);
+    border-left: 3px solid #E74C3C; border-radius: 4px; padding: 10px 12px;
+  }
+  .spotlight-risiko-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #E74C3C; margin-bottom: 4px;
+  }
+  .spotlight-risiko-text { font-size: 12px; color: rgba(255,255,255,0.88); line-height: 1.6; }
+  /* Judul di Spotlight & kartu Risiko Tinggi dibuat klik-able ke artikel
+     asli (kolom Link sudah ada di data, sebelumnya cuma dipakai di tab
+     Repositori). color:inherit supaya tidak jadi biru link browser standar
+     — warna & bobot font tetap ikut .spotlight-title/.issue-title, cuma
+     underline muncul saat hover sebagai penanda "ini bisa diklik". */
+  /* !important perlu di sini — Streamlit sudah punya CSS bawaan untuk <a>
+     di dalam stMarkdownContainer (warna biru + underline default) yang
+     specificity-nya menang lawan .judul-link biasa; sudah dicek langsung
+     computed style-nya biru bawaan tanpa !important. */
+  .judul-link { color: inherit !important; text-decoration: none !important; }
+  .judul-link:hover { text-decoration: underline !important; color: #F5A623 !important; }
 
   /* Stat cards — dua tingkat: primary (metrik paling actionable, lebih
      besar) dan secondary (rincian pendukung, lebih kecil) supaya tidak
@@ -877,9 +913,11 @@ with tab1:
         st.markdown(f"""
         <div class="spotlight-box">
           <div class="spotlight-eyebrow">⚡ Isu Prioritas — Paling Relevan & Signifikan</div>
-          <div class="spotlight-title">{pill_sumber_html(sumber_spotlight)}{judul_spotlight}</div>
-          <div class="spotlight-body">{spotlight['Ringkasan']}<br><br>
-            <strong style="color:rgba(255,255,255,0.9)">Risiko:</strong> {spotlight['Risiko']}
+          <div class="spotlight-title">{pill_sumber_html(sumber_spotlight)}{judul_link_html(judul_spotlight, spotlight['Link'])}</div>
+          <div class="spotlight-body">{spotlight['Ringkasan']}</div>
+          <div class="spotlight-risiko-box">
+            <div class="spotlight-risiko-label">⚠ Risiko</div>
+            <div class="spotlight-risiko-text">{spotlight['Risiko']}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -910,7 +948,7 @@ with tab1:
                 judul_disp = judul_bersih[:80] + ('…' if len(judul_bersih) > 80 else '')
                 st.markdown(f"""
                 <div class="issue-card issue-card-highlight {tone_class}">
-                  <div class="issue-title">{pill_sumber_html(sumber_row)}{judul_disp}</div>
+                  <div class="issue-title">{pill_sumber_html(sumber_row)}{judul_link_html(judul_disp, row['Link'])}</div>
                   <div class="issue-sub">{str(row['IsuSubisu'])}</div>
                   <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
                   <div style='margin-top:6px'>
