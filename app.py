@@ -13,9 +13,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# ── Logo BPKP (dipakai di kartu brand sidebar) — dibaca sekali & di-cache
-# sebagai base64 supaya bisa ditempel langsung di HTML markdown (st.image
-# nggak bisa disandingkan rapi dalam satu baris flex sama teks "AIS"). File
+# ── Logo BPKP (dipakai di kartu brand sidebar) — dibaca & di-encode ke
+# base64 supaya bisa ditempel langsung di HTML markdown (st.image nggak
+# bisa disandingkan rapi dalam satu baris flex sama teks "AIS"). File
 # asetnya ada di assets/logo_bpkp.png, background transparan.
 #
 # Sengaja dibungkus try/except & balikin None kalau filenya nggak ketemu
@@ -23,7 +23,18 @@ from openpyxl.utils import get_column_letter
 # ketinggalan pas deploy/sync manual (pernah kejadian: cuma app.py yang
 # ke-update, assets/logo_bpkp.png-nya lupa ikut), app tetap jalan normal
 # tanpa logo, bukan crash total nutup seluruh halaman.
-@st.cache_data
+#
+# SENGAJA TIDAK dikasih @st.cache_data (versi sebelumnya pakai ini) —
+# itu penyebab bug "logo masih belum muncul walau assets/logo_bpkp.png
+# sudah di-upload ke repo": begitu file-nya sempat hilang sekali (belum
+# ke-upload), hasil None dari except di bawah ini KE-CACHE selamanya di
+# proses Streamlit Cloud yang sedang berjalan — cache-nya cuma berdasar
+# kode fungsi ini (tidak ada argumen, tidak baca mtime file), jadi push
+# assets/logo_bpkp.png belakangan sama sekali tidak menghapus cache "file
+# tidak ada" itu selama proses appnya belum benar-benar di-restart. Baca
+# file ~15-30KB ini juga murah banget dieksekusi ulang tiap rerun, jadi
+# caching di sini sama sekali tidak perlu — risikonya (staleness) lebih
+# besar daripada manfaatnya.
 def _logo_bpkp_base64():
     path = os.path.join(os.path.dirname(__file__), "assets", "logo_bpkp.png")
     try:
