@@ -1252,10 +1252,30 @@ with tab2:
                     # ditaruh di judul collapsed, seluruh daftar klaster bisa
                     # di-scan tanpa expand apa pun. Dihapus dari posisi lama
                     # supaya tidak dobel info yang sama persis di 1 kartu.
+                    # Teks badge sengaja "Ditelaah" (bukan "Direview") --
+                    # menyelaraskan ke istilah yang sudah dipakai konsisten
+                    # di seluruh fitur ini (tombol "Telaah klaster ini",
+                    # panel "TELAAH KLASTER", caption sidebar "sudah
+                    # ditelaah"). Ini CUMA teks tampilan -- nilai yang
+                    # disimpan & ditulis ke kolom Excel (StatusReview /
+                    # "Sudah Direview") TIDAK diubah, supaya file Excel yang
+                    # sudah beredar tetap kebaca kalau di-upload ulang.
                     review_tersimpan_hdr = st.session_state.get("review_klaster", {}).get(nama, {})
                     sudah_direview_hdr = bool(review_tersimpan_hdr.get("status_review") == "Sudah Direview")
-                    status_hdr = ":green[🟢 Sudah Direview]" if sudah_direview_hdr else ":gray[⚪ Belum Direview]"
-                    label_expander = f"🗂️ **{nama}**  ·  :gray[{jumlah} artikel]  ·  {status_hdr}"
+                    status_hdr = ":green[🟢 Sudah Ditelaah]" if sudah_direview_hdr else ":gray[⚪ Belum Ditelaah]"
+                    # Judul dipisah ke baris sendiri dari "N artikel ·
+                    # status" (round diskusi "enter biar tidak segaris") --
+                    # sebelumnya semua di 1 baris teks yang cuma wrap
+                    # otomatis kalau kepanjangan, hasilnya potongannya beda-
+                    # beda tiap kartu (kadang mentok di tengah frasa "...
+                    # Belum \n Ditelaah" di layar sempit). Dipisah eksplisit
+                    # jadi 2 baris SELALU konsisten: baris 1 nama klaster
+                    # (boleh wrap sendiri kalau memang panjang), baris 2
+                    # metadata (jumlah + status) tidak pernah kepotong di
+                    # tengah. "  \n" (2 spasi + newline) adalah hard-break
+                    # markdown standar -- dites render jadi <br> sungguhan
+                    # di label expander Streamlit, bukan cuma spasi.
+                    label_expander = f"🗂️ **{nama}**  \n:gray[{jumlah} artikel]  ·  {status_hdr}"
                     # Semua klaster tertutup by default (bukan cuma klaster
                     # pertama) — user baru tidak langsung dihadapkan detail
                     # klaster + panel artikel di kanan sebelum sempat
