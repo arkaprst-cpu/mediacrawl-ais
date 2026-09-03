@@ -12,6 +12,7 @@ from urllib.parse import quote_plus
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from tier_config import classify_sumber
 
 # ── Logo BPKP (dipakai di kartu brand sidebar) — dibaca & di-encode ke
 # base64 supaya bisa ditempel langsung di HTML markdown (st.image nggak
@@ -679,20 +680,10 @@ if page == "crawl":
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Tier sumber ────────────────────────────────────────────────────────
-    TIER1_KEYWORDS = {
-        "kompas","tempo","detik","cnnindonesia","republika","antaranews",
-        "mediaindonesia","bisnis","kontan","tribunnews","liputan6","okezone",
-        "sindonews","jpnn","suara","kumparan","rmol","inews","katadata",
-        "validnews","thejakartapost","jawapos",
-    }
-
-    def tier_sumber(url: str) -> str:
-        domain = re.sub(r"https?://(www\.)?", "", url).split("/")[0].lower()
-        for t1 in TIER1_KEYWORDS:
-            if t1 in domain:
-                return "Tier 1"
-        return "Tier 2"
+    # Klasifikasi tier sumber (Tier 1/Tier 2/Institusi) dipindah ke
+    # tier_config.py -- dipakai bareng sama dashboard_ais.py, lihat
+    # komentar lengkap di file itu soal kenapa (dulu di-duplikasi manual
+    # di 2 file, jebakan klasik gampang nggak sinkron).
 
     def extract_sumber_dari_judul(judul: str) -> str:
         m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
@@ -911,8 +902,17 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
                             continue
 
                     konten      = bersihkan_snippet(re.sub(r"<[^>]+>","",entry.get("summary","")), judul)
-                    sumber_nama = extract_sumber_dari_judul(judul) or re.sub(r"https?://(www\.)?","",link).split("/")[0]
-                    tier_asli   = tier_sumber(sumber_nama.lower())
+                    # Fallback SEBELUMNYA ambil domain dari `link` -- tapi
+                    # `link` RSS Google News selalu berupa URL redirect
+                    # (news.google.com/rss/articles/...), TIDAK PERNAH
+                    # domain publisher aslinya. Jadi kalau ekstraksi nama
+                    # dari suffix judul gagal, fallback lama menghasilkan
+                    # "news.google.com" sebagai nama sumber -- salah, dan
+                    # sempat kelihatan langsung di kolom Sumber Excel.
+                    # Sekarang jujur bilang "Sumber Tidak Diketahui"
+                    # daripada nampilin nama yang salah.
+                    sumber_nama = extract_sumber_dari_judul(judul) or "Sumber Tidak Diketahui"
+                    tier_asli   = classify_sumber(sumber_nama)
 
                     articles.append({
                         "judul": judul, "link": link, "tanggal": tanggal,
