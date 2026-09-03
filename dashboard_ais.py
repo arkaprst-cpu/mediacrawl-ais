@@ -16,6 +16,7 @@ import math
 from collections import Counter
 from datetime import datetime
 from struktur_app import STRUKTUR_APP
+from tier_config import classify_sumber
 
 
 def pisahkan_sumber_judul(judul: str):
@@ -659,30 +660,17 @@ def extract_keywords(df):
     return Counter(words).most_common(15)
 
 
-# Sama persis dengan TIER1_KEYWORDS di app.py -- tier tidak disimpan
-# sebagai kolom Excel tersendiri (cuma dipakai transient saat crawl),
-# jadi dihitung ulang di sini dari domain kolom Link yang memang tersimpan.
-_TIER1_KEYWORDS = {
-    "kompas","tempo","detik","cnnindonesia","republika","antaranews",
-    "mediaindonesia","bisnis","kontan","tribunnews","liputan6","okezone",
-    "sindonews","jpnn","suara","kumparan","rmol","inews","katadata",
-    "validnews","thejakartapost","jawapos",
-}
-
-
 def extract_sebaran_tier(df):
-    """Sebaran jumlah artikel per Tier sumber (1/2), dihitung ulang dari
-    NAMA sumber (kolom Sumber, mis. 'kompas.id', 'Tempo.co') dengan logika
-    yang sama seperti tier_sumber() di app.py. PENTING: bukan dari kolom
-    Link -- Link berisi URL redirect Google News (news.google.com/rss/...)
-    yang tidak pernah memuat nama domain publisher aslinya, jadi tidak bisa
-    dipakai untuk klasifikasi tier. app.py sendiri juga mengklasifikasikan
-    tier dari nama sumber, bukan dari URL artikel."""
+    """Sebaran jumlah artikel per Tier sumber (1/2/Institusi), dihitung
+    ulang dari NAMA sumber (kolom Sumber, mis. 'kompas.id', 'Tempo.co')
+    pakai classify_sumber() di tier_config.py -- SATU sumber kebenaran
+    yang dipakai bareng app.py, lihat komentar lengkap di file itu.
+    PENTING: bukan dari kolom Link -- Link berisi URL redirect Google News
+    (news.google.com/rss/...) yang tidak pernah memuat nama domain
+    publisher aslinya, jadi tidak bisa dipakai untuk klasifikasi tier."""
     counts = Counter()
     for raw in df['Sumber']:
-        nama = str(raw).lower()
-        tier = "Tier 1" if any(t1 in nama for t1 in _TIER1_KEYWORDS) else "Tier 2"
-        counts[tier] += 1
+        counts[classify_sumber(raw)] += 1
     return counts
 
 
@@ -2094,15 +2082,27 @@ with tab3:
 
     with col_tier:
         st.markdown("**Sebaran Sumber Media per Tier**")
-        st.caption("Tier 1 = media arus utama, Tier 2 = sumber lain")
         tier_counts = extract_sebaran_tier(df)
         total_tier = sum(tier_counts.values())
         if total_tier:
-            # Cuma 2 kategori -- bar penuh di sini kepanjangan buat informasi
-            # sesederhana ini. Dua stat tile berdampingan lebih ringkas dan
-            # langsung kebaca angkanya, tanpa perlu bandingin panjang bar.
+            # Institusi/Resmi (universitas, kementerian, dll -- rilis
+            # resmi yang ikut ke-crawl Google News, BUKAN "media") cuma
+            # ditampilkan kalau memang ada isinya -- supaya kartu ini
+            # tetap ringkas 2-tile buat mayoritas kasus (semua sumbernya
+            # media beneran), nggak keliatan bolong pas nol.
+            n_inst = tier_counts.get("Institusi/Resmi", 0)
+            caption = "Tier 1 = media arus utama, Tier 2 = sumber lain"
+            if n_inst:
+                caption += ", Institusi/Resmi = bukan media (rilis resmi lembaga/kampus)"
+            st.caption(caption)
             t1, t2 = tier_counts.get("Tier 1", 0), tier_counts.get("Tier 2", 0)
             pct1, pct2 = round(t1/total_tier*100), round(t2/total_tier*100)
+            tile3 = ""
+            if n_inst:
+                pct3 = round(n_inst/total_tier*100)
+                tile3 = (f"<div style='flex:1;background:rgba(180,160,120,0.14);border-radius:6px;padding:10px 12px;border-left:3px solid #C9A66B'>"
+                         f"<div style='font-size:10px;color:inherit;opacity:0.7;margin-bottom:2px'>Institusi/Resmi</div>"
+                         f"<div style='font-size:20px;font-weight:700;color:#C9A66B'>{n_inst}<span style='font-size:11px;font-weight:400;color:inherit;opacity:0.6'> ({pct3}%)</span></div></div>")
             st.markdown(f"""
             <div style='display:flex;gap:10px'>
               <div style='flex:1;background:rgba(99,179,237,0.12);border-radius:6px;padding:10px 12px;border-left:3px solid #63B3ED'>
@@ -2113,6 +2113,7 @@ with tab3:
                 <div style='font-size:10px;color:inherit;opacity:0.7;margin-bottom:2px'>Tier 2</div>
                 <div style='font-size:20px;font-weight:700;color:#94A3B8'>{t2}<span style='font-size:11px;font-weight:400;color:inherit;opacity:0.6'> ({pct2}%)</span></div>
               </div>
+              {tile3}
             </div>
             """, unsafe_allow_html=True)
 
