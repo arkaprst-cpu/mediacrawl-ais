@@ -764,22 +764,23 @@ Format output:
 
     # ── Query expansion ────────────────────────────────────────────────────
     def ekspansi_keyword_deepseek(client, keyword: str) -> list:
-        prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat 4-5 variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
+        prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
 
 Keyword input: "{keyword}"
 
 Aturan:
 - Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
+- Buat sebanyak yang relevan dan bermakna saja -- untuk keyword yang sudah sempit/spesifik cukup sedikit (2-3), untuk keyword yang luas/ambigu boleh lebih banyak, maksimal 10. Jangan mengada-ada variasi yang tidak nyambung hanya demi menambah jumlah
 - Gunakan bahasa Indonesia
 - Kembalikan HANYA array JSON berisi string query, tanpa teks lain
 
-Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
+Contoh output: ["query 1", "query 2", "query 3"]"""
         try:
             resp = client.chat.completions.create(
                 model=DEEPSEEK_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
-                max_tokens=300,
+                max_tokens=500,
                 # Matikan thinking mode: v4-flash aktifkan reasoning
                 # chain-of-thought secara default (effort "high") yang jauh
                 # lebih lambat dan tidak dibutuhkan untuk tugas sederhana
@@ -793,7 +794,11 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
             queries = json.loads(teks)
             if isinstance(queries, list):
-                return [keyword] + [q for q in queries if isinstance(q, str)]
+                # Jaring pengaman: prompt sudah minta maks 10, tapi model
+                # tidak selalu patuh -- dibatasi ulang di sini supaya jumlah
+                # query per keyword tidak bisa meledak tak terkendali dan
+                # membuat waktu crawl jadi tidak terprediksi.
+                return [keyword] + [q for q in queries if isinstance(q, str)][:10]
         except Exception:
             pass
         return [keyword]
