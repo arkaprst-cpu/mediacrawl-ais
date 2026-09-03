@@ -215,6 +215,27 @@ st.markdown("""
     font-size: 12px; color: inherit; opacity: 0.65; margin-top: 6px;
     text-transform: uppercase; letter-spacing: 0.04em;
   }
+
+  /* Tooltip custom (CSS-only, ganti atribut title="" bawaan browser) --
+     title="" native butuh kursor diem ~1 detik sebelum muncul (delay ini
+     dikontrol OS/browser, nggak bisa diatur dari halaman), dan itu
+     kerasa lambat waktu dites langsung di sesi online. Versi ini muncul
+     seketika (cuma transisi opacity 0.12s buat halus) begitu kursor
+     masuk area kartu, karena murni CSS :hover -- nggak nunggu timer
+     bawaan browser sama sekali. */
+  .ais-tip { position: relative; cursor: help; }
+  .ais-tip .ais-tip-box {
+    position: absolute; top: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    background: #12203a; border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 8px 10px;
+    font-size: 10.5px; font-weight: 400; color: #fff; line-height: 1.4;
+    text-align: center; white-space: normal; max-width: 240px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity 0.12s ease; z-index: 50;
+  }
+  .ais-tip:hover .ais-tip-box { opacity: 1; visibility: visible; }
   .stat-card-secondary {
     background: rgba(128,128,128,0.04); border: 1px solid rgba(128,128,128,0.15);
     border-radius: 6px; padding: 10px;
@@ -1235,21 +1256,22 @@ with tab1:
             pct = tv['pct']
             # Panah dihapus (sebelumnya ▲/▼) -- lihat catatan panjang di
             # kartu Dominasi Negatif di bawah soal kenapa. Konteks periode
-            # yang dibandingkan sekarang teks kecil yang SELALU kelihatan
-            # (bukan cuma tooltip hover) -- title="" tetap disertakan
-            # sebagai bonus buat browser yang hover-nya jalan, tapi bukan
-            # lagi satu-satunya jalan buat lihat detailnya.
+            # (rentang tanggal) sekarang teks kecil yang SELALU kelihatan;
+            # detail rata-rata/hari muncul lewat tooltip custom (.ais-tip,
+            # lihat blok <style>) yang instan, bukan title="" bawaan
+            # browser yang delay-nya ~1 detik dan nggak bisa diatur.
             tv_tip = (f"Dibandingkan {tv['label_awal']} (rata-rata {tv['avg_awal']} artikel/hari) "
                       f"vs {tv['label_akhir']} (rata-rata {tv['avg_akhir']} artikel/hari)")
             if pct >= 20:
-                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px'>meningkat {pct}%</div>"
+                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>meningkat {pct}%</div>"
             elif pct <= -20:
-                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px'>menurun {abs(pct)}%</div>"
+                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>menurun {abs(pct)}%</div>"
             else:
-                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
+                tv_delta_html = f"<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
             tv_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tv['label_awal']} vs {tv['label_akhir']}</div>"
-            tv_html = (f"<div title=\"{tv_tip}\" style='display:flex;justify-content:center;margin-top:6px'>"
-                       f"{sparkline_svg(tv['nilai'], color='#F5A623')}</div>{tv_delta_html}{tv_periode_html}")
+            tv_html = (f"<div class='ais-tip' style='margin-top:6px'>"
+                       f"<div style='display:flex;justify-content:center'>{sparkline_svg(tv['nilai'], color='#F5A623')}</div>"
+                       f"{tv_delta_html}{tv_periode_html}<span class='ais-tip-box'>{tv_tip}</span></div>")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #F5A623">
           <div class="stat-num-primary">{stats['total']}</div>
           <div class="stat-label-primary">Total Artikel</div>
@@ -1269,11 +1291,10 @@ with tab1:
         # di bawahnya nunjukkin penilaian -- dua hal beda yang gampang
         # disalahartikan harus searah). Kata "membaik"/"memburuk" saja
         # sudah cukup jelas tanpa simbol arah yang berpotensi disalah-
-        # baca. Konteks periode yang dibandingkan sekarang teks kecil yang
-        # SELALU kelihatan (bukan cuma tooltip hover) -- title="" tetap
-        # disertakan sebagai bonus buat browser yang hover-nya jalan, tapi
-        # user lapor tooltip-nya nggak nongol di device mereka, jadi teks
-        # permanen ini jadi jalur utama, bukan cadangan.
+        # baca. Rentang tanggal sekarang teks kecil yang SELALU kelihatan;
+        # detail rata-rata % muncul lewat tooltip custom (.ais-tip, lihat
+        # blok <style>) yang instan (CSS :hover murni), bukan title=""
+        # bawaan browser yang delay-nya ~1 detik dan nggak bisa diatur.
         tren = tren_negativitas(df)
         tren_html = ""
         if tren:
@@ -1281,15 +1302,16 @@ with tab1:
             tren_tip = (f"Dibandingkan {tren['label_awal']} (rata-rata {tren['avg_awal']}% negatif) "
                         f"vs {tren['label_akhir']} (rata-rata {tren['avg_akhir']}% negatif)")
             if d >= 5:
-                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#E74C3C;margin-top:4px'>memburuk {d} poin</div>"
+                delta_html = f"<div style='font-size:10px;color:#E74C3C;margin-top:4px'>memburuk {d} poin</div>"
             elif d <= -5:
-                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#27AE60;margin-top:4px'>membaik {abs(d)} poin</div>"
+                delta_html = f"<div style='font-size:10px;color:#27AE60;margin-top:4px'>membaik {abs(d)} poin</div>"
             else:
-                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
+                delta_html = f"<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
             tren_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tren['label_awal']} vs {tren['label_akhir']}</div>"
             # Satu baris tanpa newline -- lihat catatan di sparkline_svg().
-            tren_html = (f"<div title=\"{tren_tip}\" style='display:flex;justify-content:center;margin-top:6px'>"
-                         f"{sparkline_svg(tren['nilai'])}</div>{delta_html}{tren_periode_html}")
+            tren_html = (f"<div class='ais-tip' style='margin-top:6px'>"
+                         f"<div style='display:flex;justify-content:center'>{sparkline_svg(tren['nilai'])}</div>"
+                         f"{delta_html}{tren_periode_html}<span class='ais-tip-box'>{tren_tip}</span></div>")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
           <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
           <div class="stat-label-primary">Dominasi Negatif</div>
