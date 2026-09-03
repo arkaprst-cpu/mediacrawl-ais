@@ -544,56 +544,65 @@ if page == "crawl":
     .download-cta-icon { font-size: 26px; text-align: center; margin-bottom: 8px; }
     .download-cta-title { font-size: 16px; font-weight: 700; color: #F5A623; margin-bottom: 4px; text-align: center; }
     .download-cta-sub { font-size: 12px; color: inherit; opacity: 0.7; margin-bottom: 16px; line-height: 1.5; text-align: center; }
+    /* Kartu statistik & kartu artikel — SEBELUMNYA putih polos, peninggalan
+       dari sebelum seluruh app ini dibikin bertema navy gelap (login,
+       sidebar, kartu klaster, kotak Query semua sudah dimigrasi; ini
+       "pulau" terang terakhir). Round diskusi "font artikel kegedean" —
+       ternyata bukan cuma soal angka px, tapi bobot visual: judul navy
+       tebal 16px di atas kartu putih memang menonjol keras di tengah
+       halaman gelap. Dimigrasi penuh ke sistem warna yang sama dipakai di
+       seluruh app (rgba abu-abu utk card, oranye/biru utk aksen, palet
+       tone Positif/Netral/Negatif yang sama dgn dashboard_ais.py), DAN
+       ukuran fontnya diturunkan sedikit supaya proporsional dengan kartu
+       lain (klaster, spotlight) yang judulnya 13-15px bukan 16px. */
     .stat-card {
-        background: white; border: 1px solid #e8ecf0; border-radius: 10px;
-        padding: 1.2rem 1.5rem; text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
+        border-radius: 10px; padding: 1.1rem 1.5rem; text-align: center;
     }
-    .stat-number { font-size: 2rem; font-weight: 700; color: #1F3864; line-height: 1; }
-    .stat-label  { font-size: 0.75rem; color: #6b7280; margin-top: 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-number { font-size: 1.65rem; font-weight: 700; color: #F5A623; line-height: 1; }
+    .stat-label  { font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-top: 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
     .artikel-card {
-        background: #ffffff; border: 1px solid #e2e8f0;
-        border-left: 4px solid #1F3864; border-radius: 8px;
-        padding: 1.2rem 1.5rem; margin-bottom: 1rem;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        background: rgba(128,128,128,0.05); border: 1px solid rgba(128,128,128,0.18);
+        border-left: 3px solid #F5A623; border-radius: 8px;
+        padding: 1.1rem 1.4rem; margin-bottom: 1rem;
     }
-    .artikel-judul { font-size: 1rem; font-weight: 600; color: #1e293b; margin-bottom: 0.4rem; line-height: 1.4; }
+    .artikel-judul { font-size: 0.92rem; font-weight: 600; color: rgba(250,250,250,0.92); margin-bottom: 0.4rem; line-height: 1.45; }
     /* Warna link judul dibuat permanen (bukan cuma muncul saat hover) —
        sebelumnya sama persis dengan warna teks biasa saat tidak disentuh
        kursor, jadi nyaris tidak kelihatan kalau judulnya bisa diklik.
        Panah "↗" juga diperkuat (opacity & ketebalan naik) sebagai sinyal
        kedua. Opsi ini dipilih karena "teks biru = bisa diklik" adalah
-       konvensi web paling universal, tidak perlu penjelasan tambahan. */
-    .artikel-judul a.judul-link { color: #1a56c4; text-decoration: none; }
-    .artikel-judul a.judul-link:hover { color: #1F3864; text-decoration: underline; }
+       konvensi web paling universal, tidak perlu penjelasan tambahan.
+       Warna disesuaikan ke aksen biru terang (bukan navy gelap #1a56c4
+       lama) supaya tetap kontras di atas kartu gelap. */
+    .artikel-judul a.judul-link { color: #63B3ED; text-decoration: none; }
+    .artikel-judul a.judul-link:hover { color: #8ECBFA; text-decoration: underline; }
     .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.8em; font-weight: 700; opacity: 0.75; margin-left: 5px; white-space: nowrap; }
-    .artikel-meta  { font-size: 0.78rem; color: #64748b; margin-bottom: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
-    .artikel-ringkasan { font-size: 0.88rem; color: #374151; line-height: 1.6; margin-bottom: 0.6rem; }
-    .tone-positif { background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
-    .tone-netral  { background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
-    .tone-negatif { background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:0.75rem;font-weight:600; }
-    /* Pill sumber & badge aktor/topik — konsep sama dengan yang sudah
-       dipakai di Dashboard AIS (pill nama media, badge topik indigo,
-       badge aktor slate), tapi warnanya disesuaikan untuk card PUTIH di
-       halaman ini (Dashboard AIS pakai card gelap) supaya kontrasnya
-       tetap terjaga, bukan asal salin warna yang jadi pudar di background
-       terang. */
+    .artikel-meta  { font-size: 0.75rem; color: rgba(255,255,255,0.55); margin-bottom: 0.7rem; font-family: 'IBM Plex Mono', monospace; }
+    .artikel-ringkasan { font-size: 0.85rem; color: rgba(255,255,255,0.8); line-height: 1.6; margin-bottom: 0.5rem; }
+    .tone-positif { background: rgba(39,174,96,0.15); color: #27AE60; padding:2px 10px; border-radius:12px; font-size:0.72rem; font-weight:600; }
+    .tone-netral  { background: rgba(149,165,166,0.15); color: #95A5A6; padding:2px 10px; border-radius:12px; font-size:0.72rem; font-weight:600; }
+    .tone-negatif { background: rgba(231,76,60,0.15); color: #E74C3C; padding:2px 10px; border-radius:12px; font-size:0.72rem; font-weight:600; }
+    /* Pill sumber & badge aktor/topik — disamakan PERSIS ke versi gelap
+       yang sudah ada di Dashboard AIS (pill nama media oranye, badge
+       topik indigo, badge aktor slate), bukan reinvent warna baru lagi. */
     .pill-sumber {
         display: inline-block; font-size: 10px; font-weight: 700;
         font-family: 'IBM Plex Mono', monospace;
-        color: #92400e; background: #fef3c7; border: 1px solid #fde68a;
+        color: #F5A623; background: rgba(245,166,35,0.12);
+        border: 1px solid rgba(245,166,35,0.35);
         padding: 1px 7px; border-radius: 3px;
         margin-right: 6px; letter-spacing: 0.02em;
         text-transform: uppercase; vertical-align: middle;
     }
     .badge-pill {
-        display: inline-block; font-size: 10.5px; font-weight: 600;
+        display: inline-block; font-size: 10px; font-weight: 600;
         font-family: 'IBM Plex Mono', monospace;
-        padding: 2px 8px; border-radius: 4px;
-        margin-right: 5px; margin-top: 4px;
+        padding: 2px 7px; border-radius: 3px;
+        margin-right: 4px; margin-top: 4px;
     }
-    .badge-topik { background: #e0e7ff; color: #4338ca; }
-    .badge-aktor { background: #e2e8f0; color: #475569; }
+    .badge-topik { background: rgba(99,102,241,0.15); color: #818CF8; }
+    .badge-aktor { background: rgba(148,163,184,0.16); color: #94A3B8; }
     .artikel-tanggal { opacity: 0.65; }
     /* Kotak Query — SEBELUMNYA warnanya di-hardcode buat tema TERANG
        (#eff6ff/#1e40af), padahal seluruh app ini sudah navy gelap. Itu
@@ -1441,7 +1450,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         c0,c1,c2,c3 = st.columns(4)
         with c0:
             st.markdown(f'<div class="stat-card"><div class="stat-number">{len(hasil_list)}</div><div class="stat-label">Total Artikel</div></div>', unsafe_allow_html=True)
-        for col,tone,warna,emoji in [(c1,"Positif","#065f46","🟢"),(c2,"Netral","#92400e","🟡"),(c3,"Negatif","#991b1b","🔴")]:
+        for col,tone,warna,emoji in [(c1,"Positif","#27AE60","🟢"),(c2,"Netral","#95A5A6","🟡"),(c3,"Negatif","#E74C3C","🔴")]:
             with col:
                 st.markdown(f'<div class="stat-card"><div class="stat-number" style="color:{warna}">{tone_counts[tone]}</div><div class="stat-label">{emoji} {tone}</div></div>', unsafe_allow_html=True)
 
@@ -1451,7 +1460,10 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
         # sebelum user sempat lihat artikel apa saja yang ketarik.
         # Sekarang jadi penutup alami: tinjau dulu artikelnya, baru unduh.
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### 📰 Artikel yang Ditemukan")
+        # Diselaraskan ke gaya .process-section-label yang sama dipakai
+        # "Proses Crawl & Analisis" di atas (bukan lagi markdown ### bawaan
+        # Streamlit yang keluar jalur dari sistem heading app ini).
+        st.markdown('<div class="process-section-label">📰 Artikel yang Ditemukan</div>', unsafe_allow_html=True)
         c_filter1, c_filter2 = st.columns(2)
         with c_filter1:
             filter_tone = st.selectbox("Filter tone:", ["Semua","Positif","Netral","Negatif"])
@@ -1503,7 +1515,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                 <div class="artikel-meta"><span class="artikel-tanggal">📅 {h.get('tanggal','-')}</span> &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
                 <div style="margin:2px 0 10px 0">{topik_badge}{aktor_pills}</div>
                 <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
-                <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8">🗂️ Klaster: {klaster_label}</div>
+                <div style="margin-top:8px;font-size:0.72rem;color:rgba(255,255,255,0.5)">🗂️ Klaster: {klaster_label}</div>
             </div>""", unsafe_allow_html=True)
 
         # Kartu unduh — penutup alami setelah user selesai meninjau daftar
