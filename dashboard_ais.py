@@ -223,20 +223,32 @@ st.markdown("""
      seketika (cuma transisi opacity 0.12s buat halus) begitu kursor
      masuk area kartu, karena murni CSS :hover -- nggak nunggu timer
      bawaan browser sama sekali. */
-  .ais-tip { position: relative; cursor: help; }
+  /* z-index diberi di SINI (bukan cuma di .ais-tip-box) supaya elemen
+     ini bikin stacking context sendiri -- tanpa ini, box anaknya
+     (z-index:50) cuma bersaing di level ancestor yang lebih atas, jadi
+     bisa "keselip" ketiban SVG sparkline dari .ais-tip lain di kartu
+     yang sama (kejadian nyata: garis sparkline nembus keliatan di atas
+     teks tooltip). :hover dinaikkan lebih tinggi lagi biar yang lagi
+     aktif di-hover pasti menang lawan .ais-tip lain yang nggak dihover. */
+  .ais-tip { position: relative; cursor: help; z-index: 1; }
+  .ais-tip:hover { z-index: 60; }
   .ais-tip .ais-tip-box {
     position: absolute; top: calc(100% + 6px); left: 50%;
     transform: translateX(-50%);
-    background: #12203a; border: 1px solid rgba(255,255,255,0.15);
+    background: #05070d; border: 1px solid rgba(255,255,255,0.25);
     border-radius: 8px; padding: 8px 10px;
-    font-size: 10.5px; font-weight: 400; color: #fff; line-height: 1.4;
+    font-size: 11px; font-weight: 400; color: #fff; line-height: 1.5;
     text-align: center; white-space: normal; max-width: 240px;
     text-transform: none; letter-spacing: normal;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
-    opacity: 0; visibility: hidden; pointer-events: none;
-    transition: opacity 0.12s ease; z-index: 50;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    /* visibility SAJA, tanpa opacity/transition -- dulu pakai
+       opacity 0<->1 dengan transisi, tapi kalau kursor nggak persis
+       diem itu bisa nyangkut di tengah transisi jadi keliatan
+       "transparan"/susah dibaca. visibility on/off itu instan &
+       binary, nggak ada state transisi separuh jalan sama sekali. */
+    visibility: hidden; pointer-events: none; z-index: 50;
   }
-  .ais-tip:hover .ais-tip-box { opacity: 1; visibility: visible; }
+  .ais-tip:hover .ais-tip-box { visibility: visible; }
   .stat-card-secondary {
     background: rgba(128,128,128,0.04); border: 1px solid rgba(128,128,128,0.15);
     border-radius: 6px; padding: 10px;
@@ -1339,13 +1351,15 @@ with tab1:
         # total". "% Artikel Negatif" aman di semua nilai + self-explanatory.
         # Ikon (i) di sebelahnya pakai pola tooltip custom yang sama kayak
         # sparkline (instan, CSS :hover, bukan title="" bawaan browser) --
-        # jelasin definisi metrik + cara hitung tren sekali hover, biar
-        # kartu tetap ringkas buat yang udah paham tapi ada penjelasan buat
-        # yang belum.
-        info_tip = ("% Artikel Negatif = persentase artikel bernada negatif dari total artikel yang dianalisis "
-                    "pada periode ini. Tren (kata \"membaik\"/\"memburuk\" + sparkline) membandingkan rata-rata "
-                    "%negatif harian di paruh awal vs paruh akhir periode data -- perubahan 5 poin persentase "
-                    "atau lebih dianggap membaik/memburuk, di bawah itu dianggap relatif stabil.")
+        # jelasin definisi metrik sekali hover, biar kartu tetap ringkas
+        # buat yang udah paham tapi ada penjelasan buat yang belum. Teks
+        # awalnya kepanjangan & muter-muter jelasin cara hitung tren segala
+        # (user bilang "metanarasi", susah dicerna sekali baca) -- dipotong
+        # jadi satu kalimat pendek, cuma definisi intinya. Detail cara
+        # hitung tren udah cukup terwakili lewat kata "membaik"/"memburuk"
+        # + tooltip terpisah di sparkline-nya sendiri, nggak perlu diulang
+        # di sini.
+        info_tip = "Persentase artikel bernada negatif dari seluruh artikel yang dianalisis pada periode ini."
         # ais-tip ditaruh di DIV LABEL itu sendiri (bukan cuma di span ikon
         # kecilnya) -- karena div ini full-width (block, bukan inline),
         # tooltip yang center relatif ke elemen ini jadi center ke LEBAR
