@@ -743,53 +743,116 @@ def risiko_per_aktor(df, top_n=8):
     ]
 
 
+_BULAN_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+
+
+def _parse_tanggal_terurut(df):
+    """Parse kolom 'Tanggal' (string, format utama '%d %b %Y' dari app.py,
+    dengan fallback ISO YYYY-MM-DD kalau parsing tanggal RSS gagal) jadi
+    tanggal asli yang bisa diurutkan kronologis dengan benar, lalu urutkan.
+
+    PENTING -- ini nemu bug laten: groupby('Tanggal') langsung (sort=True
+    default pandas) mengurutkan berdasarkan STRING, bukan tanggal asli.
+    Nama bulan singkatan nggak terurut benar sebagai teks lintas bulan/
+    tahun -- 'Apr' < 'Jan' secara alfabet, padahal Januari lebih dulu
+    dari April secara kalender. Google News RSS bisa saja mengembalikan
+    artikel dari bulan/tahun berbeda dalam satu batch crawl, jadi bug ini
+    nyata, bukan teoretis. Baris yang tanggalnya gagal di-parse (NaT)
+    dibuang -- tidak bisa ditaruh di posisi kronologis mana pun."""
+    d2 = df.copy()
+    d2['_tgl'] = pd.to_datetime(d2['Tanggal'], errors='coerce')
+    return d2.dropna(subset=['_tgl'])
+
+
+def _label_tgl(d, dengan_tahun=True):
+    tgl = f"{d.day} {_BULAN_ID[d.month - 1]}"
+    return f"{tgl} {d.year}" if dengan_tahun else tgl
+
+
+def _label_rentang(tgls):
+    """Label rentang tanggal buat tooltip. Tahun SELALU disertakan kalau
+    rentangnya lintas tahun -- tanpa itu, mis. '24 Okt' lalu '4 Jun' bisa
+    kebaca kayak urutan mundur (padahal itu Okt tahun lalu -> Jun tahun
+    ini), soalnya Google News RSS memang bisa mengembalikan artikel lawas
+    lintas tahun dalam satu batch crawl (bukan skenario teoretis -- ini
+    kejadian beneran waktu testing)."""
+    if not tgls:
+        return "-"
+    lo, hi = min(tgls), max(tgls)
+    if lo == hi:
+        return _label_tgl(lo)
+    sama_tahun = lo.year == hi.year
+    return f"{_label_tgl(lo, dengan_tahun=not sama_tahun)}–{_label_tgl(hi)}"
+
+
 def tren_negativitas(df):
     """Tren % artikel Negatif per hari, buat sparkline + delta di kartu
     'Dominasi Negatif' (Tab Ikhtisar). Dibandingkan separuh awal vs separuh
     akhir periode -- bukan titik pertama-vs-terakhir -- supaya tidak gampang
     kepengaruh noise di satu hari yang datanya sedikit. None kalau datanya
-    cuma 1 hari (belum ada tren yang bisa dibaca)."""
+    cuma 1 hari (belum ada tren yang bisa dibaca). label_awal/label_akhir +
+    avg_awal/avg_akhir disertakan buat tooltip -- supaya angka delta-nya
+    tidak jadi angka telanjang tanpa konteks periode yang dibandingkan."""
     if 'Tanggal' not in df.columns:
         return None
-    harian = df.groupby('Tanggal').apply(
+    d2 = _parse_tanggal_terurut(df)
+    if d2.empty:
+        return None
+    harian = d2.groupby(d2['_tgl'].dt.date).apply(
         lambda g: round((g['Tone'] == 'Negatif').sum() / len(g) * 100)
     ).sort_index()
     if len(harian) < 2:
         return None
     nilai = harian.tolist()
+    tanggal = harian.index.tolist()
     tengah = len(nilai) // 2
-    awal = nilai[:tengah]
-    akhir = nilai[-tengah:]
-    delta = round(sum(akhir) / len(akhir) - sum(awal) / len(awal))
-    return {'nilai': nilai, 'delta': delta}
+    awal, akhir = nilai[:tengah], nilai[-tengah:]
+    tgl_awal, tgl_akhir = tanggal[:tengah], tanggal[-tengah:]
+    avg_awal = sum(awal) / len(awal)
+    avg_akhir = sum(akhir) / len(akhir)
+    delta = round(avg_akhir - avg_awal)
+    return {
+        'nilai': nilai, 'delta': delta,
+        'label_awal': _label_rentang(tgl_awal), 'label_akhir': _label_rentang(tgl_akhir),
+        'avg_awal': round(avg_awal), 'avg_akhir': round(avg_akhir),
+    }
 
 
 def tren_volume(df):
     """Tren JUMLAH artikel per hari, buat sparkline+delta di kartu 'Total
     Artikel' -- mencerminkan tren_negativitas() (sama-sama separuh awal vs
-    akhir periode) tapi basisnya volume, bukan proporsi Negatif. PENTING:
-    delta di sini sengaja TIDAK dinilai baik/buruk seperti tren negativitas
-    -- volume naik cuma berarti pemberitaan makin ramai, bukan otomatis
-    sinyal positif/negatif, jadi label & warnanya netral (bukan merah/
-    hijau), dan pakai basis persentase (bukan poin) karena skalanya beda-
-    beda tiap batch crawl (5 artikel/hari vs 50 artikel/hari sama-sama
-    valid, jadi tidak masuk akal pakai ambang batas jumlah tetap)."""
+    akhir periode, sama-sama disertai label tanggal buat tooltip) tapi
+    basisnya volume, bukan proporsi Negatif. PENTING: delta di sini sengaja
+    TIDAK dinilai baik/buruk seperti tren negativitas -- volume naik cuma
+    berarti pemberitaan makin ramai, bukan otomatis sinyal positif/negatif,
+    jadi label & warnanya netral (bukan merah/hijau), dan pakai basis
+    persentase (bukan poin) karena skalanya beda-beda tiap batch crawl (5
+    artikel/hari vs 50 artikel/hari sama-sama valid, jadi tidak masuk akal
+    pakai ambang batas jumlah tetap)."""
     if 'Tanggal' not in df.columns:
         return None
-    harian = df.groupby('Tanggal').size().sort_index()
+    d2 = _parse_tanggal_terurut(df)
+    if d2.empty:
+        return None
+    harian = d2.groupby(d2['_tgl'].dt.date).size().sort_index()
     if len(harian) < 2:
         return None
     nilai = harian.tolist()
+    tanggal = harian.index.tolist()
     tengah = len(nilai) // 2
-    awal = nilai[:tengah]
-    akhir = nilai[-tengah:]
+    awal, akhir = nilai[:tengah], nilai[-tengah:]
+    tgl_awal, tgl_akhir = tanggal[:tengah], tanggal[-tengah:]
     avg_awal = sum(awal) / len(awal)
     avg_akhir = sum(akhir) / len(akhir)
     if avg_awal > 0:
         pct = round((avg_akhir - avg_awal) / avg_awal * 100)
     else:
         pct = 100 if avg_akhir > 0 else 0
-    return {'nilai': nilai, 'pct': pct}
+    return {
+        'nilai': nilai, 'pct': pct,
+        'label_awal': _label_rentang(tgl_awal), 'label_akhir': _label_rentang(tgl_akhir),
+        'avg_awal': round(avg_awal, 1), 'avg_akhir': round(avg_akhir, 1),
+    }
 
 
 def sparkline_svg(nilai, color="#E74C3C", w=120, h=28):
@@ -1137,13 +1200,17 @@ with tab1:
         tv_html = ""
         if tv:
             pct = tv['pct']
+            # Tooltip nunjukin persis periode yang dibandingkan -- tanpa ini
+            # "meningkat 50%" cuma angka telanjang tanpa konteks tanggal.
+            tv_tip = (f"Dibandingkan {tv['label_awal']} (rata-rata {tv['avg_awal']} artikel/hari) "
+                      f"vs {tv['label_akhir']} (rata-rata {tv['avg_akhir']} artikel/hari)")
             if pct >= 20:
-                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>▲ meningkat {pct}%</div>"
+                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px;cursor:help'>▲ meningkat {pct}%</div>"
             elif pct <= -20:
-                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>▼ menurun {abs(pct)}%</div>"
+                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px;cursor:help'>▼ menurun {abs(pct)}%</div>"
             else:
-                tv_delta_html = "<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>– relatif stabil</div>"
-            tv_html = (f"<div style='display:flex;justify-content:center;margin-top:6px'>"
+                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px;cursor:help'>– relatif stabil</div>"
+            tv_html = (f"<div title=\"{tv_tip}\" style='display:flex;justify-content:center;margin-top:6px;cursor:help'>"
                        f"{sparkline_svg(tv['nilai'], color='#F5A623')}</div>{tv_delta_html}")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #F5A623">
           <div class="stat-num-primary">{stats['total']}</div>
@@ -1156,18 +1223,32 @@ with tab1:
         # pct_pos yang sudah ada di kartu-kartu stat ini). Bandingkan
         # separuh awal vs akhir periode: >=5 poin dianggap memburuk/
         # membaik, di bawah itu dianggap noise/relatif stabil.
+        #
+        # Arah panah SENGAJA mengikuti PENILAIAN baik/buruk (▲ hijau =
+        # membaik, ▼ merah = memburuk), BUKAN arah angka mentahnya (yang
+        # justru turun kalau membaik, karena ini % Negatif). Awalnya panah
+        # ikut angka mentah (pola dashboard analytics standar utk metrik
+        # "makin kecil makin bagus"), tapi itu bikin bingung -- ▼ hijau
+        # kebaca kontradiktif buat pembaca yang insting-nya "hijau=naik=
+        # bagus". Kartu Total Artikel di sebelah TIDAK ikut dibalik --
+        # volume naik/turun di situ netral, tidak ada penilaian baik/buruk
+        # yang perlu diselaraskan sama arah panahnya.
         tren = tren_negativitas(df)
         tren_html = ""
         if tren:
             d = tren['delta']
+            # Tooltip nunjukin persis periode yang dibandingkan -- tanpa ini
+            # "membaik 8 poin" cuma angka telanjang tanpa konteks tanggal.
+            tren_tip = (f"Dibandingkan {tren['label_awal']} (rata-rata {tren['avg_awal']}% negatif) "
+                        f"vs {tren['label_akhir']} (rata-rata {tren['avg_akhir']}% negatif)")
             if d >= 5:
-                delta_html = f"<div style='font-size:10px;color:#E74C3C;margin-top:4px'>▲ memburuk {d} poin</div>"
+                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#E74C3C;margin-top:4px;cursor:help'>▼ memburuk {d} poin</div>"
             elif d <= -5:
-                delta_html = f"<div style='font-size:10px;color:#27AE60;margin-top:4px'>▼ membaik {abs(d)} poin</div>"
+                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#27AE60;margin-top:4px;cursor:help'>▲ membaik {abs(d)} poin</div>"
             else:
-                delta_html = "<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>– relatif stabil</div>"
+                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px;cursor:help'>– relatif stabil</div>"
             # Satu baris tanpa newline -- lihat catatan di sparkline_svg().
-            tren_html = (f"<div style='display:flex;justify-content:center;margin-top:6px'>"
+            tren_html = (f"<div title=\"{tren_tip}\" style='display:flex;justify-content:center;margin-top:6px;cursor:help'>"
                          f"{sparkline_svg(tren['nilai'])}</div>{delta_html}")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
           <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
