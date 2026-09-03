@@ -764,6 +764,34 @@ def tren_negativitas(df):
     return {'nilai': nilai, 'delta': delta}
 
 
+def tren_volume(df):
+    """Tren JUMLAH artikel per hari, buat sparkline+delta di kartu 'Total
+    Artikel' -- mencerminkan tren_negativitas() (sama-sama separuh awal vs
+    akhir periode) tapi basisnya volume, bukan proporsi Negatif. PENTING:
+    delta di sini sengaja TIDAK dinilai baik/buruk seperti tren negativitas
+    -- volume naik cuma berarti pemberitaan makin ramai, bukan otomatis
+    sinyal positif/negatif, jadi label & warnanya netral (bukan merah/
+    hijau), dan pakai basis persentase (bukan poin) karena skalanya beda-
+    beda tiap batch crawl (5 artikel/hari vs 50 artikel/hari sama-sama
+    valid, jadi tidak masuk akal pakai ambang batas jumlah tetap)."""
+    if 'Tanggal' not in df.columns:
+        return None
+    harian = df.groupby('Tanggal').size().sort_index()
+    if len(harian) < 2:
+        return None
+    nilai = harian.tolist()
+    tengah = len(nilai) // 2
+    awal = nilai[:tengah]
+    akhir = nilai[-tengah:]
+    avg_awal = sum(awal) / len(awal)
+    avg_akhir = sum(akhir) / len(akhir)
+    if avg_awal > 0:
+        pct = round((avg_akhir - avg_awal) / avg_awal * 100)
+    else:
+        pct = 100 if avg_akhir > 0 else 0
+    return {'nilai': nilai, 'pct': pct}
+
+
 def sparkline_svg(nilai, color="#E74C3C", w=120, h=28):
     """Sparkline minimal -- garis tipis 2px + satu titik penanda nilai
     terakhir, tanpa axis/gridline (mengikuti spek mark dataviz skill).
@@ -1100,9 +1128,27 @@ with tab1:
     # di bawahnya supaya bobot visual tidak rata.
     c_p1, c_p2 = st.columns(2)
     with c_p1:
+        # Sparkline+delta volume harian -- mencerminkan pola di kartu
+        # "Dominasi Negatif" di sebelahnya, supaya kedua kartu primer
+        # simetris tanpa salah satu terasa lowong. Beda dari kartu
+        # Dominasi Negatif: delta di sini netral (oranye, bukan merah/
+        # hijau) karena volume naik bukan otomatis sinyal buruk/baik.
+        tv = tren_volume(df)
+        tv_html = ""
+        if tv:
+            pct = tv['pct']
+            if pct >= 20:
+                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>▲ meningkat {pct}%</div>"
+            elif pct <= -20:
+                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>▼ menurun {abs(pct)}%</div>"
+            else:
+                tv_delta_html = "<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>– relatif stabil</div>"
+            tv_html = (f"<div style='display:flex;justify-content:center;margin-top:6px'>"
+                       f"{sparkline_svg(tv['nilai'], color='#F5A623')}</div>{tv_delta_html}")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #F5A623">
           <div class="stat-num-primary">{stats['total']}</div>
           <div class="stat-label-primary">Total Artikel</div>
+          {tv_html}
         </div>""", unsafe_allow_html=True)
     with c_p2:
         # Sparkline + delta arah tren -- pengganti "Distribusi Sentimen
