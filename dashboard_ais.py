@@ -1262,15 +1262,25 @@ with tab1:
             # browser yang delay-nya ~1 detik dan nggak bisa diatur.
             tv_tip = (f"Dibandingkan {tv['label_awal']} (rata-rata {tv['avg_awal']} artikel/hari) "
                       f"vs {tv['label_akhir']} (rata-rata {tv['avg_akhir']} artikel/hari)")
+            # Warna sparkline ikut INTENSITAS sinyal (oranye = ada
+            # perubahan berarti, abu-abu = stabil) -- BUKAN ikut arah
+            # naik/turun kayak kartu Dominasi Negatif di sebelah, karena
+            # volume naik/turun bukan otomatis sinyal buruk/baik (beda
+            # dari %negatif yang jelas ada baik-buruknya). Tetap disamain
+            # sama teksnya sendiri (oranye solid pas berubah, abu2 pas
+            # stabil) biar nggak ada elemen visual yang kontradiktif.
             if pct >= 20:
                 tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>meningkat {pct}%</div>"
+                tv_spark_color = '#F5A623'
             elif pct <= -20:
                 tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>menurun {abs(pct)}%</div>"
+                tv_spark_color = '#F5A623'
             else:
                 tv_delta_html = f"<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
+                tv_spark_color = '#7F8C8D'
             tv_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tv['label_awal']} vs {tv['label_akhir']}</div>"
             tv_html = (f"<div class='ais-tip' style='margin-top:6px'>"
-                       f"<div style='display:flex;justify-content:center'>{sparkline_svg(tv['nilai'], color='#F5A623')}</div>"
+                       f"<div style='display:flex;justify-content:center'>{sparkline_svg(tv['nilai'], color=tv_spark_color)}</div>"
                        f"{tv_delta_html}{tv_periode_html}<span class='ais-tip-box'>{tv_tip}</span></div>")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #F5A623">
           <div class="stat-num-primary">{stats['total']}</div>
@@ -1301,16 +1311,25 @@ with tab1:
             d = tren['delta']
             tren_tip = (f"Dibandingkan {tren['label_awal']} (rata-rata {tren['avg_awal']}% negatif) "
                         f"vs {tren['label_akhir']} (rata-rata {tren['avg_akhir']}% negatif)")
+            # Warna sparkline ikut POLARITAS (bukan cuma intensitas kayak
+            # Total Artikel) -- merah=memburuk, hijau=membaik, abu=stabil
+            # -- disamain PERSIS sama warna teks di bawahnya. Sebelumnya
+            # garis ini selalu merah apapun arahnya, jadi kalau tren lagi
+            # membaik (teks hijau) garisnya tetap merah -- kontradiksi
+            # yang sama persis kayak masalah panah yang sudah dibenerin.
             if d >= 5:
                 delta_html = f"<div style='font-size:10px;color:#E74C3C;margin-top:4px'>memburuk {d} poin</div>"
+                tren_spark_color = '#E74C3C'
             elif d <= -5:
                 delta_html = f"<div style='font-size:10px;color:#27AE60;margin-top:4px'>membaik {abs(d)} poin</div>"
+                tren_spark_color = '#27AE60'
             else:
                 delta_html = f"<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
+                tren_spark_color = '#7F8C8D'
             tren_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tren['label_awal']} vs {tren['label_akhir']}</div>"
             # Satu baris tanpa newline -- lihat catatan di sparkline_svg().
             tren_html = (f"<div class='ais-tip' style='margin-top:6px'>"
-                         f"<div style='display:flex;justify-content:center'>{sparkline_svg(tren['nilai'])}</div>"
+                         f"<div style='display:flex;justify-content:center'>{sparkline_svg(tren['nilai'], color=tren_spark_color)}</div>"
                          f"{delta_html}{tren_periode_html}<span class='ais-tip-box'>{tren_tip}</span></div>")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
           <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
