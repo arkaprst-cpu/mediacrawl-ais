@@ -12,6 +12,7 @@ import pandas as pd
 import json
 import io
 import re
+import math
 from collections import Counter
 from datetime import datetime
 from struktur_app import STRUKTUR_APP
@@ -878,6 +879,38 @@ def sparkline_svg(nilai, color="#E74C3C", w=120, h=28):
             f'<polyline points="{path}" fill="none" stroke="{color}" stroke-width="2" '
             f'stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>'
             f'<circle cx="{last_x}" cy="{last_y}" r="2.5" fill="{color}"/></svg>')
+
+
+def donut_svg(segmen, w=140, stroke=16, gap=3):
+    """Donut chart minimal -- tiap kategori digambar sebagai <circle>
+    terpisah pakai teknik stroke-dasharray/stroke-dashoffset (bukan arc
+    path manual, jauh lebih simpel buat proporsi part-to-whole), dengan
+    celah kecil antar segmen (gap) dan persentase kategori dominan
+    ditulis di lubang tengah. segmen: list of (label, count, color).
+    Dirakit sebagai SATU baris per elemen (pola sama kayak sparkline_svg)
+    biar nggak kena bug parser markdown Streamlit yang salah baca blok
+    terindentasi sebagai code block."""
+    total = sum(c for _, c, _ in segmen)
+    if total <= 0:
+        return ""
+    cx = cy = w / 2
+    r = w / 2 - stroke / 2 - 2
+    keliling = 2 * math.pi * r
+    cum = 0.0
+    rings = []
+    for _, count, color in segmen:
+        panjang = (count / total) * keliling
+        dash = max(panjang - gap, 0.5)
+        rings.append(f'<circle cx="{cx}" cy="{cy}" r="{round(r,1)}" fill="none" stroke="{color}" '
+                     f'stroke-width="{stroke}" stroke-dasharray="{round(dash,1)} {round(keliling - dash,1)}" '
+                     f'stroke-dashoffset="{round(-cum,1)}" transform="rotate(-90 {cx} {cy})"/>')
+        cum += panjang
+    label, dom_count, dom_color = max(segmen, key=lambda s: s[1])
+    dom_pct = round(dom_count / total * 100)
+    teks = (f'<text x="{cx}" y="{cy-3}" text-anchor="middle" font-size="22" font-weight="700" '
+            f'fill="{dom_color}">{dom_pct}%</text>'
+            f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-size="10" fill="#888888">{label}</text>')
+    return f'<svg width="{w}" height="{w}" viewBox="0 0 {w} {w}">{"".join(rings)}{teks}</svg>'
 
 
 # ── SIDEBAR ──────────────────────────────────────────────────
@@ -1901,18 +1934,14 @@ with tab3:
 
     with col_sentimen:
         st.caption("Keseluruhan periode")
-        # SATU stacked bar (bukan 3 bar terpisah kayak sebelumnya) -- ini
-        # genuinely part-to-whole (Negatif+Netral+Positif = 100%), dan
-        # dataviz skill merekomendasikan stacked bar buat kasus itu supaya
-        # kebaca sekali lihat, bukan 3 bar full-width yang masing-masing
-        # cuma nunjukkin persentasenya sendiri-sendiri.
+        # Donut chart (bukan stacked bar) -- ini part-to-whole dengan satu
+        # kategori yang mayoritas jelas (bukan "close values" yang dilarang
+        # anti-pattern dataviz skill buat pie/donut), jadi lubang tengah
+        # bisa langsung nunjukkin persentase dominannya sekali lihat.
         tone_data = df['Tone'].value_counts()
         urutan = [t for t in ['Negatif', 'Netral', 'Positif'] if t in tone_data.index]
-        segmen = "".join(
-            f"<div style='width:{round(tone_data[t]/stats['total']*100)}%;height:100%;"
-            f"background:{colors_map.get(t,'#BDC3C7')}'></div>"
-            for t in urutan
-        )
+        segmen_data = [(t, int(tone_data[t]), colors_map.get(t, '#BDC3C7')) for t in urutan]
+        donut = donut_svg(segmen_data)
         legenda = "".join(
             f"<span style='margin-right:16px;white-space:nowrap'>"
             f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;"
@@ -1920,10 +1949,9 @@ with tab3:
             f"{t} {tone_data[t]} ({round(tone_data[t]/stats['total']*100)}%)</span>"
             for t in urutan
         )
-        st.markdown(f"<div style='height:20px;border-radius:6px;overflow:hidden;display:flex;"
-                    f"margin-bottom:10px'>{segmen}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='display:flex;justify-content:center;margin-bottom:10px'>{donut}</div>", unsafe_allow_html=True)
         st.markdown(f"<div style='font-size:11px;color:inherit;opacity:0.7;display:flex;"
-                    f"flex-wrap:wrap'>{legenda}</div>", unsafe_allow_html=True)
+                    f"flex-wrap:wrap;justify-content:center'>{legenda}</div>", unsafe_allow_html=True)
 
     with col_tanggal:
         st.caption("Per tanggal")
