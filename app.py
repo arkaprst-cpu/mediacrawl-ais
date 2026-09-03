@@ -1175,7 +1175,18 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
     # sengaja "Cara memulai" (bukan "Mulai di sini") karena kartu ini ada
     # di area konten utama, sedangkan aksi sesungguhnya (isi kata kunci,
     # klik tombol) ada di sidebar kiri — bukan di kartu ini sendiri.
-    if "hasil" not in st.session_state and not run_btn:
+    #
+    # `not crawl_running` WAJIB ikut di sini juga (bukan cuma `not
+    # run_btn`) — round diskusi "progress hijau/loading harus langsung
+    # kelihatan tanpa scroll". Tanpa ini, begitu proses crawl beneran
+    # jalan, run_btn sudah balik False lagi (bukan klik BARU di render
+    # itu), jadi kartu ini nongol LAGI persis di atas blok "⏳ Proses
+    # Crawl & Analisis" di bawah — user harus scroll dulu buat lihat
+    # progressnya. Dengan guard ini, begitu crawl_running True kartu
+    # langsung hilang; begitu crawl gagal/selesai (crawl_running balik
+    # False lewat `finally` di bawah) dan belum ada hasil, kartu muncul
+    # lagi seperti semula supaya user masih dapat panduan buat coba lagi.
+    if "hasil" not in st.session_state and not run_btn and not st.session_state.get("crawl_running", False):
         with st.container(key="crawl_empty_guide"):
             st.markdown("""
             <div class="empty-guide-title">👈 Cara memulai</div>
