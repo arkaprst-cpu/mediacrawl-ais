@@ -595,10 +595,47 @@ if page == "crawl":
     .badge-topik { background: #e0e7ff; color: #4338ca; }
     .badge-aktor { background: #e2e8f0; color: #475569; }
     .artikel-tanggal { opacity: 0.65; }
+    /* Kotak Query — SEBELUMNYA warnanya di-hardcode buat tema TERANG
+       (#eff6ff/#1e40af), padahal seluruh app ini sudah navy gelap. Itu
+       sebabnya kotak ini kelihatan paling mencolok/berat di layar (bug
+       tema, bukan cuma soal ukuran font) — persis masalah yang sama yang
+       sudah dibenahi di kartu "Cara memulai" (.st-key-crawl_empty_guide)
+       tapi belum sempat menyentuh kotak ini. Diselaraskan ke aksen biru
+       yang sudah dipakai di tempat lain (hover kartu artikel, tombol
+       Telaah) sebagai warna "informasional" — beda dari oranye (brand/
+       aksi utama) dan merah (risiko), supaya kode warna semantiknya tetap
+       konsisten. Daftar query juga diubah dari tumpukan baris jadi
+       pill/chip mengalir (round diskusi "lebih elegan") — lebih scannable
+       terutama saat query-nya banyak (bisa sampai puluhan). */
     .query-box {
-        background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
-        padding: 0.8rem 1rem; margin-bottom: 1rem;
-        font-size: 0.83rem; color: #1e40af; font-family: 'IBM Plex Mono', monospace;
+        background: rgba(99,179,237,0.06);
+        border: 1px solid rgba(99,179,237,0.25);
+        border-radius: 8px;
+        padding: 0.75rem 1rem 0.85rem; margin-bottom: 1rem;
+    }
+    .query-box-label {
+        font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+        text-transform: uppercase; color: #63B3ED; opacity: 0.85;
+        margin-bottom: 8px; font-family: 'IBM Plex Mono', monospace;
+    }
+    .query-pill {
+        display: inline-block; font-size: 11px; font-weight: 500;
+        font-family: 'IBM Plex Mono', monospace;
+        color: #8ECBFA; background: rgba(99,179,237,0.1);
+        border: 1px solid rgba(99,179,237,0.3);
+        padding: 3px 9px; border-radius: 12px;
+        margin: 3px 5px 0 0;
+    }
+    /* Judul tahapan proses ("Proses Crawl & Analisis") — sebelumnya
+       st.subheader() bawaan Streamlit (putih polos, ~24px), satu-satunya
+       heading di app ini yang tidak ikut gaya khas (aksen oranye, dsb).
+       Diselaraskan PERSIS ke gaya label section sidebar (.sidebar-
+       section-label — dipakai "KATA KUNCI ISU"/"RENTANG WAKTU") supaya
+       satu bahasa desain, bukan bikin gaya heading baru lagi. */
+    .process-section-label {
+        font-size: 0.78rem; font-weight: 700; color: #F5A623;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        margin: 4px 0 14px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1262,7 +1299,7 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
             antre_status.empty()
 
             try:
-                st.subheader("⏳ Proses Crawl & Analisis")
+                st.markdown('<div class="process-section-label">⏳ Proses Crawl & Analisis</div>', unsafe_allow_html=True)
 
                 with st.spinner("Memperluas keyword..."):
                     all_queries = []
@@ -1270,8 +1307,8 @@ Contoh output: ["query 1", "query 2", "query 3", "query 4"]"""
                         expanded = ekspansi_keyword_deepseek(ai_client, kw)
                         all_queries.extend(expanded)
 
-                query_lines = "<br>".join(f"🔍 {q}" for q in all_queries)
-                st.markdown(f'<div class="query-box"><b>Query ({len(all_queries)} variasi):</b><br>{query_lines}</div>', unsafe_allow_html=True)
+                query_pills = "".join(f'<span class="query-pill">🔍 {q}</span>' for q in all_queries)
+                st.markdown(f'<div class="query-box"><div class="query-box-label">Query ({len(all_queries)} variasi)</div>{query_pills}</div>', unsafe_allow_html=True)
 
                 prog_bar  = st.progress(0, text="Crawling Google News...")
                 status_tx = st.empty()
