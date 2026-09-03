@@ -674,6 +674,40 @@ def extract_dimensi_pengawasan(df):
     return [(d, counts[d]) for d in _DIMENSI_PENGAWASAN_URUT if counts.get(d, 0) > 0]
 
 
+def klaster_dominan_by_tone(df, tone_target, klaster_order, n=3):
+    """Klaster (bukan IsuSubisu per-artikel) yang dominan untuk tone
+    tertentu -- dipakai untuk card 'Isu Dominan Negatif/Positif'.
+
+    IsuSubisu sengaja TIDAK dipakai di sini (beda dengan versi lama):
+    label itu dibuat AI per artikel dan hampir selalu unik walau
+    ceritanya sama persis, jadi "top-N by value_counts" pada IsuSubisu
+    cuma memilih 3 variasi frasa dari SATU cerita yang sama, bukan 3
+    isu yang benar-benar berbeda. Klaster sudah dideduplikasi oleh AI
+    sendiri di tahap klasterisasi, jadi jadi satuan yang tepat untuk
+    "isu" di sini.
+
+    Diurutkan sesuai urutan prioritas yang AI sendiri tetapkan saat
+    klasterisasi (klaster_order, dari sesi crawl aktif -- lihat
+    PROMPT_KLASTER: "Urutkan array klaster dari yang paling
+    kritikal/prioritas..."), BUKAN cuma diurutkan berdasarkan jumlah
+    artikel -- klaster kecil tapi kritis bisa saja lebih prioritas
+    daripada klaster besar tapi rutin. Kalau klaster_order tidak
+    tersedia (mis. upload file lama tanpa sesi crawl aktif), fallback
+    ke urutan jumlah artikel terbanyak."""
+    if 'Klaster' not in df.columns:
+        return []
+    sub = df[(df['Tone'] == tone_target) & (df['Klaster'] != '-')]
+    if sub.empty:
+        return []
+    counts = sub['Klaster'].value_counts()
+    if klaster_order:
+        nama_terurut = [nm for nm in klaster_order if nm in counts.index] + \
+                        [nm for nm in counts.index if nm not in klaster_order]
+    else:
+        nama_terurut = counts.sort_values(ascending=False).index.tolist()
+    return nama_terurut[:n]
+
+
 def risiko_per_aktor(df, top_n=8):
     """Sebaran level risiko per Aktor/Lokasi — siapa yang paling sering
     terkait artikel risiko Tinggi, bukan sekadar paling sering disebut.
@@ -1634,8 +1668,9 @@ with tab2:
 with tab3:
     # Catatan analitis ditaruh paling atas — ini kesimpulan yang dicari
     # user, tabel & chart di bawah adalah rincian pendukungnya.
-    neg_issues = df[df['Tone']=='Negatif']['IsuSubisu'].value_counts().head(3).index.tolist()
-    pos_issues = df[df['Tone']=='Positif']['IsuSubisu'].value_counts().head(2).index.tolist()
+    _klaster_order = [k.get('nama', '-') for k in klaster_meta] if klaster_meta else None
+    neg_issues = klaster_dominan_by_tone(df, 'Negatif', _klaster_order, n=3)
+    pos_issues = klaster_dominan_by_tone(df, 'Positif', _klaster_order, n=2)
 
     st.markdown("**Catatan Analitis**")
     col_a, col_b, col_c = st.columns(3)
@@ -1666,33 +1701,41 @@ with tab3:
 
     st.markdown("---")
 
-    st.markdown("**Distribusi Sentimen Keseluruhan**")
+    st.markdown("**Distribusi Sentimen**")
 
-    tone_data = df['Tone'].value_counts()
-    colors_map = {'Negatif':'#E74C3C','Netral':'#BDC3C7','Positif':'#27AE60'}
+    colors_map = {'Negatif': '#E74C3C', 'Netral': '#BDC3C7', 'Positif': '#27AE60'}
+    col_sentimen, col_tanggal = st.columns(2)
 
-    # Visual bar chart manual — lebih clean dari st.bar_chart default
-    for tone_val, count in tone_data.items():
-        pct = round(count/stats['total']*100)
-        color = colors_map.get(str(tone_val),'#BDC3C7')
-        st.markdown(f"""
-        <div style='margin-bottom:12px'>
-          <div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px'>
-            <span style='font-weight:600;color:{color}'>{tone_val}</span>
-            <span style='font-family:monospace;color:inherit;opacity:0.5'>{count} artikel ({pct}%)</span>
-          </div>
-          <div style='height:20px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden'>
-            <div style='width:{pct}%;height:100%;background:{color};border-radius:4px'></div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+    with col_sentimen:
+        st.caption("Keseluruhan periode")
+        tone_data = df['Tone'].value_counts()
+        # Visual bar chart manual — lebih clean dari st.bar_chart default
+        for tone_val, count in tone_data.items():
+            pct = round(count/stats['total']*100)
+            color = colors_map.get(str(tone_val),'#BDC3C7')
+            st.markdown(f"""
+            <div style='margin-bottom:12px'>
+              <div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px'>
+                <span style='font-weight:600;color:{color}'>{tone_val}</span>
+                <span style='font-family:monospace;color:inherit;opacity:0.5'>{count} artikel ({pct}%)</span>
+              </div>
+              <div style='height:20px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden'>
+                <div style='width:{pct}%;height:100%;background:{color};border-radius:4px'></div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
-    st.markdown("**Distribusi per Tanggal**")
-
-    tanggal_counts = df.groupby(['Tanggal','Tone']).size().unstack(fill_value=0)
-    if not tanggal_counts.empty:
-        st.bar_chart(tanggal_counts, color=["#E74C3C","#BDC3C7","#27AE60"] if all(c in tanggal_counts.columns for c in ['Negatif','Netral','Positif']) else None, height=200)
+    with col_tanggal:
+        st.caption("Per tanggal")
+        tanggal_counts = df.groupby(['Tanggal','Tone']).size().unstack(fill_value=0)
+        if not tanggal_counts.empty:
+            # Warna diambil per kolom Tone yang benar-benar ada di batch ini.
+            # Sebelumnya pakai gate all(...) yang cuma kasih warna kalau KETIGA
+            # Tone lengkap ada -- kalau satu Tone saja kosong di batch (mis. tidak
+            # ada artikel Positif), warnanya diam-diam jatuh ke palet biru default
+            # Streamlit, nggak nyambung sama tema merah/abu/hijau di seluruh app.
+            chart_colors = [colors_map.get(col, '#BDC3C7') for col in tanggal_counts.columns]
+            st.bar_chart(tanggal_counts, color=chart_colors, height=180)
 
     # ── Bekas Tab 4 (Kata Kunci) -- digabung ke sini ────────────────────
     # Export JSON/CSV & "Aktor & Lembaga yang Disebut" sengaja tidak ikut
@@ -1731,18 +1774,23 @@ with tab3:
         tier_counts = extract_sebaran_tier(df)
         total_tier = sum(tier_counts.values())
         if total_tier:
-            for label, color in [("Tier 1", "#63B3ED"), ("Tier 2", "#94A3B8")]:
-                freq = tier_counts.get(label, 0)
-                pct = round(freq / total_tier * 100)
-                st.markdown(f"""
-                <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-                  <div style='font-size:11px;color:inherit;opacity:0.85;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{label}</div>
-                  <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                    <div style='width:{pct}%;height:100%;background:{color};border-radius:3px'></div>
-                  </div>
-                  <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:44px'>{freq} ({pct}%)</div>
-                </div>
-                """, unsafe_allow_html=True)
+            # Cuma 2 kategori -- bar penuh di sini kepanjangan buat informasi
+            # sesederhana ini. Dua stat tile berdampingan lebih ringkas dan
+            # langsung kebaca angkanya, tanpa perlu bandingin panjang bar.
+            t1, t2 = tier_counts.get("Tier 1", 0), tier_counts.get("Tier 2", 0)
+            pct1, pct2 = round(t1/total_tier*100), round(t2/total_tier*100)
+            st.markdown(f"""
+            <div style='display:flex;gap:10px'>
+              <div style='flex:1;background:rgba(99,179,237,0.12);border-radius:6px;padding:10px 12px;border-left:3px solid #63B3ED'>
+                <div style='font-size:10px;color:inherit;opacity:0.7;margin-bottom:2px'>Tier 1</div>
+                <div style='font-size:20px;font-weight:700;color:#63B3ED'>{t1}<span style='font-size:11px;font-weight:400;color:inherit;opacity:0.6'> ({pct1}%)</span></div>
+              </div>
+              <div style='flex:1;background:rgba(148,163,184,0.12);border-radius:6px;padding:10px 12px;border-left:3px solid #94A3B8'>
+                <div style='font-size:10px;color:inherit;opacity:0.7;margin-bottom:2px'>Tier 2</div>
+                <div style='font-size:20px;font-weight:700;color:#94A3B8'>{t2}<span style='font-size:11px;font-weight:400;color:inherit;opacity:0.6'> ({pct2}%)</span></div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("**Kata Kunci Dominan**")
