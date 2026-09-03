@@ -592,13 +592,31 @@ def compute_stats(df):
 
 
 def extract_keywords(df):
-    """Extract top keywords dari kolom IsuSubisu dan Judul."""
+    """Extract top keywords dari kolom IsuSubisu dan Judul.
+
+    Judul artikel dari Google News masih membawa suffix ' - NamaSumber'
+    (mis. 'Berita XYZ - detikNews') -- dibuang dulu sebelum tokenisasi,
+    supaya nama media tidak ikut kehitung sebagai 'kata kunci isu' (lihat
+    extract_sumber_dari_judul() di app.py, pola regex yang sama). Kata
+    generik lintas-topik ('kasus','diduga','dugaan','akibat', dst) juga
+    disaring -- kata-kata ini selalu muncul di hampir semua isu pengawasan
+    apa pun, jadi tidak membedakan topik batch crawl ini secara spesifik.
+    """
     stopwords = {'dan','di','ke','dari','untuk','yang','ini','itu','dengan',
                  'pada','oleh','sebagai','dalam','telah','akan','dapat','tidak',
-                 'bpjs','kesehatan','bpkp','atas','terkait','bagi','juga','serta'}
+                 'bpjs','kesehatan','bpkp','atas','terkait','bagi','juga','serta',
+                 'kasus','diduga','dugaan','akibat','adanya','masih','sudah',
+                 'setelah','sebelum','saat','usai'}
+    # str(x) per elemen, BUKAN df[col].astype(str) -- di pandas versi baru
+    # dengan dtype 'str' bawaan, .astype(str) di level Series tidak selalu
+    # menstringkan sel kosong (tetap balik nilai float NaN), beda dengan
+    # dtype 'object' klasik. str(x) builtin Python selalu aman untuk kedua
+    # kasus.
     words = []
     for col in ['IsuSubisu', 'Judul']:
-        for text in df[col].astype(str):
+        for raw in df[col]:
+            text = str(raw)
+            text = re.sub(r"\s[-–]\s[^-–]+$", "", text.strip())
             for w in text.lower().split():
                 w = w.strip('.,;:!?()[]"\'')
                 if len(w) > 3 and w not in stopwords:
@@ -606,15 +624,54 @@ def extract_keywords(df):
     return Counter(words).most_common(15)
 
 
-def extract_aktors(df):
-    """Extract aktor yang paling sering disebut."""
-    aktors = []
-    for text in df['AktorLokasi'].astype(str):
-        for a in text.split(','):
-            a = a.strip()
-            if a and a != 'nan' and len(a) > 2:
-                aktors.append(a)
-    return Counter(aktors).most_common(12)
+# Sama persis dengan TIER1_KEYWORDS di app.py -- tier tidak disimpan
+# sebagai kolom Excel tersendiri (cuma dipakai transient saat crawl),
+# jadi dihitung ulang di sini dari domain kolom Link yang memang tersimpan.
+_TIER1_KEYWORDS = {
+    "kompas","tempo","detik","cnnindonesia","republika","antaranews",
+    "mediaindonesia","bisnis","kontan","tribunnews","liputan6","okezone",
+    "sindonews","jpnn","suara","kumparan","rmol","inews","katadata",
+    "validnews","thejakartapost","jawapos",
+}
+
+
+def extract_sebaran_tier(df):
+    """Sebaran jumlah artikel per Tier sumber (1/2), dihitung ulang dari
+    NAMA sumber (kolom Sumber, mis. 'kompas.id', 'Tempo.co') dengan logika
+    yang sama seperti tier_sumber() di app.py. PENTING: bukan dari kolom
+    Link -- Link berisi URL redirect Google News (news.google.com/rss/...)
+    yang tidak pernah memuat nama domain publisher aslinya, jadi tidak bisa
+    dipakai untuk klasifikasi tier. app.py sendiri juga mengklasifikasikan
+    tier dari nama sumber, bukan dari URL artikel."""
+    counts = Counter()
+    for raw in df['Sumber']:
+        nama = str(raw).lower()
+        tier = "Tier 1" if any(t1 in nama for t1 in _TIER1_KEYWORDS) else "Tier 2"
+        counts[tier] += 1
+    return counts
+
+
+_DIMENSI_PENGAWASAN_URUT = ["Governance", "Risk", "Control", "Compliance", "Anti-Corruption", "Debottlenecking"]
+
+
+def extract_dimensi_pengawasan(df):
+    """Rekap dimensi pengawasan (GRCC AnCoDe) per KLASTER unik -- bukan per
+    baris artikel, supaya klaster dengan banyak artikel tidak menggelembung
+    hitungannya. Diurutkan sesuai urutan GRCC AnCoDe baku, bukan sekadar
+    frekuensi, supaya konsisten dibaca dari batch ke batch."""
+    if 'Klaster' not in df.columns or 'DimensiPengawasan' not in df.columns:
+        return []
+    per_klaster = df.drop_duplicates(subset=['Klaster'])['DimensiPengawasan']
+    counts = Counter()
+    for raw in per_klaster:
+        val = str(raw)
+        if val == 'nan' or not val.strip():
+            continue
+        for d in val.split(','):
+            d = d.strip()
+            if d:
+                counts[d] += 1
+    return [(d, counts[d]) for d in _DIMENSI_PENGAWASAN_URUT if counts.get(d, 0) > 0]
 
 
 def risiko_per_aktor(df, top_n=8):
@@ -950,7 +1007,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── TABS ─────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs(["📋 Ikhtisar", "🗂️ Klasterisasi Isu", "📈 Sentimen & Tren", "🔑 Kata Kunci"])
+tab1, tab2, tab3 = st.tabs(["📋 Ikhtisar", "🗂️ Klasterisasi Isu", "📈 Analisis & Tren"])
 
 
 # ════════════════════════════════════════════
@@ -1565,8 +1622,15 @@ with tab2:
 
 
 # ════════════════════════════════════════════
-# TAB 3 — TONE & TREN
+# TAB 3 — ANALISIS & TREN
 # ════════════════════════════════════════════
+# Digabung dari 2 tab lama (Sentimen & Tren + Kata Kunci) -- keduanya
+# sama-sama "insight agregat, bukan kerja telaah", jadi digabung jadi
+# satu tempat. "Sentimen per Subisu" dihapus dari sini: groupby-nya
+# pakai teks IsuSubisu persis sama, padahal label itu dibuat AI per
+# artikel dan hampir selalu unik walau ceritanya sama -- hasilnya bukan
+# tabel agregat, cuma me-relist tiap artikel satu-satu (tiap baris N:1)
+# dengan tampilan seolah sudah dikelompokkan.
 with tab3:
     # Catatan analitis ditaruh paling atas — ini kesimpulan yang dicari
     # user, tabel & chart di bawah adalah rincian pendukungnya.
@@ -1602,140 +1666,97 @@ with tab3:
 
     st.markdown("---")
 
-    col_tbl, col_chart = st.columns([3, 2])
+    st.markdown("**Distribusi Sentimen Keseluruhan**")
 
-    with col_tbl:
-        st.markdown("**Sentimen per Subisu**")
-        
-        tone_table = df.groupby(['IsuSubisu','Tone']).size().unstack(fill_value=0)
-        for col_name in ['Negatif','Netral','Positif']:
-            if col_name not in tone_table.columns:
-                tone_table[col_name] = 0
-        tone_table = tone_table[['Negatif','Netral','Positif']]
-        tone_table['Total'] = tone_table.sum(axis=1)
-        tone_table['Tone Dominan'] = tone_table[['Negatif','Netral','Positif']].idxmax(axis=1)
-        tone_table = tone_table.sort_values('Total', ascending=False)
+    tone_data = df['Tone'].value_counts()
+    colors_map = {'Negatif':'#E74C3C','Netral':'#BDC3C7','Positif':'#27AE60'}
 
-        for subisu, row_t in tone_table.iterrows():
-            dom = row_t['Tone Dominan']
-            dom_color = {'Negatif':'#E74C3C','Netral':'#7F8C8D','Positif':'#27AE60'}.get(dom,'#7F8C8D')
-            label = (subisu[:45]+'…') if len(subisu)>45 else subisu
-            st.markdown(f"""
-            <div style='display:flex;align-items:center;justify-content:space-between;
-                        padding:8px 10px;margin-bottom:4px;background:rgba(128,128,128,0.06);
-                        border:1px solid rgba(128,128,128,0.15);border-radius:5px;border-left:3px solid {dom_color}'>
-              <div style='font-size:11px;font-weight:600;color:inherit;flex:1'>{label}</div>
-              <div style='display:flex;gap:10px;font-size:10px;font-family:monospace'>
-                <span style='color:#E74C3C'>N:{int(row_t['Negatif'])}</span>
-                <span style='color:#95A5A6'>T:{int(row_t['Netral'])}</span>
-                <span style='color:#27AE60'>P:{int(row_t['Positif'])}</span>
-                <span style='color:inherit;font-weight:700'>{int(row_t['Total'])}</span>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+    # Visual bar chart manual — lebih clean dari st.bar_chart default
+    for tone_val, count in tone_data.items():
+        pct = round(count/stats['total']*100)
+        color = colors_map.get(str(tone_val),'#BDC3C7')
+        st.markdown(f"""
+        <div style='margin-bottom:12px'>
+          <div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px'>
+            <span style='font-weight:600;color:{color}'>{tone_val}</span>
+            <span style='font-family:monospace;color:inherit;opacity:0.5'>{count} artikel ({pct}%)</span>
+          </div>
+          <div style='height:20px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden'>
+            <div style='width:{pct}%;height:100%;background:{color};border-radius:4px'></div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    with col_chart:
-        st.markdown("**Distribusi Sentimen Keseluruhan**")
-        
-        import streamlit as st
-        tone_data = df['Tone'].value_counts()
-        colors_map = {'Negatif':'#E74C3C','Netral':'#BDC3C7','Positif':'#27AE60'}
-        
-        # Visual bar chart manual — lebih clean dari st.bar_chart default
-        for tone_val, count in tone_data.items():
-            pct = round(count/stats['total']*100)
-            color = colors_map.get(str(tone_val),'#BDC3C7')
-            st.markdown(f"""
-            <div style='margin-bottom:12px'>
-              <div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px'>
-                <span style='font-weight:600;color:{color}'>{tone_val}</span>
-                <span style='font-family:monospace;color:inherit;opacity:0.5'>{count} artikel ({pct}%)</span>
-              </div>
-              <div style='height:20px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden'>
-                <div style='width:{pct}%;height:100%;background:{color};border-radius:4px'></div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
+    st.markdown("**Distribusi per Tanggal**")
 
-        st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
-        st.markdown("**Distribusi per Tanggal**")
-        
-        tanggal_counts = df.groupby(['Tanggal','Tone']).size().unstack(fill_value=0)
-        if not tanggal_counts.empty:
-            st.bar_chart(tanggal_counts, color=["#E74C3C","#BDC3C7","#27AE60"] if all(c in tanggal_counts.columns for c in ['Negatif','Netral','Positif']) else None, height=200)
+    tanggal_counts = df.groupby(['Tanggal','Tone']).size().unstack(fill_value=0)
+    if not tanggal_counts.empty:
+        st.bar_chart(tanggal_counts, color=["#E74C3C","#BDC3C7","#27AE60"] if all(c in tanggal_counts.columns for c in ['Negatif','Netral','Positif']) else None, height=200)
 
+    # ── Bekas Tab 4 (Kata Kunci) -- digabung ke sini ────────────────────
+    # Export JSON/CSV & "Aktor & Lembaga yang Disebut" sengaja tidak ikut
+    # dipindah -- JSON/CSV redundan dengan tombol "Download Excel" yang
+    # sudah mencakup seluruh data (termasuk hasil telaah), dan "Aktor &
+    # Lembaga" cuma versi lebih lemah (frekuensi mentah, tanpa breakdown
+    # risiko) dari "Sebaran Risiko per Aktor/Lokasi" yang sudah ada di Tab
+    # Ikhtisar (lihat risiko_per_aktor()).
+    st.markdown("---")
 
-# ════════════════════════════════════════════
-# TAB 4 — KATA KUNCI
-# ════════════════════════════════════════════
-with tab4:
-    col_cloud, col_bar = st.columns(2)
+    col_dimensi, col_tier = st.columns(2)
 
-    keywords = extract_keywords(df)
-    aktors = extract_aktors(df)
-
-    with col_cloud:
-        st.markdown("**Kata Kunci Dominan**")
-        if keywords:
-            max_freq = keywords[0][1]
-            cloud_html = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 0">'
-            for word, freq in keywords:
-                size = 11 + (freq / max_freq) * 12
-                opacity = 0.4 + (freq / max_freq) * 0.6
-                cloud_html += f'<span style="font-size:{size:.0f}px;background:rgba(100,140,180,0.15);border:1px solid rgba(100,140,180,0.3);border-radius:3px;padding:3px 10px;color:inherit;opacity:{opacity:.2f};font-weight:500">{word}</span>'
-            cloud_html += '</div>'
-            st.markdown(cloud_html, unsafe_allow_html=True)
-
-    with col_bar:
-        st.markdown("**Top Kata Kunci — Frekuensi**")
-        if keywords:
-            max_freq = keywords[0][1]
-            for word, freq in keywords[:10]:
-                pct = round(freq / max_freq * 100)
+    with col_dimensi:
+        st.markdown("**Distribusi Dimensi Pengawasan (GRCC AnCoDe)**")
+        st.caption("Jumlah klaster per dimensi -- satu klaster bisa masuk lebih dari satu dimensi")
+        dimensi_data = extract_dimensi_pengawasan(df)
+        if dimensi_data:
+            max_dimensi = max(v for _, v in dimensi_data)
+            for label, freq in dimensi_data:
+                pct = round(freq / max_dimensi * 100)
                 st.markdown(f"""
                 <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-                  <div style='font-size:11px;color:inherit;opacity:0.85;width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{word}</div>
+                  <div style='font-size:11px;color:inherit;opacity:0.85;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{label}</div>
                   <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                    <div style='width:{pct}%;height:100%;background:#1C3D5A;border-radius:3px'></div>
+                    <div style='width:{pct}%;height:100%;background:#F5A623;border-radius:3px'></div>
                   </div>
                   <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{freq}</div>
                 </div>
                 """, unsafe_allow_html=True)
+        else:
+            st.info("Belum ada data Dimensi Pengawasan (file lama sebelum fitur ini ditambahkan).")
+
+    with col_tier:
+        st.markdown("**Sebaran Sumber Media per Tier**")
+        st.caption("Tier 1 = media arus utama, Tier 2 = sumber lain")
+        tier_counts = extract_sebaran_tier(df)
+        total_tier = sum(tier_counts.values())
+        if total_tier:
+            for label, color in [("Tier 1", "#63B3ED"), ("Tier 2", "#94A3B8")]:
+                freq = tier_counts.get(label, 0)
+                pct = round(freq / total_tier * 100)
+                st.markdown(f"""
+                <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
+                  <div style='font-size:11px;color:inherit;opacity:0.85;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{label}</div>
+                  <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
+                    <div style='width:{pct}%;height:100%;background:{color};border-radius:3px'></div>
+                  </div>
+                  <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:44px'>{freq} ({pct}%)</div>
+                </div>
+                """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown("**Aktor & Lembaga yang Disebut**")
-    if aktors:
-        max_aktor = aktors[0][1]
-        aktor_html = '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">'
-        for aktor, freq in aktors:
-            size = 11 + (freq / max_aktor) * 5
-            aktor_html += f'<span style="font-size:{size:.0f}px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.3);border-radius:4px;padding:4px 10px;color:#818CF8;font-weight:500">{aktor} <span style=\'font-family:monospace;font-size:9px;opacity:0.7\'>({freq})</span></span>'
-        aktor_html += '</div>'
-        st.markdown(aktor_html, unsafe_allow_html=True)
-
-    # Export JSON
-    st.markdown("---")
-    st.markdown("**Export Data**")
-    col_exp1, col_exp2 = st.columns(2)
-    with col_exp1:
-        records = df.to_dict('records')
-        json_str = json.dumps({
-            "meta": meta,
-            "data": [{k: str(v) for k, v in r.items()} for r in records]
-        }, ensure_ascii=False, indent=2)
-        st.download_button(
-            "⬇️ Download JSON (untuk integrasi)",
-            data=json_str,
-            file_name=f"ais_data_{meta.get('isu','bpkp').replace(' ','_').lower()}.json",
-            mime="application/json",
-            use_container_width=True
-        )
-    with col_exp2:
-        csv_str = df[['No','Tanggal','Judul','IsuSubisu','Tone','Risiko','TindakLanjut','AktorLokasi']].to_csv(index=False)
-        st.download_button(
-            "⬇️ Download CSV (ringkasan)",
-            data=csv_str,
-            file_name=f"ais_ringkasan_{meta.get('isu','bpkp').replace(' ','_').lower()}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+    st.markdown("**Kata Kunci Dominan**")
+    keywords = extract_keywords(df)
+    if keywords:
+        max_freq = keywords[0][1]
+        for word, freq in keywords[:10]:
+            pct = round(freq / max_freq * 100)
+            st.markdown(f"""
+            <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
+              <div style='font-size:11px;color:inherit;opacity:0.85;width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{word}</div>
+              <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
+                <div style='width:{pct}%;height:100%;background:#1C3D5A;border-radius:3px'></div>
+              </div>
+              <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{freq}</div>
+            </div>
+            """, unsafe_allow_html=True)
