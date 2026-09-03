@@ -513,6 +513,36 @@ if page == "crawl":
     }
     .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; color: #F5A623; }
     .main-header p  { font-size: 0.85rem; margin: 0; font-family: 'IBM Plex Mono', monospace; color: rgba(255,255,255,0.75); }
+    /* Ikon unduh kecil di pojok kanan atas banner header -- round diskusi
+       "tombol kecil sebelumnya makan 1 row sendiri, jelek". Container ini
+       dirender SETELAH banner header di kode (lihat pemanggilannya), lalu
+       margin-top NEGATIF di sini dipakai buat "menarik" box-nya naik
+       nutupin pojok kanan atas banner -- karena keduanya sibling terpisah
+       di DOM (banner cuma HTML mentah di st.markdown, bukan parent asli
+       dari tombol beneran), bukan lewat position:absolute+ancestor yang
+       butuh nesting asli. Box belakangan otomatis kegambar DI ATAS banner
+       di titik yang overlap (urutan DOM biasa, nggak perlu z-index).
+       margin-bottom positif buat kompensasi supaya konten sesudahnya
+       nggak ketarik naik ikut kepepet. */
+    .st-key-download_top_corner {
+        margin-top: -54px !important; margin-bottom: 34px !important;
+        /* stVerticalBlock Streamlit defaultnya flex-direction:column -- jadi
+           justify-content di situ ngatur SUMBU VERTIKAL, bukan horizontal
+           (sempat salah pakai justify-content:flex-end, hasilnya malah
+           nempel di bawah, bukan di kanan). align-items yang bener buat
+           narik child-nya ke KANAN dalam container column-flex. */
+        display: flex !important; align-items: flex-end !important;
+        padding-right: 6px !important; position: relative !important; z-index: 5 !important;
+    }
+    .st-key-download_top_corner button {
+        padding: 2px 10px !important; min-height: 28px !important; height: 28px !important;
+        font-size: 13px !important; line-height: 1 !important;
+        background: rgba(255,255,255,0.1) !important; border: 1px solid rgba(255,255,255,0.35) !important;
+        color: #fff !important; border-radius: 6px !important;
+    }
+    .st-key-download_top_corner button:hover {
+        background: rgba(245,166,35,0.25) !important; border-color: #F5A623 !important;
+    }
     /* Kartu panduan "Cara memulai" — dibuat setara gaya kartu "Belum Ada
        Data" di Dashboard AIS (border putus-putus, background transparan
        tipis, warna teks ikut tema dark via `inherit`/opacity) supaya kedua
@@ -1209,6 +1239,29 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
     </div>
     """, unsafe_allow_html=True)
 
+    # Ikon unduh kecil di pojok kanan atas banner -- percobaan pertama
+    # ditaruh sebagai tombol biasa tepat di bawah kartu statistik, tapi
+    # user lapor itu makan 1 row sendiri & keliatan jelek. Dipindah ke sini
+    # (lihat CSS .st-key-download_top_corner di atas soal cara nariknya ke
+    # pojok header) supaya BENERAN nggak makan row apapun. excel_buf/
+    # nama_file dibangun di sini (bukan di bawah dekat kartu statistik lagi)
+    # supaya tombol pojok ini punya datanya dari awal; dipakai ulang nanti
+    # di kartu unduh besar di paling bawah, jadi tetap cuma dibangun sekali.
+    #
+    # Label sempat cuma ikon "📥" doang -- tapi 📥 itu literal artinya
+    # "kotak masuk" (inbox tray), bukan simbol universal "unduh", dan
+    # penjelasannya ("Unduh Excel") cuma nongol kalau di-hover (tooltip),
+    # jadi first-time user yang nggak iseng hover duluan nggak langsung
+    # tau itu tombol apa. Ditambah teks "Unduh" -- masih satu kata/ringkas,
+    # tapi langsung kebaca tanpa perlu hover atau nebak dari ikon doang.
+    if "hasil" in st.session_state:
+        excel_buf = buat_excel(st.session_state["hasil"], st.session_state["label_isu"])
+        nama_file = f"MediaCrawl_AIS_{st.session_state['label_isu'].replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        with st.container(key="download_top_corner"):
+            st.download_button("📥 Unduh", data=excel_buf, file_name=nama_file,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Unduh Excel", key="download_excel_top")
+
     # Pesan hasil crawl sebelumnya (sukses/gagal/warning) — dicatat ke
     # session_state alih-alih langsung st.success()/st.error() di tempat
     # kejadian, karena alur proteksi klik-ganda di bawah SELALU diakhiri
@@ -1460,11 +1513,10 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
             with col:
                 st.markdown(f'<div class="stat-card"><div class="stat-number" style="color:{warna}">{tone_counts[tone]}</div><div class="stat-label">{emoji} {tone}</div></div>', unsafe_allow_html=True)
 
-        # "Unduh Hasil" sengaja dipindah ke PALING BAWAH (setelah daftar
-        # artikel, lihat blok "download-cta" di akhir) — sebelumnya
-        # ditaruh di sini, tepat setelah statistik, malah memotong alur
-        # sebelum user sempat lihat artikel apa saja yang ketarik.
-        # Sekarang jadi penutup alami: tinjau dulu artikelnya, baru unduh.
+        # excel_buf/nama_file sudah dibangun di atas (tepat setelah banner
+        # header, buat ikon unduh pojok) -- dipakai ulang di sini & di kartu
+        # unduh besar di bawah, nggak dibangun lagi supaya tetap cuma sekali.
+
         st.markdown("<br>", unsafe_allow_html=True)
         # Diselaraskan ke gaya .process-section-label yang sama dipakai
         # "Proses Crawl & Analisis" di atas (bukan lagi markdown ### bawaan
@@ -1536,11 +1588,13 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
             <div class="download-cta-title">Unduh Hasil Lengkap</div>
             <div class="download-cta-sub">Sudah selesai meninjau? Unduh seluruh artikel beserta analisis klaster, risiko, dan area perhatian dalam satu file Excel.</div>
             """, unsafe_allow_html=True)
-            excel_buf = buat_excel(hasil_list, label_isu)
-            nama_file = f"MediaCrawl_AIS_{label_isu.replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+            # excel_buf/nama_file dipakai ulang dari yang sudah dibangun di
+            # atas (dekat kartu statistik) -- lihat catatan di sana. key
+            # eksplisit beda dari tombol kecil di atas (lihat catatan di sana
+            # soal kenapa ini wajib).
             st.download_button("📥 Download Excel", data=excel_buf, file_name=nama_file,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True, type="primary")
+                use_container_width=True, type="primary", key="download_excel_bottom")
 
 
 # ══════════════════════════════════════════════════════════════════════════
