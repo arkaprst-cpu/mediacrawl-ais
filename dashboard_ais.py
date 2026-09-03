@@ -231,6 +231,7 @@ st.markdown("""
     border-radius: 8px; padding: 8px 10px;
     font-size: 10.5px; font-weight: 400; color: #fff; line-height: 1.4;
     text-align: center; white-space: normal; max-width: 240px;
+    text-transform: none; letter-spacing: normal;
     box-shadow: 0 4px 14px rgba(0,0,0,0.35);
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity 0.12s ease; z-index: 50;
@@ -1331,9 +1332,33 @@ with tab1:
             tren_html = (f"<div class='ais-tip' style='margin-top:6px'>"
                          f"<div style='display:flex;justify-content:center'>{sparkline_svg(tren['nilai'], color=tren_spark_color)}</div>"
                          f"{delta_html}{tren_periode_html}<span class='ais-tip-box'>{tren_tip}</span></div>")
+        # Label diganti dari "Dominasi Negatif" -- istilah itu implisit
+        # nyiratkan mayoritas (jadi ganjil kalau angkanya rendah, misal
+        # "Dominasi Negatif: 20%"), dan orang yang baru pertama buka app
+        # nggak otomatis tau itu maksudnya "% artikel bernada negatif dari
+        # total". "% Artikel Negatif" aman di semua nilai + self-explanatory.
+        # Ikon (i) di sebelahnya pakai pola tooltip custom yang sama kayak
+        # sparkline (instan, CSS :hover, bukan title="" bawaan browser) --
+        # jelasin definisi metrik + cara hitung tren sekali hover, biar
+        # kartu tetap ringkas buat yang udah paham tapi ada penjelasan buat
+        # yang belum.
+        info_tip = ("% Artikel Negatif = persentase artikel bernada negatif dari total artikel yang dianalisis "
+                    "pada periode ini. Tren (kata \"membaik\"/\"memburuk\" + sparkline) membandingkan rata-rata "
+                    "%negatif harian di paruh awal vs paruh akhir periode data -- perubahan 5 poin persentase "
+                    "atau lebih dianggap membaik/memburuk, di bawah itu dianggap relatif stabil.")
+        # ais-tip ditaruh di DIV LABEL itu sendiri (bukan cuma di span ikon
+        # kecilnya) -- karena div ini full-width (block, bukan inline),
+        # tooltip yang center relatif ke elemen ini jadi center ke LEBAR
+        # KARTU, bukan ke ikon kecil di ujung teks. Kalau nempel di ikon
+        # aja, box 240px-nya kepusatkan di posisi ikon (yang nggak persis
+        # di tengah kartu), jadi meluber ke kartu sebelah.
+        label_html = (f"<div class='stat-label-primary ais-tip'>% Artikel Negatif "
+                      f"<span style='opacity:0.55;cursor:help'>&#9432;</span>"
+                      f"<span class='ais-tip-box' style='text-align:left'>{info_tip}</span>"
+                      f"</div>")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
           <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
-          <div class="stat-label-primary">Dominasi Negatif</div>
+          {label_html}
           {tren_html}
         </div>""", unsafe_allow_html=True)
 
