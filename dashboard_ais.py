@@ -1200,18 +1200,23 @@ with tab1:
         tv_html = ""
         if tv:
             pct = tv['pct']
-            # Tooltip nunjukin persis periode yang dibandingkan -- tanpa ini
-            # "meningkat 50%" cuma angka telanjang tanpa konteks tanggal.
+            # Panah dihapus (sebelumnya ▲/▼) -- lihat catatan panjang di
+            # kartu Dominasi Negatif di bawah soal kenapa. Konteks periode
+            # yang dibandingkan sekarang teks kecil yang SELALU kelihatan
+            # (bukan cuma tooltip hover) -- title="" tetap disertakan
+            # sebagai bonus buat browser yang hover-nya jalan, tapi bukan
+            # lagi satu-satunya jalan buat lihat detailnya.
             tv_tip = (f"Dibandingkan {tv['label_awal']} (rata-rata {tv['avg_awal']} artikel/hari) "
                       f"vs {tv['label_akhir']} (rata-rata {tv['avg_akhir']} artikel/hari)")
             if pct >= 20:
-                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px;cursor:help'>▲ meningkat {pct}%</div>"
+                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px'>meningkat {pct}%</div>"
             elif pct <= -20:
-                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px;cursor:help'>▼ menurun {abs(pct)}%</div>"
+                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:#F5A623;margin-top:4px'>menurun {abs(pct)}%</div>"
             else:
-                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px;cursor:help'>– relatif stabil</div>"
-            tv_html = (f"<div title=\"{tv_tip}\" style='display:flex;justify-content:center;margin-top:6px;cursor:help'>"
-                       f"{sparkline_svg(tv['nilai'], color='#F5A623')}</div>{tv_delta_html}")
+                tv_delta_html = f"<div title=\"{tv_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
+            tv_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tv['label_awal']} vs {tv['label_akhir']}</div>"
+            tv_html = (f"<div title=\"{tv_tip}\" style='display:flex;justify-content:center;margin-top:6px'>"
+                       f"{sparkline_svg(tv['nilai'], color='#F5A623')}</div>{tv_delta_html}{tv_periode_html}")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #F5A623">
           <div class="stat-num-primary">{stats['total']}</div>
           <div class="stat-label-primary">Total Artikel</div>
@@ -1224,32 +1229,34 @@ with tab1:
         # separuh awal vs akhir periode: >=5 poin dianggap memburuk/
         # membaik, di bawah itu dianggap noise/relatif stabil.
         #
-        # Arah panah SENGAJA mengikuti PENILAIAN baik/buruk (▲ hijau =
-        # membaik, ▼ merah = memburuk), BUKAN arah angka mentahnya (yang
-        # justru turun kalau membaik, karena ini % Negatif). Awalnya panah
-        # ikut angka mentah (pola dashboard analytics standar utk metrik
-        # "makin kecil makin bagus"), tapi itu bikin bingung -- ▼ hijau
-        # kebaca kontradiktif buat pembaca yang insting-nya "hijau=naik=
-        # bagus". Kartu Total Artikel di sebelah TIDAK ikut dibalik --
-        # volume naik/turun di situ netral, tidak ada penilaian baik/buruk
-        # yang perlu diselaraskan sama arah panahnya.
+        # Panah (▲/▼) DIHAPUS. Awalnya dicoba dibalik supaya ikut PENILAIAN
+        # (▲ hijau = membaik, ▼ merah = memburuk) bukan arah angka mentah
+        # -- tapi user lapor itu masih kebaca kontradiktif di layar
+        # beneran (bentuk sparkline nunjukkin angka mentah, sementara badge
+        # di bawahnya nunjukkin penilaian -- dua hal beda yang gampang
+        # disalahartikan harus searah). Kata "membaik"/"memburuk" saja
+        # sudah cukup jelas tanpa simbol arah yang berpotensi disalah-
+        # baca. Konteks periode yang dibandingkan sekarang teks kecil yang
+        # SELALU kelihatan (bukan cuma tooltip hover) -- title="" tetap
+        # disertakan sebagai bonus buat browser yang hover-nya jalan, tapi
+        # user lapor tooltip-nya nggak nongol di device mereka, jadi teks
+        # permanen ini jadi jalur utama, bukan cadangan.
         tren = tren_negativitas(df)
         tren_html = ""
         if tren:
             d = tren['delta']
-            # Tooltip nunjukin persis periode yang dibandingkan -- tanpa ini
-            # "membaik 8 poin" cuma angka telanjang tanpa konteks tanggal.
             tren_tip = (f"Dibandingkan {tren['label_awal']} (rata-rata {tren['avg_awal']}% negatif) "
                         f"vs {tren['label_akhir']} (rata-rata {tren['avg_akhir']}% negatif)")
             if d >= 5:
-                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#E74C3C;margin-top:4px;cursor:help'>▼ memburuk {d} poin</div>"
+                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#E74C3C;margin-top:4px'>memburuk {d} poin</div>"
             elif d <= -5:
-                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#27AE60;margin-top:4px;cursor:help'>▲ membaik {abs(d)} poin</div>"
+                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:#27AE60;margin-top:4px'>membaik {abs(d)} poin</div>"
             else:
-                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px;cursor:help'>– relatif stabil</div>"
+                delta_html = f"<div title=\"{tren_tip}\" style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
+            tren_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tren['label_awal']} vs {tren['label_akhir']}</div>"
             # Satu baris tanpa newline -- lihat catatan di sparkline_svg().
-            tren_html = (f"<div title=\"{tren_tip}\" style='display:flex;justify-content:center;margin-top:6px;cursor:help'>"
-                         f"{sparkline_svg(tren['nilai'])}</div>{delta_html}")
+            tren_html = (f"<div title=\"{tren_tip}\" style='display:flex;justify-content:center;margin-top:6px'>"
+                         f"{sparkline_svg(tren['nilai'])}</div>{delta_html}{tren_periode_html}")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
           <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
           <div class="stat-label-primary">Dominasi Negatif</div>
