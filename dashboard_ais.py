@@ -1178,7 +1178,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── TABS ─────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📋 Ikhtisar", "🗂️ Klasterisasi Isu", "📈 Analisis & Tren"])
+tab1, tab2, tab3 = st.tabs(["📋 Ikhtisar", "🗂️ Klasterisasi Isu", "📊 Analisis & Distribusi"])
 
 
 # ════════════════════════════════════════════
@@ -1365,7 +1365,7 @@ with tab1:
     # sengaja dihapus dari sini -- angkanya persis pct_neg/pct_net/pct_pos
     # yang sudah ditampilkan dua kali di atas (kartu "Dominasi Negatif" +
     # tiga kartu sekunder Negatif/Netral/Positif), dan sekali lagi di Tab
-    # Analisis & Tren ("Distribusi Sentimen → Keseluruhan periode"). Diganti
+    # Analisis & Distribusi ("Distribusi Sentimen → Keseluruhan periode"). Diganti
     # dengan sparkline+delta tren negativitas di kartu "Dominasi Negatif"
     # (lihat tren_negativitas()) -- informasi baru (arah tren), bukan angka
     # yang sama dibentuk ulang.
@@ -1843,8 +1843,14 @@ with tab2:
 
 
 # ════════════════════════════════════════════
-# TAB 3 — ANALISIS & TREN
+# TAB 3 — ANALISIS & DISTRIBUSI
 # ════════════════════════════════════════════
+# Nama tab ini sebelumnya "Analisis & Tren", tapi indikator tren yang
+# paling menonjol (sparkline+delta) sudah pindah ke Tab Ikhtisar --
+# sisa isi tab ini didominasi breakdown proporsional/frekuensi (4 dari
+# 6 bagian judulnya literally "Distribusi X"), jadi nama "Tren" jadi
+# melebih-lebihkan porsi kontennya. "Distribusi per Tanggal" di bawah
+# tetap berbasis waktu, jadi bukan berarti aspek waktu hilang total.
 # Digabung dari 2 tab lama (Sentimen & Tren + Kata Kunci) -- keduanya
 # sama-sama "insight agregat, bukan kerja telaah", jadi digabung jadi
 # satu tempat. "Sentimen per Subisu" dihapus dari sini: groupby-nya
@@ -1895,34 +1901,57 @@ with tab3:
 
     with col_sentimen:
         st.caption("Keseluruhan periode")
+        # SATU stacked bar (bukan 3 bar terpisah kayak sebelumnya) -- ini
+        # genuinely part-to-whole (Negatif+Netral+Positif = 100%), dan
+        # dataviz skill merekomendasikan stacked bar buat kasus itu supaya
+        # kebaca sekali lihat, bukan 3 bar full-width yang masing-masing
+        # cuma nunjukkin persentasenya sendiri-sendiri.
         tone_data = df['Tone'].value_counts()
-        # Visual bar chart manual — lebih clean dari st.bar_chart default
-        for tone_val, count in tone_data.items():
-            pct = round(count/stats['total']*100)
-            color = colors_map.get(str(tone_val),'#BDC3C7')
-            st.markdown(f"""
-            <div style='margin-bottom:12px'>
-              <div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px'>
-                <span style='font-weight:600;color:{color}'>{tone_val}</span>
-                <span style='font-family:monospace;color:inherit;opacity:0.5'>{count} artikel ({pct}%)</span>
-              </div>
-              <div style='height:20px;background:rgba(128,128,128,0.15);border-radius:4px;overflow:hidden'>
-                <div style='width:{pct}%;height:100%;background:{color};border-radius:4px'></div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+        urutan = [t for t in ['Negatif', 'Netral', 'Positif'] if t in tone_data.index]
+        segmen = "".join(
+            f"<div style='width:{round(tone_data[t]/stats['total']*100)}%;height:100%;"
+            f"background:{colors_map.get(t,'#BDC3C7')}'></div>"
+            for t in urutan
+        )
+        legenda = "".join(
+            f"<span style='margin-right:16px;white-space:nowrap'>"
+            f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;"
+            f"background:{colors_map.get(t,'#BDC3C7')};margin-right:4px'></span>"
+            f"{t} {tone_data[t]} ({round(tone_data[t]/stats['total']*100)}%)</span>"
+            for t in urutan
+        )
+        st.markdown(f"<div style='height:20px;border-radius:6px;overflow:hidden;display:flex;"
+                    f"margin-bottom:10px'>{segmen}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:11px;color:inherit;opacity:0.7;display:flex;"
+                    f"flex-wrap:wrap'>{legenda}</div>", unsafe_allow_html=True)
 
     with col_tanggal:
         st.caption("Per tanggal")
-        tanggal_counts = df.groupby(['Tanggal','Tone']).size().unstack(fill_value=0)
-        if not tanggal_counts.empty:
+        # Parse 'Tanggal' ke datetime asli sebelum dikelompokkan -- bug yang
+        # sama kayak yang ditemukan di tren_negativitas()/tren_volume():
+        # groupby('Tanggal') langsung mengurutkan berdasarkan STRING, dan
+        # nama bulan singkatan nggak terurut benar sebagai teks lintas
+        # bulan/tahun. Krusial di sini karena ini SEKARANG line chart --
+        # garis tren jadi nggak bermakna (bahkan menyesatkan) kalau urutan
+        # tanggal di sumbu-x-nya salah.
+        d2 = _parse_tanggal_terurut(df)
+        if not d2.empty:
+            tanggal_counts = d2.groupby(d2['_tgl'].dt.date)['Tone'].value_counts().unstack(fill_value=0).sort_index()
+            hadir = [c for c in ['Negatif', 'Netral', 'Positif'] if c in tanggal_counts.columns]
+            tanggal_counts = tanggal_counts[hadir]
             # Warna diambil per kolom Tone yang benar-benar ada di batch ini.
             # Sebelumnya pakai gate all(...) yang cuma kasih warna kalau KETIGA
             # Tone lengkap ada -- kalau satu Tone saja kosong di batch (mis. tidak
             # ada artikel Positif), warnanya diam-diam jatuh ke palet biru default
             # Streamlit, nggak nyambung sama tema merah/abu/hijau di seluruh app.
+            #
+            # line_chart (bukan bar_chart) -- job-nya "tren dari waktu ke
+            # waktu", dan dataviz skill merekomendasikan garis buat itu,
+            # bukan bar (bar lebih pas buat bandingin magnitude antar
+            # kategori terpisah, bukan memperlihatkan arah/pola dari waktu
+            # ke waktu).
             chart_colors = [colors_map.get(col, '#BDC3C7') for col in tanggal_counts.columns]
-            st.bar_chart(tanggal_counts, color=chart_colors, height=180)
+            st.line_chart(tanggal_counts, color=chart_colors, height=180)
 
     # ── Bekas Tab 4 (Kata Kunci) -- digabung ke sini ────────────────────
     # Export JSON/CSV & "Aktor & Lembaga yang Disebut" sengaja tidak ikut
