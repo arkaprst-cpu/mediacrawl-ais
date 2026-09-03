@@ -743,6 +743,52 @@ def risiko_per_aktor(df, top_n=8):
     ]
 
 
+def tren_negativitas(df):
+    """Tren % artikel Negatif per hari, buat sparkline + delta di kartu
+    'Dominasi Negatif' (Tab Ikhtisar). Dibandingkan separuh awal vs separuh
+    akhir periode -- bukan titik pertama-vs-terakhir -- supaya tidak gampang
+    kepengaruh noise di satu hari yang datanya sedikit. None kalau datanya
+    cuma 1 hari (belum ada tren yang bisa dibaca)."""
+    if 'Tanggal' not in df.columns:
+        return None
+    harian = df.groupby('Tanggal').apply(
+        lambda g: round((g['Tone'] == 'Negatif').sum() / len(g) * 100)
+    ).sort_index()
+    if len(harian) < 2:
+        return None
+    nilai = harian.tolist()
+    tengah = len(nilai) // 2
+    awal = nilai[:tengah]
+    akhir = nilai[-tengah:]
+    delta = round(sum(akhir) / len(akhir) - sum(awal) / len(awal))
+    return {'nilai': nilai, 'delta': delta}
+
+
+def sparkline_svg(nilai, color="#E74C3C", w=120, h=28):
+    """Sparkline minimal -- garis tipis 2px + satu titik penanda nilai
+    terakhir, tanpa axis/gridline (mengikuti spek mark dataviz skill).
+    Dirakit sebagai SATU baris tanpa newline -- versi multi-baris sempat
+    bikin Streamlit markdown salah baca ini sebagai code block (baris
+    kosong diikuti indentasi dalam dianggap fenced code oleh parser-nya),
+    jadi SVG-nya kerender sebagai teks mentah, bukan gambar."""
+    if len(nilai) < 2:
+        return ""
+    lo, hi = min(nilai), max(nilai)
+    rng = (hi - lo) or 1
+    step = w / (len(nilai) - 1)
+    pts = []
+    for i, v in enumerate(nilai):
+        x = round(i * step, 1)
+        y = round(h - ((v - lo) / rng) * (h - 4) - 2, 1)
+        pts.append(f"{x},{y}")
+    path = " ".join(pts)
+    last_x, last_y = pts[-1].split(",")
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" style="display:block">'
+            f'<polyline points="{path}" fill="none" stroke="{color}" stroke-width="2" '
+            f'stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>'
+            f'<circle cx="{last_x}" cy="{last_y}" r="2.5" fill="{color}"/></svg>')
+
+
 # ── SIDEBAR ──────────────────────────────────────────────────
 # Tombol upload sengaja TIDAK selalu di sidebar. Selama belum ada data
 # sama sekali (landing state), dia ditaruh di tengah halaman utama —
@@ -1059,9 +1105,28 @@ with tab1:
           <div class="stat-label-primary">Total Artikel</div>
         </div>""", unsafe_allow_html=True)
     with c_p2:
+        # Sparkline + delta arah tren -- pengganti "Distribusi Sentimen
+        # Pemberitaan" yang dihapus (cuma mengulang angka pct_neg/pct_net/
+        # pct_pos yang sudah ada di kartu-kartu stat ini). Bandingkan
+        # separuh awal vs akhir periode: >=5 poin dianggap memburuk/
+        # membaik, di bawah itu dianggap noise/relatif stabil.
+        tren = tren_negativitas(df)
+        tren_html = ""
+        if tren:
+            d = tren['delta']
+            if d >= 5:
+                delta_html = f"<div style='font-size:10px;color:#E74C3C;margin-top:4px'>▲ memburuk {d} poin</div>"
+            elif d <= -5:
+                delta_html = f"<div style='font-size:10px;color:#27AE60;margin-top:4px'>▼ membaik {abs(d)} poin</div>"
+            else:
+                delta_html = "<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>– relatif stabil</div>"
+            # Satu baris tanpa newline -- lihat catatan di sparkline_svg().
+            tren_html = (f"<div style='display:flex;justify-content:center;margin-top:6px'>"
+                         f"{sparkline_svg(tren['nilai'])}</div>{delta_html}")
         st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
           <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
           <div class="stat-label-primary">Dominasi Negatif</div>
+          {tren_html}
         </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
@@ -1162,29 +1227,17 @@ with tab1:
     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # Tone bar + frekuensi subisu
+    # "Distribusi Sentimen Pemberitaan" (stacked bar Negatif/Netral/Positif)
+    # sengaja dihapus dari sini -- angkanya persis pct_neg/pct_net/pct_pos
+    # yang sudah ditampilkan dua kali di atas (kartu "Dominasi Negatif" +
+    # tiga kartu sekunder Negatif/Netral/Positif), dan sekali lagi di Tab
+    # Analisis & Tren ("Distribusi Sentimen → Keseluruhan periode"). Diganti
+    # dengan sparkline+delta tren negativitas di kartu "Dominasi Negatif"
+    # (lihat tren_negativitas()) -- informasi baru (arah tren), bukan angka
+    # yang sama dibentuk ulang.
     col_left, col_right = st.columns(2)
 
     with col_left:
-        st.markdown("**Distribusi Sentimen Pemberitaan**")
-        
-        # Visual tone bar
-        pn = stats['pct_neg']; pt = stats['pct_net']; pp = stats['pct_pos']
-        st.markdown(f"""
-        <div style='height:12px;border-radius:6px;overflow:hidden;display:flex;margin-bottom:8px'>
-          <div style='width:{pn}%;background:#E74C3C'></div>
-          <div style='width:{pt}%;background:#BDC3C7'></div>
-          <div style='width:{pp}%;background:#27AE60'></div>
-        </div>
-        <div style='display:flex;gap:16px;font-size:11px;color:inherit;opacity:0.7'>
-          <span>🔴 Negatif {pn}%</span>
-          <span>⚪ Netral {pt}%</span>
-          <span>🟢 Positif {pp}%</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
-
         # Level risiko breakdown
         st.markdown("**Level Risiko Artikel**")
         tinggi = stats['tinggi']; sedang = stats['sedang']
