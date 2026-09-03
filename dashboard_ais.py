@@ -1,2134 +1,1610 @@
 """
-dashboard_ais.py
-Halaman Dashboard AIS — Analisis Isu Strategis Pengawasan
-Pusat Strategi Kebijakan Pengawasan BPKP
-
-Sumber data: hasil crawl sesi aktif (session_state) atau upload Excel (.xlsx)
-via sidebar.
+Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan BPKP
+Streamlit web app: input keyword → query expansion → crawl → analisis → download Excel
+Provider AI: DeepSeek (nama model diatur lewat Secrets DEEPSEEK_MODEL,
+default "deepseek-v4-flash" — lihat _baca_deepseek_model())
 """
 
 import streamlit as st
-import pandas as pd
-import json
-import io
-import re
-import math
-from collections import Counter
+import feedparser, json, time, re, io, threading, base64, os
 from datetime import datetime
-from struktur_app import STRUKTUR_APP
-
-
-def pisahkan_sumber_judul(judul: str):
-    """Pisahkan judul dari nama sumber yang ditempel Google News di akhir
-    (format '... - NamaSumber'). Mengembalikan (judul_bersih, nama_sumber)."""
-    s = str(judul)
-    m = re.search(r"\s[-–]\s([^-–]+)$", s)
-    if m:
-        return s[:m.start()].strip(), m.group(1).strip()
-    return s.strip(), ""
-
-
-def pill_sumber_html(sumber: str, compact: bool = False) -> str:
-    """Render pill kecil nama sumber (Kompas, CNN, Tempo, dst.) di awal judul."""
-    if not sumber:
-        return ""
-    cls = "pill-sumber pill-sumber-compact" if compact else "pill-sumber"
-    return f'<span class="{cls}">{sumber}</span>'
-
-
-def judul_link_html(judul: str, link: str) -> str:
-    """Bungkus teks judul dengan <a> ke artikel asli kalau link-nya valid.
-    Kalau link kosong/'-' (mis. data lama sebelum kolom Link ada), fallback
-    ke teks polos supaya tidak menghasilkan <a href="-"> yang rusak."""
-    link = str(link or "").strip()
-    if not link or link == "-":
-        return judul
-    return f'<a href="{link}" target="_blank" rel="noopener" class="judul-link">{judul}</a>'
-
-
-# ── CUSTOM CSS ───────────────────────────────────────────────
-st.markdown("""
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-
-  html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-  /* Panel kanan fixed via st.container(key="panel_kanan") — widget
-     interaktif Streamlit tidak bisa dibungkus position:fixed lewat HTML
-     markdown biasa. Kalibrasi ini (top:90px) sempat diganti dua kali
-     (sticky, lalu fixed-dari-bawah) untuk mengejar bug "nabrak topbar"
-     di Streamlit Cloud, tapi dua-duanya bikin regresi lebih parah:
-     sticky bikin panel hilang total saat scroll panjang, dan
-     fixed-dari-bawah memaksa max-height sangat pendek yang
-     mengempeskan tinggi field form Telaah Klaster (text area jadi
-     cuma garis tipis). Sengaja dikembalikan ke versi ini — lebih
-     diterima sesekali nabrak topbar (kosmetik) daripada form telaah
-     tidak bisa dipakai (fungsional). max-height dilebarkan hampir
-     sepenuh tinggi viewport (cuma sisa 16px margin bawah) supaya
-     ruang mengetik uraian panjang di form Telaah Klaster lebih lega. */
-  .st-key-panel_kanan {
-    position: fixed !important;
-    top: 90px !important;
-    right: 24px !important;
-    width: min(42vw, 520px) !important;
-    max-height: calc(100vh - 106px) !important;
-    overflow-y: auto !important;
-    z-index: 999 !important;
-    background: rgba(13,27,42,0.97) !important;
-    border: 1px solid rgba(245,166,35,0.35) !important;
-    border-top: 4px solid #F5A623 !important;
-    border-radius: 10px !important;
-    padding: 16px 18px !important;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
-  }
-
-  /* Kartu upload di tengah landing state (belum ada data) */
-  .st-key-landing_upload_card {
-    border: 2px dashed rgba(128,128,128,0.3) !important;
-    border-radius: 12px !important;
-    background: rgba(128,128,128,0.06) !important;
-    padding: 24px 24px 16px !important;
-  }
-
-  /* 3 kartu fungsi di sidebar (Upload Data / Update Excel / Drive Hasil
-     Telaah) — sebelumnya bobot visualnya beda jauh (dropzone native
-     Streamlit yang tinggi vs. kartu status+tombol vs. cuma caption+tombol),
-     jadi sekarang disamakan lewat 1 struktur kartu (judul+deskripsi+aksi)
-     & padding/margin yang identik. Upload Data khusus pakai st.popover
-     supaya elemennya SETINGGI 2 kartu lain (dropzone native tidak bisa
-     dipangkas jadi setipis itu lewat CSS saja) — file_uploader-nya baru
-     muncul mengambang saat tombol popover diklik.
-     Update Excel SEBELUMNYA dikasih aksen amber (border-left + tint +
-     tombol type="primary") dengan asumsi ini aksi paling sering dipakai —
-     ternyata salah, faktanya justru paling jarang dipakai (Update Excel
-     cuma perlu dijalankan sesekali setelah telaah klaster, bukan tiap buka
-     dashboard). Kombinasi border+background+tombol yang SAMA-SAMA amber
-     itu juga yang bikin kartu ini kelihatan paling mencolok/silau
-     dibanding 2 kartu lain. Jadi disamakan total ke gaya netral seperti
-     Upload Data & Drive — nggak ada lagi kartu yang "dibedakan level
-     pentingnya" lewat warna. */
-  [class*="st-key-sidebar_fn_"] {
-    border: 1px solid rgba(128,128,128,0.25) !important;
-    border-radius: 8px !important;
-    padding: 12px 14px !important;
-    margin-bottom: 10px !important;
-    background: rgba(128,128,128,0.04) !important;
-    /* min-height, bukan cuma padding seragam — teks deskripsi Update
-       Excel dinamis (1 atau 2 baris tergantung jumlah klaster yang sudah
-       ditelaah), jadi tanpa ini tinggi 3 kartu bisa geser beberapa piksel
-       tergantung isi. Dites: 132px pas untuk kasus deskripsi 2 baris. */
-    min-height: 132px !important;
-  }
-  .sidebar-fn-title { font-size: 13px; font-weight: 700; color: #F5A623; margin-bottom: 4px; }
-  .sidebar-fn-desc { font-size: 11px; opacity: 0.7; line-height: 1.4; margin-bottom: 10px; }
-  /* Tombol popover Upload Data disamakan gayanya dengan tombol lain di
-     dalam kartu (full-width, rata kiri, bukan style default popover yang
-     ditengahkan). */
-  .st-key-sidebar_fn_upload [data-testid="stPopover"] button {
-    width: 100% !important; text-align: left !important; justify-content: flex-start !important;
-  }
-  /* Font default tombol Streamlit (~16px) kegedean buat lebar sidebar yang
-     sempit — label 2 kata ("Perbarui Excel", "Folder Drive") jadi wrap ke
-     2 baris & bikin tombol lebih tinggi dari yang perlu. Dikecilkan ke
-     12px (dekat sama .sidebar-fn-desc 11px) supaya proporsional & muat
-     1 baris. Berlaku untuk semua tombol di 3 kartu ini: st.button,
-     st.download_button, st.link_button, & tombol popover. */
-  [class*="st-key-sidebar_fn_"] button p { font-size: 12px !important; }
-
-  /* Topbar */
-  .ais-topbar {
-    background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
-    border-radius: 8px;
-    padding: 12px 18px;
-    margin-bottom: 14px;
-    border-bottom: 3px solid #F5A623;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .ais-logo { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; color: #F5A623; }
-  .ais-subtitle { font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 2px; }
-  .ais-badge {
-    background: #F5A623; color: #0D1B2A;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px; font-weight: 700;
-    padding: 4px 12px; border-radius: 4px;
-    letter-spacing: 0.06em;
-  }
-
-  /* Spotlight */
-  .spotlight-box {
-    background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
-    border-radius: 8px;
-    padding: 20px 24px;
-    margin-bottom: 16px;
-    border-left: 4px solid #F5A623;
-  }
-  .spotlight-eyebrow {
-    font-size: 10px; font-weight: 700;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    color: #F5A623; margin-bottom: 6px;
-  }
-  .spotlight-title { font-size: 16px; font-weight: 700; color: white; line-height: 1.3; margin-bottom: 10px; }
-  .spotlight-body { font-size: 12px; color: rgba(255,255,255,0.75); line-height: 1.65; }
-  /* Kalimat Risiko dipisah jadi sub-box sendiri (bukan cuma "Risiko:" bold
-     inline di tengah paragraf) supaya langsung kelihatan beda dari
-     ringkasan isu di atasnya — polanya sama seperti border-kiri berwarna
-     di .issue-card, tapi merah (#E74C3C) karena ini murni penanda visual
-     "bagian risiko", bukan skor/kode tingkat keparahan (itu tetap tidak
-     dipakai di sini — lihat keputusan sebelumnya soal tone/risk coloring). */
-  .spotlight-risiko-box {
-    margin-top: 12px; background: rgba(231,76,60,0.12);
-    border-left: 3px solid #E74C3C; border-radius: 4px; padding: 10px 12px;
-  }
-  .spotlight-risiko-label {
-    font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-    color: #E74C3C; margin-bottom: 4px;
-  }
-  .spotlight-risiko-text { font-size: 12px; color: rgba(255,255,255,0.88); line-height: 1.6; }
-  /* Judul di Spotlight & kartu Risiko Tinggi dibuat klik-able ke artikel
-     asli (kolom Link sudah ada di data, sebelumnya cuma dipakai di tab
-     Repositori). color:inherit supaya tidak jadi biru link browser standar
-     — warna & bobot font tetap ikut .spotlight-title/.issue-title, cuma
-     underline muncul saat hover sebagai penanda "ini bisa diklik". */
-  /* !important perlu di sini — Streamlit sudah punya CSS bawaan untuk <a>
-     di dalam stMarkdownContainer (warna biru + underline default) yang
-     specificity-nya menang lawan .judul-link biasa; sudah dicek langsung
-     computed style-nya biru bawaan tanpa !important. */
-  .judul-link { color: inherit !important; text-decoration: none !important; }
-  .judul-link:hover { text-decoration: underline !important; color: #F5A623 !important; }
-
-  /* Stat cards — dua tingkat: primary (metrik paling actionable, lebih
-     besar) dan secondary (rincian pendukung, lebih kecil) supaya tidak
-     semua angka bersaing dengan bobot yang sama. */
-  .stat-card-primary {
-    background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
-    border-radius: 8px; padding: 20px;
-    text-align: center;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-  }
-  .stat-num-primary {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 38px; font-weight: 700; color: inherit; line-height: 1;
-  }
-  .stat-label-primary {
-    font-size: 12px; color: inherit; opacity: 0.65; margin-top: 6px;
-    text-transform: uppercase; letter-spacing: 0.04em;
-  }
-
-  /* Tooltip custom (CSS-only, ganti atribut title="" bawaan browser) --
-     title="" native butuh kursor diem ~1 detik sebelum muncul (delay ini
-     dikontrol OS/browser, nggak bisa diatur dari halaman), dan itu
-     kerasa lambat waktu dites langsung di sesi online. Versi ini muncul
-     seketika (cuma transisi opacity 0.12s buat halus) begitu kursor
-     masuk area kartu, karena murni CSS :hover -- nggak nunggu timer
-     bawaan browser sama sekali. */
-  /* z-index diberi di SINI (bukan cuma di .ais-tip-box) supaya elemen
-     ini bikin stacking context sendiri -- tanpa ini, box anaknya
-     (z-index:50) cuma bersaing di level ancestor yang lebih atas, jadi
-     bisa "keselip" ketiban SVG sparkline dari .ais-tip lain di kartu
-     yang sama (kejadian nyata: garis sparkline nembus keliatan di atas
-     teks tooltip). :hover dinaikkan lebih tinggi lagi biar yang lagi
-     aktif di-hover pasti menang lawan .ais-tip lain yang nggak dihover. */
-  .ais-tip { position: relative; cursor: help; z-index: 1; }
-  .ais-tip:hover { z-index: 60; }
-  .ais-tip .ais-tip-box {
-    position: absolute; top: calc(100% + 6px); left: 50%;
-    transform: translateX(-50%);
-    background: #05070d; border: 1px solid rgba(255,255,255,0.25);
-    border-radius: 8px; padding: 8px 10px;
-    font-size: 11px; font-weight: 400; color: #fff; line-height: 1.5;
-    text-align: center; white-space: normal; max-width: 240px;
-    text-transform: none; letter-spacing: normal;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-    /* visibility SAJA, tanpa opacity/transition -- dulu pakai
-       opacity 0<->1 dengan transisi, tapi kalau kursor nggak persis
-       diem itu bisa nyangkut di tengah transisi jadi keliatan
-       "transparan"/susah dibaca. visibility on/off itu instan &
-       binary, nggak ada state transisi separuh jalan sama sekali. */
-    visibility: hidden; pointer-events: none; z-index: 50;
-  }
-  .ais-tip:hover .ais-tip-box { visibility: visible; }
-  .stat-card-secondary {
-    background: rgba(128,128,128,0.04); border: 1px solid rgba(128,128,128,0.15);
-    border-radius: 6px; padding: 10px;
-    text-align: center;
-  }
-  .stat-num-secondary {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 20px; font-weight: 700; color: inherit; line-height: 1;
-  }
-  .stat-label-secondary { font-size: 10px; color: inherit; opacity: 0.55; margin-top: 3px; }
-
-  /* Issue card — base dipakai apa adanya untuk daftar datar (fallback
-     tanpa klaster). Dua varian di bawah menyesuaikan bobot visual sesuai
-     konteks: -highlight untuk sorotan "perlu perhatian" (Tab Ikhtisar),
-     -member untuk anggota klaster yang harus terasa lebih ringan daripada
-     blok INDUK KLASTER di atasnya (Tab Klasterisasi Isu). */
-  .issue-card {
-    background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
-    border-radius: 6px; padding: 14px 14px 14px 18px;
-    margin-bottom: 8px; position: relative;
-    overflow: hidden;
-  }
-  .issue-card::before {
-    content: ''; position: absolute;
-    left: 0; top: 0; bottom: 0; width: 4px;
-  }
-  .issue-card.negatif::before { background: #E74C3C; }
-  .issue-card.netral::before { background: #95A5A6; }
-  .issue-card.positif::before { background: #27AE60; }
-  .issue-title { font-size: 13px; font-weight: 600; color: inherit; line-height: 1.4; }
-  .issue-sub { font-size: 11px; color: inherit; opacity: 0.65; margin-top: 2px; }
-  .issue-summary { font-size: 11px; color: inherit; opacity: 0.65; line-height: 1.5; margin-top: 6px; }
-
-  .issue-card-highlight {
-    padding: 16px 16px 16px 20px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.12);
-  }
-  .issue-card-highlight::before { width: 5px; }
-  .issue-card-highlight .issue-title { font-size: 14px; font-weight: 700; }
-
-  .issue-card-member {
-    padding: 9px 12px 9px 14px;
-    background: transparent;
-  }
-  .issue-card-member::before { width: 3px; }
-  .issue-card-member .issue-title { font-size: 12px; font-weight: 500; opacity: 0.85; }
-
-  /* Kartu artikel + tombol "Lihat detail →" — dibungkus satu
-     st.container(key="artikel_card_N") di Python supaya keduanya satu
-     elemen DOM, lalu di sini disambungkan jadi satu unit visual: card
-     persegi di atas (radius bawah dihilangkan), tombol jadi strip footer
-     tanpa celah/border ganda di bawahnya. Sebelumnya tombolnya render
-     sebagai widget terpisah di bawah card HTML, jadi ambigu itu tombol
-     punya card yang mana. */
-  [class*="st-key-artikel_card_"] [data-testid="stVerticalBlock"] { gap: 0 !important; }
-  [class*="st-key-artikel_card_"] .issue-card.artikel-card-attached {
-    border-radius: 6px 6px 0 0;
-    margin-bottom: 0;
-  }
-  [class*="st-key-artikel_card_"] div[data-testid="stButton"] { margin: 0; }
-  [class*="st-key-artikel_card_"] div[data-testid="stButton"] button {
-    width: 100%;
-    border: 1px solid rgba(128,128,128,0.2);
-    border-top: none;
-    border-radius: 0 0 6px 6px;
-    background: rgba(128,128,128,0.04);
-    color: inherit; opacity: 0.7;
-    font-size: 11px; font-weight: 500;
-    padding: 5px 12px; min-height: 30px;
-  }
-  [class*="st-key-artikel_card_"] div[data-testid="stButton"] button:hover {
-    background: rgba(99,179,237,0.14);
-    border-color: rgba(99,179,237,0.45);
-    color: #63B3ED; opacity: 1;
-  }
-
-  /* Tombol "Telaah klaster ini →" dan "← Tutup telaah, lihat detail
-     artikel" — sengaja BUKAN type="primary" (oranye solid dipakai khusus
-     buat aksi commit: Masuk, Mulai Crawl, Submit Telaah). Keduanya sama-
-     sama aksi navigasi buka/tutup panel telaah, jadi disamakan satu gaya:
-     aksen biru (senada hover kartu artikel di atas) — beda kelas dari
-     oranye tapi tetap "hidup", bukan afterthought abu-abu default. */
-  [class*="st-key-buka_telaah_"] button,
-  [class*="st-key-tutup_telaah"] button {
-    border: 1.5px solid rgba(99,179,237,0.55) !important;
-    background: rgba(99,179,237,0.08) !important;
-    color: #63B3ED !important;
-    font-weight: 600 !important;
-  }
-  [class*="st-key-buka_telaah_"] button:hover,
-  [class*="st-key-tutup_telaah"] button:hover {
-    background: rgba(99,179,237,0.2) !important;
-    border-color: rgba(99,179,237,0.85) !important;
-    color: #8ECBFA !important;
-  }
-
-  /* Dropdown Sektor/Tema/Topik di form Telaah — kolomnya sempit (3
-     sejajar), jadi opsi macam "A. Pembangunan Sumber Daya Manusia (SDM)
-     Unggul dan Berdaya Saing" kepotong "..." saat listbox dibuka. Panel
-     pilihan (stSelectboxVirtualDropdown) itu portal terapung yang lebarnya
-     di-set inline oleh Streamlit mengikuti lebar kolom trigger (150px) --
-     dilebarkan di sini via !important (mengalahkan inline style).
-     SENGAJA TETAP 1 BARIS (white-space: nowrap, bukan normal/wrap) --
-     listbox ini virtualized, tinggi tiap baris opsi sudah dihitung &
-     dikunci di awal (40px), jadi kalau teks dibiarkan wrap ke 2 baris dia
-     bakal tumpang-tindih sama opsi di bawahnya, bukan mendorongnya turun.
-     Lebar di-set FIXED (bukan max-content) supaya ellipsis-nya kebaca
-     benar relatif ke lebar itu, bukan cuma "auto" yang tidak pernah
-     mentok. Ceknya di struktur_app.py: median panjang opsi ~43 karakter,
-     90 persen di bawah ~78 karakter, jadi 620px (muat sekitar itu di
-     font form ini) menuntaskan mayoritas kasus tanpa terpotong sama
-     sekali -- sisanya (segelintir topik yang memang satu kalimat penuh,
-     ada yang sampai 175 karakter) tetap dapat "..." di ujung, bukan
-     dipotong mendadak tanpa tanda. */
-  [data-testid="stSelectboxVirtualDropdown"] {
-    width: min(620px, 92vw) !important;
-    min-width: 260px !important;
-  }
-  [data-testid="stSelectboxVirtualDropdown"] [role="presentation"] {
-    width: 100% !important;
-  }
-  [data-testid="stSelectboxVirtualDropdown"] [role="option"] {
-    width: 100% !important;
-    box-sizing: border-box !important;
-  }
-  [data-testid="stSelectboxVirtualDropdown"] [data-item-hl] {
-    display: block !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  /* Pill sumber — nama media (Kompas, CNN, Tempo, dst.) ditonjolkan di
-     awal judul supaya pembaca langsung tahu asal beritanya. */
-  .pill-sumber {
-    display: inline-block; font-size: 10px; font-weight: 700;
-    font-family: 'JetBrains Mono', monospace;
-    color: #F5A623; background: rgba(245,166,35,0.12);
-    border: 1px solid rgba(245,166,35,0.35);
-    padding: 1px 7px; border-radius: 3px;
-    margin-right: 6px; letter-spacing: 0.02em;
-    text-transform: uppercase; vertical-align: middle;
-  }
-  .spotlight-title .pill-sumber { vertical-align: 2px; }
-  .pill-sumber-compact {
-    font-size: 9px; padding: 0px 5px; opacity: 0.75;
-  }
-
-  /* Badges */
-  .badge {
-    display: inline-block; font-size: 10px; font-weight: 600;
-    font-family: 'JetBrains Mono', monospace;
-    padding: 2px 7px; border-radius: 3px;
-    margin-right: 4px; margin-top: 2px;
-  }
-  .badge-negatif { background: rgba(231,76,60,0.15); color: #E74C3C; }
-  .badge-netral { background: rgba(127,140,141,0.15); color: #95A5A6; }
-  .badge-positif { background: rgba(39,174,96,0.15); color: #27AE60; }
-  /* Topik/subisu (kategori isu) vs Aktor/Lokasi (pihak yang terlibat)
-     tadinya sama-sama pakai .badge-aktor sehingga tidak terlihat beda
-     level informasinya. Dipisah: -topik tetap indigo (kategori),
-     -aktor jadi slate + ikon 👤 (entitas/pihak). */
-  .badge-topik { background: rgba(99,102,241,0.15); color: #818CF8; }
-  /* Tag dimensi pengawasan (Governance/Risk/Control/Compliance/
-     Anti-Corruption/Debottlenecking) di kartu INDUK KLASTER — warna
-     senada aksen oranye klaster (#F5A623) tapi lebih redup, supaya
-     kebaca sebagai "klasifikasi ringkas", bukan bersaing dengan judul. */
-  .badge-dimensi {
-    background: rgba(245,166,35,0.14); color: #F5A623;
-    border: 1px solid rgba(245,166,35,0.3);
-  }
-  .badge-aktor { background: rgba(148,163,184,0.16); color: #94A3B8; }
-
-  /* Detail box */
-  .detail-section { margin-bottom: 14px; }
-  .detail-label {
-    font-size: 10px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.08em;
-    color: inherit; opacity: 0.55; margin-bottom: 4px;
-  }
-  .detail-text { font-size: 12px; color: inherit; line-height: 1.6; }
-  .link-artikel-asli {
-    color: #5AA9FF; font-weight: 600; font-size: 11px;
-    text-decoration: underline; text-underline-offset: 2px;
-  }
-  .link-artikel-asli:hover { color: #8CC4FF; }
-
-  /* Expander klaster (Tab Klasterisasi Isu) — beri identitas visual "kartu
-     klaster" pada header accordion-nya sendiri, bukan cuma pada isinya
-     saat dibuka. Tanpa ini header-nya kelihatan sama dengan accordion
-     generik, padahal secara fungsi dia adalah unit pengelompokan
-     artikel (klaster), bukan baris daftar biasa. */
-  [data-testid="stExpander"] {
-    border: none !important;
-    margin-bottom: 12px !important;
-  }
-  [data-testid="stExpander"] > details {
-    border: 1px solid rgba(245,166,35,0.4) !important;
-    border-left: 5px solid #F5A623 !important;
-    border-radius: 8px !important;
-    background: rgba(245,166,35,0.07) !important;
-    overflow: hidden !important;
-  }
-  [data-testid="stExpander"] summary {
-    padding: 14px 16px !important;
-  }
-  [data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] p {
-    font-size: 14px !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.01em;
-  }
-  [data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
-    color: #F5A623 !important;
-  }
-  [data-testid="stExpanderDetails"] {
-    background: rgba(13,27,42,0.35) !important;
-    border-top: 1px solid rgba(245,166,35,0.15) !important;
-  }
-  .implikasi-box {
-    background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.5);
-    border-radius: 5px; padding: 10px 12px;
-    font-size: 12px; color: inherit; line-height: 1.6;
-  }
-  .tindaklanjut-box {
-    background: rgba(147,180,232,0.12); border: 1px solid rgba(147,180,232,0.5);
-    border-radius: 5px; padding: 10px 12px;
-    font-size: 12px; color: inherit; line-height: 1.6;
-  }
-
-  /* Tone pill */
-  .tone-neg { color: #E74C3C; font-weight: 600; }
-  .tone-net { color: #7F8C8D; font-weight: 600; }
-  .tone-pos { color: #27AE60; font-weight: 600; }
-
-  /* Hide streamlit chrome */
-  #MainMenu {visibility: hidden;}
-  footer {visibility: hidden;}
-  /* padding-top diperbesar dari 1rem → 5.5rem. Root cause "judul topbar
-     kepotong" sama persis dengan bug "nabrak topbar" yang sudah didiagnosis
-     untuk .st-key-panel_kanan di atas: toolbar bawaan Streamlit Community
-     Cloud (ikon Share/star/fork/GitHub) di-inject FIXED di atas viewport,
-     di luar perhitungan layout Streamlit sendiri, jadi tidak otomatis
-     dikompensasi oleh block-container. Karena .ais-topbar dirender persis
-     di baris pertama block-container, padding-top yang terlalu tipis (1rem
-     = 16px) bikin bagian atas judul (ascender huruf D/b/h/l/t/S) selalu
-     ketiban toolbar itu — konstan di semua level zoom karena toolbar-nya
-     fixed-position, bukan soal ukuran font. Nilai 5.5rem (~88px) disamakan
-     dengan kalibrasi top:90px yang sudah terbukti pas untuk panel_kanan. */
-  .block-container { padding-top: 5.5rem; padding-bottom: 1rem; }
-
-  /* Uploader di sidebar — dropzone bawaan Streamlit besar padahal cuma
-     dipakai sesekali per sesi; diperkecil agar tidak mendominasi sidebar. */
-  [data-testid="stFileUploaderDropzone"] {
-    padding: 8px 12px !important;
-    min-height: 0 !important;
-  }
-  [data-testid="stFileUploaderDropzoneInstructions"] svg { display: none; }
-  [data-testid="stFileUploaderDropzoneInstructions"] span { font-size: 11px !important; }
-  [data-testid="stFileUploaderDropzoneInstructions"] small { display: none; }
-  [data-testid="stBaseButton-secondary"] { padding: 2px 10px !important; font-size: 11px !important; }
-</style>
-""", unsafe_allow_html=True)
-
-
-# ── DATA LOADER ──────────────────────────────────────────────
-def load_from_excel(uploaded_file):
-    """Parse Excel output dari pipeline AIS. Mendukung dua format:
-    - 12 kolom (dengan Klaster Isu, tanpa Kondisi & Relevansi)
-    - 14 kolom (lengkap, dengan Kondisi Klaster & Relevansi Pengawasan)
-    Format lama 11 kolom (tanpa Klaster) tidak lagi didukung.
-    """
-    df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
-
-    # Baca metadata dari baris ke-2 (index 1)
-    meta_str = str(df_raw.iloc[1, 0]) if df_raw.shape[0] > 1 else ""
-    meta = {"raw": meta_str}
-    try:
-        parts = meta_str.split("|")
-        meta["isu"] = parts[0].replace("Isu:", "").strip() if len(parts) > 0 else "—"
-        meta["generate"] = parts[1].replace("Generate:", "").strip() if len(parts) > 1 else "—"
-        meta["total"] = parts[2].replace("Total:", "").replace("artikel", "").strip() if len(parts) > 2 else "—"
-        meta["unit"] = parts[3].strip() if len(parts) > 3 else "Pusat Strategi Kebijakan Pengawasan BPKP"
-    except:
-        meta["isu"] = "BPKP"; meta["generate"] = "—"; meta["total"] = "—"; meta["unit"] = "Pusat Strategi Kebijakan Pengawasan BPKP"
-
-    # Data mulai dari baris ke-4 (header di index 2, data mulai index 3)
-    df = pd.read_excel(uploaded_file, sheet_name=0, header=3)
-    n_kolom = df.shape[1]
-
-    kolom_telaah = ['Sektor','Tema','Topik','DampakImplikasiFinal','GapPengawasan','UsulanPengawasan','StatusReview']
-    KOLOM_INTI_14 = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut','KondisiPemicu','RelevansiPengawasan']
-
-    # PENTING — jenjang format ditambah dari BAWAH (n_kolom>=22), bukan
-    # mengubah cabang lama: kolom 1-21 (termasuk blok telaah manusia
-    # Sektor..Status Review di 15-21) TIDAK PERNAH digeser posisinya. File
-    # lama (21 kolom, dari sebelum kolom Dimensi Pengawasan ditambahkan)
-    # tetap lewat cabang n_kolom>=21 apa adanya — status "Sudah Direview"
-    # tidak boleh ikut hilang/reset hanya karena kolom baru ditambahkan.
-    if n_kolom >= 22:
-        # Format terbaru (22 kolom): 14 kolom inti + 7 kolom telaah manusia
-        # + 1 kolom Dimensi Pengawasan (GRCC AnCoDe) di paling akhir.
-        df_dimensi = df.iloc[:, 21:22].copy()
-        df_dimensi.columns = ['DimensiPengawasan']
-        df_telaah = df.iloc[:, 14:21].copy()
-        df_telaah.columns = kolom_telaah
-        df = df.iloc[:, :14]
-        df.columns = KOLOM_INTI_14
-        df = pd.concat([df, df_telaah, df_dimensi], axis=1)
-    elif n_kolom >= 21:
-        # Format lengkap hasil telaah (21 kolom, TANPA Dimensi Pengawasan —
-        # file dari sebelum fitur itu ada). Kolom 15-21 berisi hasil Human
-        # Review (Sektor..Status Review). Wajib dipertahankan supaya status
-        # "Sudah Direview" tidak hilang saat file ini di-upload lagi untuk
-        # melanjutkan kerja telaah.
-        df_telaah = df.iloc[:, 14:21].copy()
-        df_telaah.columns = kolom_telaah
-        df = df.iloc[:, :14]
-        df.columns = KOLOM_INTI_14
-        df = pd.concat([df, df_telaah], axis=1)
-        df['DimensiPengawasan'] = ''
-    elif n_kolom >= 14:
-        df = df.iloc[:, :14]
-        df.columns = KOLOM_INTI_14
-        for k in kolom_telaah:
-            df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
-        df['DimensiPengawasan'] = ''
-    else:
-        df.columns = ['No','Klaster','Tanggal','Sumber','Link','Judul','Ringkasan','IsuSubisu','AktorLokasi','Tone','Risiko','TindakLanjut']
-        df['KondisiPemicu'] = '-'
-        df['RelevansiPengawasan'] = '-'
-        for k in kolom_telaah:
-            df[k] = 'Belum Direview' if k == 'StatusReview' else '-'
-        df['DimensiPengawasan'] = ''
-
-    df = df.dropna(subset=['Judul'])
-    df = df[df['No'] != 'No']
-    df = df.reset_index(drop=True)
-    df['Tanggal'] = df['Tanggal'].astype(str)
-
-    return df, meta
-
-
-def compute_stats(df):
-    """Hitung statistik dari dataframe."""
-    tone_counts = df['Tone'].value_counts().to_dict()
-    total = len(df)
-    neg = tone_counts.get('Negatif', 0)
-    net = tone_counts.get('Netral', 0)
-    pos = tone_counts.get('Positif', 0)
-    
-    # Hitung skor risiko sederhana berdasarkan tone + panjang teks risiko
-    # Level risiko berbasis tone + panjang teks risiko
-    def skor_risiko(row):
-        base = {'Negatif': 7, 'Netral': 5, 'Positif': 3}.get(str(row['Tone']), 5)
-        bonus = min(2, len(str(row['Risiko'])) // 150)
-        return base + bonus
-
-    df = df.copy()
-    df['skor_risiko'] = df.apply(skor_risiko, axis=1)
-    df['level_risiko'] = df['skor_risiko'].apply(
-        lambda s: 'Tinggi' if s >= 8 else ('Sedang' if s >= 6 else 'Rendah')
-    )
-    
-    return df, {
-        'total': total,
-        'negatif': neg, 'netral': net, 'positif': pos,
-        'pct_neg': round(neg/total*100) if total else 0,
-        'pct_net': round(net/total*100) if total else 0,
-        'pct_pos': round(pos/total*100) if total else 0,
-        'tinggi': (df['level_risiko']=='Tinggi').sum(),
-        'sedang': (df['level_risiko']=='Sedang').sum(),
-    }
-
-
-def extract_keywords(df):
-    """Extract top keywords dari kolom IsuSubisu dan Judul.
-
-    Judul artikel dari Google News masih membawa suffix ' - NamaSumber'
-    (mis. 'Berita XYZ - detikNews') -- dibuang dulu sebelum tokenisasi,
-    supaya nama media tidak ikut kehitung sebagai 'kata kunci isu' (lihat
-    extract_sumber_dari_judul() di app.py, pola regex yang sama). Kata
-    generik lintas-topik ('kasus','diduga','dugaan','akibat', dst) juga
-    disaring -- kata-kata ini selalu muncul di hampir semua isu pengawasan
-    apa pun, jadi tidak membedakan topik batch crawl ini secara spesifik.
-    """
-    stopwords = {'dan','di','ke','dari','untuk','yang','ini','itu','dengan',
-                 'pada','oleh','sebagai','dalam','telah','akan','dapat','tidak',
-                 'bpjs','kesehatan','bpkp','atas','terkait','bagi','juga','serta',
-                 'kasus','diduga','dugaan','akibat','adanya','masih','sudah',
-                 'setelah','sebelum','saat','usai'}
-    # str(x) per elemen, BUKAN df[col].astype(str) -- di pandas versi baru
-    # dengan dtype 'str' bawaan, .astype(str) di level Series tidak selalu
-    # menstringkan sel kosong (tetap balik nilai float NaN), beda dengan
-    # dtype 'object' klasik. str(x) builtin Python selalu aman untuk kedua
-    # kasus.
-    words = []
-    for col in ['IsuSubisu', 'Judul']:
-        for raw in df[col]:
-            text = str(raw)
-            text = re.sub(r"\s[-–]\s[^-–]+$", "", text.strip())
-            for w in text.lower().split():
-                w = w.strip('.,;:!?()[]"\'')
-                if len(w) > 3 and w not in stopwords:
-                    words.append(w)
-    return Counter(words).most_common(15)
-
-
-# Sama persis dengan TIER1_KEYWORDS di app.py -- tier tidak disimpan
-# sebagai kolom Excel tersendiri (cuma dipakai transient saat crawl),
-# jadi dihitung ulang di sini dari domain kolom Link yang memang tersimpan.
-_TIER1_KEYWORDS = {
-    "kompas","tempo","detik","cnnindonesia","republika","antaranews",
-    "mediaindonesia","bisnis","kontan","tribunnews","liputan6","okezone",
-    "sindonews","jpnn","suara","kumparan","rmol","inews","katadata",
-    "validnews","thejakartapost","jawapos",
-}
-
-
-def extract_sebaran_tier(df):
-    """Sebaran jumlah artikel per Tier sumber (1/2), dihitung ulang dari
-    NAMA sumber (kolom Sumber, mis. 'kompas.id', 'Tempo.co') dengan logika
-    yang sama seperti tier_sumber() di app.py. PENTING: bukan dari kolom
-    Link -- Link berisi URL redirect Google News (news.google.com/rss/...)
-    yang tidak pernah memuat nama domain publisher aslinya, jadi tidak bisa
-    dipakai untuk klasifikasi tier. app.py sendiri juga mengklasifikasikan
-    tier dari nama sumber, bukan dari URL artikel."""
-    counts = Counter()
-    for raw in df['Sumber']:
-        nama = str(raw).lower()
-        tier = "Tier 1" if any(t1 in nama for t1 in _TIER1_KEYWORDS) else "Tier 2"
-        counts[tier] += 1
-    return counts
-
-
-_DIMENSI_PENGAWASAN_URUT = ["Governance", "Risk", "Control", "Compliance", "Anti-Corruption", "Debottlenecking"]
-
-
-def extract_dimensi_pengawasan(df):
-    """Rekap dimensi pengawasan (GRCC AnCoDe) per KLASTER unik -- bukan per
-    baris artikel, supaya klaster dengan banyak artikel tidak menggelembung
-    hitungannya. Diurutkan sesuai urutan GRCC AnCoDe baku, bukan sekadar
-    frekuensi, supaya konsisten dibaca dari batch ke batch."""
-    if 'Klaster' not in df.columns or 'DimensiPengawasan' not in df.columns:
-        return []
-    per_klaster = df.drop_duplicates(subset=['Klaster'])['DimensiPengawasan']
-    counts = Counter()
-    for raw in per_klaster:
-        val = str(raw)
-        if val == 'nan' or not val.strip():
-            continue
-        for d in val.split(','):
-            d = d.strip()
-            if d:
-                counts[d] += 1
-    return [(d, counts[d]) for d in _DIMENSI_PENGAWASAN_URUT if counts.get(d, 0) > 0]
-
-
-def klaster_dominan_by_tone(df, tone_target, klaster_order, n=3):
-    """Klaster (bukan IsuSubisu per-artikel) yang dominan untuk tone
-    tertentu -- dipakai untuk card 'Isu Dominan Negatif/Positif'.
-
-    IsuSubisu sengaja TIDAK dipakai di sini (beda dengan versi lama):
-    label itu dibuat AI per artikel dan hampir selalu unik walau
-    ceritanya sama persis, jadi "top-N by value_counts" pada IsuSubisu
-    cuma memilih 3 variasi frasa dari SATU cerita yang sama, bukan 3
-    isu yang benar-benar berbeda. Klaster sudah dideduplikasi oleh AI
-    sendiri di tahap klasterisasi, jadi jadi satuan yang tepat untuk
-    "isu" di sini.
-
-    Diurutkan sesuai urutan prioritas yang AI sendiri tetapkan saat
-    klasterisasi (klaster_order, dari sesi crawl aktif -- lihat
-    PROMPT_KLASTER: "Urutkan array klaster dari yang paling
-    kritikal/prioritas..."), BUKAN cuma diurutkan berdasarkan jumlah
-    artikel -- klaster kecil tapi kritis bisa saja lebih prioritas
-    daripada klaster besar tapi rutin. Kalau klaster_order tidak
-    tersedia (mis. upload file lama tanpa sesi crawl aktif), fallback
-    ke urutan jumlah artikel terbanyak."""
-    if 'Klaster' not in df.columns:
-        return []
-    sub = df[(df['Tone'] == tone_target) & (df['Klaster'] != '-')]
-    if sub.empty:
-        return []
-    counts = sub['Klaster'].value_counts()
-    if klaster_order:
-        nama_terurut = [nm for nm in klaster_order if nm in counts.index] + \
-                        [nm for nm in counts.index if nm not in klaster_order]
-    else:
-        nama_terurut = counts.sort_values(ascending=False).index.tolist()
-    return nama_terurut[:n]
-
-
-def risiko_per_aktor(df, top_n=8):
-    """Sebaran level risiko per Aktor/Lokasi — siapa yang paling sering
-    terkait artikel risiko Tinggi, bukan sekadar paling sering disebut.
-    Satu artikel dengan beberapa aktor (dipisah koma) dihitung untuk
-    masing-masing aktor."""
-    rows = []
-    for _, r in df.iterrows():
-        aktor_text = str(r['AktorLokasi'])
-        if aktor_text == 'nan' or not aktor_text.strip():
-            continue
-        for a in aktor_text.split(','):
-            a = a.strip()
-            if a and len(a) > 2:
-                rows.append({'aktor': a, 'level_risiko': r['level_risiko']})
-
-    if not rows:
-        return []
-
-    df_aktor = pd.DataFrame(rows)
-    pivot = df_aktor.groupby(['aktor', 'level_risiko']).size().unstack(fill_value=0)
-    for lvl in ['Tinggi', 'Sedang', 'Rendah']:
-        if lvl not in pivot.columns:
-            pivot[lvl] = 0
-    pivot['total'] = pivot[['Tinggi', 'Sedang', 'Rendah']].sum(axis=1)
-
-    # Urutkan: jumlah Tinggi dulu (desc), lalu total (desc) sebagai tie-breaker
-    pivot = pivot.sort_values(['Tinggi', 'total'], ascending=[False, False]).head(top_n)
-
-    return [
-        {'aktor': idx, 'tinggi': row['Tinggi'], 'sedang': row['Sedang'],
-         'rendah': row['Rendah'], 'total': row['total']}
-        for idx, row in pivot.iterrows()
-    ]
-
-
-_BULAN_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
-
-
-def _parse_tanggal_terurut(df):
-    """Parse kolom 'Tanggal' (string, format utama '%d %b %Y' dari app.py,
-    dengan fallback ISO YYYY-MM-DD kalau parsing tanggal RSS gagal) jadi
-    tanggal asli yang bisa diurutkan kronologis dengan benar, lalu urutkan.
-
-    PENTING -- ini nemu bug laten: groupby('Tanggal') langsung (sort=True
-    default pandas) mengurutkan berdasarkan STRING, bukan tanggal asli.
-    Nama bulan singkatan nggak terurut benar sebagai teks lintas bulan/
-    tahun -- 'Apr' < 'Jan' secara alfabet, padahal Januari lebih dulu
-    dari April secara kalender. Google News RSS bisa saja mengembalikan
-    artikel dari bulan/tahun berbeda dalam satu batch crawl, jadi bug ini
-    nyata, bukan teoretis. Baris yang tanggalnya gagal di-parse (NaT)
-    dibuang -- tidak bisa ditaruh di posisi kronologis mana pun."""
-    d2 = df.copy()
-    d2['_tgl'] = pd.to_datetime(d2['Tanggal'], errors='coerce')
-    return d2.dropna(subset=['_tgl'])
-
-
-def _label_tgl(d, dengan_tahun=True):
-    tgl = f"{d.day} {_BULAN_ID[d.month - 1]}"
-    return f"{tgl} {d.year}" if dengan_tahun else tgl
-
-
-def _label_rentang(tgls):
-    """Label rentang tanggal buat tooltip. Tahun SELALU disertakan kalau
-    rentangnya lintas tahun -- tanpa itu, mis. '24 Okt' lalu '4 Jun' bisa
-    kebaca kayak urutan mundur (padahal itu Okt tahun lalu -> Jun tahun
-    ini), soalnya Google News RSS memang bisa mengembalikan artikel lawas
-    lintas tahun dalam satu batch crawl (bukan skenario teoretis -- ini
-    kejadian beneran waktu testing)."""
-    if not tgls:
-        return "-"
-    lo, hi = min(tgls), max(tgls)
-    if lo == hi:
-        return _label_tgl(lo)
-    sama_tahun = lo.year == hi.year
-    return f"{_label_tgl(lo, dengan_tahun=not sama_tahun)}–{_label_tgl(hi)}"
-
-
-def tren_negativitas(df):
-    """Tren % artikel Negatif per hari, buat sparkline + delta di kartu
-    'Dominasi Negatif' (Tab Ikhtisar). Dibandingkan separuh awal vs separuh
-    akhir periode -- bukan titik pertama-vs-terakhir -- supaya tidak gampang
-    kepengaruh noise di satu hari yang datanya sedikit. None kalau datanya
-    cuma 1 hari (belum ada tren yang bisa dibaca). label_awal/label_akhir +
-    avg_awal/avg_akhir disertakan buat tooltip -- supaya angka delta-nya
-    tidak jadi angka telanjang tanpa konteks periode yang dibandingkan."""
-    if 'Tanggal' not in df.columns:
-        return None
-    d2 = _parse_tanggal_terurut(df)
-    if d2.empty:
-        return None
-    harian = d2.groupby(d2['_tgl'].dt.date).apply(
-        lambda g: round((g['Tone'] == 'Negatif').sum() / len(g) * 100)
-    ).sort_index()
-    if len(harian) < 2:
-        return None
-    nilai = harian.tolist()
-    tanggal = harian.index.tolist()
-    tengah = len(nilai) // 2
-    awal, akhir = nilai[:tengah], nilai[-tengah:]
-    tgl_awal, tgl_akhir = tanggal[:tengah], tanggal[-tengah:]
-    avg_awal = sum(awal) / len(awal)
-    avg_akhir = sum(akhir) / len(akhir)
-    delta = round(avg_akhir - avg_awal)
-    return {
-        'nilai': nilai, 'delta': delta,
-        'label_awal': _label_rentang(tgl_awal), 'label_akhir': _label_rentang(tgl_akhir),
-        'avg_awal': round(avg_awal), 'avg_akhir': round(avg_akhir),
-    }
-
-
-def tren_volume(df):
-    """Tren JUMLAH artikel per hari, buat sparkline+delta di kartu 'Total
-    Artikel' -- mencerminkan tren_negativitas() (sama-sama separuh awal vs
-    akhir periode, sama-sama disertai label tanggal buat tooltip) tapi
-    basisnya volume, bukan proporsi Negatif. PENTING: delta di sini sengaja
-    TIDAK dinilai baik/buruk seperti tren negativitas -- volume naik cuma
-    berarti pemberitaan makin ramai, bukan otomatis sinyal positif/negatif,
-    jadi label & warnanya netral (bukan merah/hijau), dan pakai basis
-    persentase (bukan poin) karena skalanya beda-beda tiap batch crawl (5
-    artikel/hari vs 50 artikel/hari sama-sama valid, jadi tidak masuk akal
-    pakai ambang batas jumlah tetap)."""
-    if 'Tanggal' not in df.columns:
-        return None
-    d2 = _parse_tanggal_terurut(df)
-    if d2.empty:
-        return None
-    harian = d2.groupby(d2['_tgl'].dt.date).size().sort_index()
-    if len(harian) < 2:
-        return None
-    nilai = harian.tolist()
-    tanggal = harian.index.tolist()
-    tengah = len(nilai) // 2
-    awal, akhir = nilai[:tengah], nilai[-tengah:]
-    tgl_awal, tgl_akhir = tanggal[:tengah], tanggal[-tengah:]
-    avg_awal = sum(awal) / len(awal)
-    avg_akhir = sum(akhir) / len(akhir)
-    if avg_awal > 0:
-        pct = round((avg_akhir - avg_awal) / avg_awal * 100)
-    else:
-        pct = 100 if avg_akhir > 0 else 0
-    return {
-        'nilai': nilai, 'pct': pct,
-        'label_awal': _label_rentang(tgl_awal), 'label_akhir': _label_rentang(tgl_akhir),
-        'avg_awal': round(avg_awal, 1), 'avg_akhir': round(avg_akhir, 1),
-    }
-
-
-def sparkline_svg(nilai, color="#E74C3C", w=120, h=28):
-    """Sparkline minimal -- garis tipis 2px + satu titik penanda nilai
-    terakhir, tanpa axis/gridline (mengikuti spek mark dataviz skill).
-    Dirakit sebagai SATU baris tanpa newline -- versi multi-baris sempat
-    bikin Streamlit markdown salah baca ini sebagai code block (baris
-    kosong diikuti indentasi dalam dianggap fenced code oleh parser-nya),
-    jadi SVG-nya kerender sebagai teks mentah, bukan gambar."""
-    if len(nilai) < 2:
-        return ""
-    lo, hi = min(nilai), max(nilai)
-    rng = (hi - lo) or 1
-    step = w / (len(nilai) - 1)
-    pts = []
-    for i, v in enumerate(nilai):
-        x = round(i * step, 1)
-        y = round(h - ((v - lo) / rng) * (h - 4) - 2, 1)
-        pts.append(f"{x},{y}")
-    path = " ".join(pts)
-    last_x, last_y = pts[-1].split(",")
-    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" style="display:block">'
-            f'<polyline points="{path}" fill="none" stroke="{color}" stroke-width="2" '
-            f'stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>'
-            f'<circle cx="{last_x}" cy="{last_y}" r="2.5" fill="{color}"/></svg>')
-
-
-def donut_svg(segmen, w=140, stroke=16, gap=3):
-    """Donut chart minimal -- tiap kategori digambar sebagai <circle>
-    terpisah pakai teknik stroke-dasharray/stroke-dashoffset (bukan arc
-    path manual, jauh lebih simpel buat proporsi part-to-whole), dengan
-    celah kecil antar segmen (gap) dan persentase kategori dominan
-    ditulis di lubang tengah. segmen: list of (label, count, color).
-    Dirakit sebagai SATU baris per elemen (pola sama kayak sparkline_svg)
-    biar nggak kena bug parser markdown Streamlit yang salah baca blok
-    terindentasi sebagai code block."""
-    total = sum(c for _, c, _ in segmen)
-    if total <= 0:
-        return ""
-    cx = cy = w / 2
-    r = w / 2 - stroke / 2 - 2
-    keliling = 2 * math.pi * r
-    cum = 0.0
-    rings = []
-    for _, count, color in segmen:
-        panjang = (count / total) * keliling
-        dash = max(panjang - gap, 0.5)
-        rings.append(f'<circle cx="{cx}" cy="{cy}" r="{round(r,1)}" fill="none" stroke="{color}" '
-                     f'stroke-width="{stroke}" stroke-dasharray="{round(dash,1)} {round(keliling - dash,1)}" '
-                     f'stroke-dashoffset="{round(-cum,1)}" transform="rotate(-90 {cx} {cy})"/>')
-        cum += panjang
-    label, dom_count, dom_color = max(segmen, key=lambda s: s[1])
-    dom_pct = round(dom_count / total * 100)
-    teks = (f'<text x="{cx}" y="{cy-3}" text-anchor="middle" font-size="22" font-weight="700" '
-            f'fill="{dom_color}">{dom_pct}%</text>'
-            f'<text x="{cx}" y="{cy+15}" text-anchor="middle" font-size="10" fill="#888888">{label}</text>')
-    return f'<svg width="{w}" height="{w}" viewBox="0 0 {w} {w}">{"".join(rings)}{teks}</svg>'
-
-
-# ── SIDEBAR ──────────────────────────────────────────────────
-# Tombol upload sengaja TIDAK selalu di sidebar. Selama belum ada data
-# sama sekali (landing state), dia ditaruh di tengah halaman utama —
-# itu satu-satunya aksi yang relevan buat user di titik itu, jadi lebih
-# masuk akal ditonjolkan di tengah alur baca daripada "disembunyikan"
-# di panel kiri yang gampang kelewat. Begitu ada data (dari upload atau
-# dari sesi crawl), tempatnya pindah ke sidebar sebagai cara ganti file
-# tanpa mengganggu tampilan dashboard.
+from urllib.parse import quote_plus
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+# ── Logo BPKP (dipakai di kartu brand sidebar) — dibaca & di-encode ke
+# base64 supaya bisa ditempel langsung di HTML markdown (st.image nggak
+# bisa disandingkan rapi dalam satu baris flex sama teks "AIS"). File
+# asetnya ada di assets/logo_bpkp.png, background transparan.
 #
-# "has_upload" TIDAK dicek dari nilai widget file_uploader itu sendiri
-# (uploaded is not None) — itu penyebab bug "balik ke sidebar lagi"
-# yang sempat dilaporkan: app.py ini multipage lewat exec(), jadi saat
-# user pindah ke halaman lain, dashboard_ais.py sama sekali tidak
-# dieksekusi pada run itu, widget-nya jadi tidak ter-render, dan
-# Streamlit MEMBUANG file yang sudah diupload ke widget itu (beda dari
-# entri session_state biasa yang tahan pindah halaman). Begitu balik ke
-# Dashboard, `uploaded` sudah None lagi walau user merasa baru saja
-# upload. Solusinya: begitu file diupload, langsung di-parse dan hasil
-# parsingnya (bukan objek file mentahnya) disimpan ke session_state
-# ("_dash_upload_df_raw" dkk) — itu yang jadi sumber kebenaran, persis
-# seperti "has_session" untuk data dari sesi crawl, dan sama-sama tahan
-# pindah halaman.
-has_session = st.session_state.get("ais_ready", False) and "hasil" in st.session_state
-has_upload = "_dash_upload_df_raw" in st.session_state
-uploader_di_sidebar = has_session or has_upload
+# Sengaja dibungkus try/except & balikin None kalau filenya nggak ketemu
+# (bukan biarin exception nyebar) — supaya kalau suatu saat folder assets/
+# ketinggalan pas deploy/sync manual (pernah kejadian: cuma app.py yang
+# ke-update, assets/logo_bpkp.png-nya lupa ikut), app tetap jalan normal
+# tanpa logo, bukan crash total nutup seluruh halaman.
+#
+# SENGAJA TIDAK dikasih @st.cache_data (versi sebelumnya pakai ini) —
+# itu penyebab bug "logo masih belum muncul walau assets/logo_bpkp.png
+# sudah di-upload ke repo": begitu file-nya sempat hilang sekali (belum
+# ke-upload), hasil None dari except di bawah ini KE-CACHE selamanya di
+# proses Streamlit Cloud yang sedang berjalan — cache-nya cuma berdasar
+# kode fungsi ini (tidak ada argumen, tidak baca mtime file), jadi push
+# assets/logo_bpkp.png belakangan sama sekali tidak menghapus cache "file
+# tidak ada" itu selama proses appnya belum benar-benar di-restart. Baca
+# file ~15-30KB ini juga murah banget dieksekusi ulang tiap rerun, jadi
+# caching di sini sama sekali tidak perlu — risikonya (staleness) lebih
+# besar daripada manfaatnya.
+def _logo_bpkp_base64():
+    path = os.path.join(os.path.dirname(__file__), "assets", "logo_bpkp.png")
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
+        return None
 
-with st.sidebar:
-    if uploader_di_sidebar:
-        with st.container(key="sidebar_fn_upload"):
-            st.markdown("""
-            <div class='sidebar-fn-title'>📤 Upload Data</div>
-            <div class='sidebar-fn-desc'>Ganti data dengan file Excel hasil crawl (.xlsx) lain.</div>
-            """, unsafe_allow_html=True)
-            # Dropzone native st.file_uploader tidak bisa dipangkas jadi
-            # setipis 2 kartu lain lewat CSS saja — dibungkus st.popover
-            # supaya elemen yang kelihatan di kartu cuma tombol kecil
-            # (setinggi kartu Update Excel/Drive), dropzone-nya baru
-            # muncul mengambang saat diklik.
-            with st.popover("📤 Pilih File", use_container_width=True):
-                uploaded = st.file_uploader(
-                    "Pilih file Excel", type=["xlsx"],
-                    label_visibility="collapsed", key="uploader_xlsx"
-                )
-    else:
-        uploaded = None
-
-    # Semua tone & level risiko ditampilkan (tidak ada filter sidebar aktif)
-    filter_tone = ["Negatif", "Netral", "Positif"]
-    filter_risiko = ["Tinggi", "Sedang", "Rendah"]
-    # Divider + caption "Analisis Isu Strategis Pengawasan..." yang dulu di
-    # sini DIHAPUS — sudah duplikat dengan brand card "AIS" di paling atas
-    # sidebar (app.py), dan bikin 3 kartu fungsi kelihatan kepisah-pisah
-    # padahal sekarang sudah seragam satu grup.
-
-# File baru dari uploader sidebar (mis. user ganti file) langsung
-# di-parse & disimpan ke session_state — lihat catatan panjang di atas.
-if uploaded is not None:
-    df_raw_baru, meta_baru = load_from_excel(uploaded)
-    st.session_state["_dash_upload_df_raw"] = df_raw_baru
-    st.session_state["_dash_upload_meta"] = meta_baru
-    st.session_state["_dash_upload_file_id"] = getattr(uploaded, "file_id", None) or f"{uploaded.name}_{uploaded.size}"
-    st.session_state["_dash_last_source"] = "upload"
-    has_upload = True
+# ── Klien DeepSeek (lazy import) ──
+def get_deepseek_client(api_key: str):
+    from openai import OpenAI
+    return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
 
-# ── MAIN CONTENT ─────────────────────────────────────────────
-# Prioritas sumber data — BUKAN lagi "upload selalu menang" secara
-# statis. Itu penyebab bug yang dilaporkan user: habis crawl baru (mis.
-# 20 artikel), Dashboard AIS malah masih menampilkan Excel upload manual
-# lama yang sempat diupload di sesi sebelumnya — karena has_upload sekali
-# True akan TERUS True sepanjang sesi (session_state-nya tidak pernah
-# dibersihkan), jadi crawl baru tidak pernah "menang" walau jelas lebih
-# baru. Sekarang dipilih berdasarkan aksi mana yang TERAKHIR terjadi
-# (upload file, ATAU crawl baru selesai) via
-# session_state["_dash_last_source"] — ditulis di titik upload (di atas,
-# dan di landing) dan di titik crawl selesai (app.py, tepat setelah
-# "hasil"/"klaster" diisi). Kalau cuma salah satu sumber yang ada, sumber
-# itu otomatis dipakai; kalau _dash_last_source belum pernah ditandai
-# (sesi lama dari sebelum fix ini) fallback ke upload, sama seperti
-# perilaku lama, supaya tidak ada perubahan tampilan mendadak untuk sesi
-# yang sudah berjalan.
+# ── Antrean crawl lintas-sesi ─────────────────────────────────────────────
+# Latar belakang: dokumentasi resmi DeepSeek (api-docs.deepseek.com/
+# quick_start/rate_limit) menyatakan limitnya berbasis CONCURRENCY per akun
+# (500 koneksi API bersamaan untuk deepseek-v4-pro, 2.500 untuk
+# deepseek-v4-flash) — bukan RPM/TPM seperti provider lain. Karena app ini
+# memproses artikel satu-per-satu secara berurutan per sesi (bukan paralel),
+# satu sesi crawl paling banter cuma punya 1 request DeepSeek yang sedang
+# "in-flight" di satu waktu. Jadi puluhan pengguna bersamaan (mis. satu
+# kelas) masih jauh di bawah limit DeepSeek itu sendiri — bukan itu yang
+# butuh diamankan.
+#
+# Yang justru perlu diamankan: satu proses Streamlit yang dipakai bersama
+# semua pengguna. Kalau banyak orang menekan "Mulai Crawl" nyaris
+# bersamaan, semua request Google News RSS + parsing + panggilan DeepSeek
+# + pembuatan Excel itu jalan di proses Python yang SAMA — bisa bikin
+# semuanya kerasa lambat/berat kalau tidak dibatasi. _CrawlSlotManager di
+# bawah ini singleton (di-cache lewat st.cache_resource, jadi SATU
+# instance untuk SEMUA sesi/pengguna, bukan per-sesi) yang membatasi
+# berapa banyak crawl boleh berjalan BERSAMAAN; sisanya otomatis antre
+# dengan status yang jelas di layar, bukan dipaksa jalan sekaligus atau
+# ditolak begitu saja.
+class _CrawlSlotManager:
+    def __init__(self, max_concurrent: int):
+        self._lock = threading.Lock()
+        self._active = 0
+        self._max = max_concurrent
 
-if not has_upload and not has_session:
-    # Landing state — belum ada data dari mana pun
-    st.markdown("""
-    <div class="ais-topbar">
-      <div>
-        <div class="ais-logo">📊 Klasterisasi & Analisis</div>
-        <div class="ais-subtitle">Klasterisasi, tren & telaah — Pusat Strategi Kebijakan Pengawasan BPKP</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    def status(self):
+        with self._lock:
+            return self._active, self._max
 
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        with st.container(key="landing_upload_card"):
-            st.markdown("""
-            <div style='text-align:center;padding:8px 4px 4px'>
-              <div style='font-size:40px;margin-bottom:12px'>📊</div>
-              <div style='font-size:16px;font-weight:600;color:inherit;margin-bottom:8px'>Belum Ada Data</div>
-              <div style='font-size:12px;color:inherit;opacity:0.6;line-height:1.6;margin-bottom:14px'>
-                Jalankan crawl di halaman <b>🔍 Crawl Berita</b> terlebih dahulu,<br>
-                atau upload file <code>.xlsx</code> hasil crawl sebelumnya di bawah ini.
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-            uploaded_landing = st.file_uploader(
-                "Upload file Excel (.xlsx)", type=["xlsx"],
-                label_visibility="collapsed", key="uploader_xlsx"
-            )
-        if uploaded_landing is not None:
-            df_raw_baru, meta_baru = load_from_excel(uploaded_landing)
-            st.session_state["_dash_upload_df_raw"] = df_raw_baru
-            st.session_state["_dash_upload_meta"] = meta_baru
-            st.session_state["_dash_upload_file_id"] = getattr(uploaded_landing, "file_id", None) or f"{uploaded_landing.name}_{uploaded_landing.size}"
-            st.session_state["_dash_last_source"] = "upload"
-            st.rerun()
+    def acquire_blocking(self, on_wait=None, poll_seconds: float = 1.0):
+        """Blok sampai dapat slot. on_wait(active, max) dipanggil tiap kali
+        masih menunggu, supaya UI bisa menampilkan status antre real-time
+        (Streamlit tetap mengirim update elemen ke browser meski script
+        masih berjalan/nge-sleep di dalam loop ini — pola yang sama
+        dipakai progress bar crawl di bawah)."""
+        while True:
+            with self._lock:
+                if self._active < self._max:
+                    self._active += 1
+                    return
+                active_sekarang = self._active
+            if on_wait:
+                on_wait(active_sekarang, self._max)
+            time.sleep(poll_seconds)
+
+    def release(self):
+        with self._lock:
+            self._active = max(0, self._active - 1)
+
+
+def _baca_max_crawl_bersamaan(default: int = 5) -> int:
+    """Bisa diubah tanpa edit kode lewat Streamlit Secrets
+    (MAX_CRAWL_BERSAMAAN) — default 5 aman untuk server kelas biasa;
+    naikkan kalau servernya cukup kuat, atau kalau ternyata tidak perlu
+    seketat itu."""
+    if not hasattr(st, "secrets"):
+        return default
+    try:
+        return int(st.secrets.get("MAX_CRAWL_BERSAMAAN", default))
+    except (TypeError, ValueError):
+        return default
+
+
+@st.cache_resource
+def _get_crawl_slot_manager():
+    return _CrawlSlotManager(_baca_max_crawl_bersamaan())
+
+
+# ── Nama model DeepSeek — sengaja TIDAK di-hardcode di 3 tempat pemanggilan.
+# DeepSeek pernah menghentikan nama model lama ("deepseek-chat" ->
+# "deepseek-v4-flash", per 2026-07-24) tanpa jaminan itu tidak akan terulang
+# untuk generasi berikutnya. Dengan nama model dibaca dari Secrets
+# (DEEPSEEK_MODEL), kalau DeepSeek suatu saat mengganti/mem-pensiunkan
+# "deepseek-v4-flash", cukup ubah satu nilai di Secrets — tidak perlu edit
+# kode atau deploy ulang.
+def _baca_deepseek_model(default: str = "deepseek-v4-flash") -> str:
+    if not hasattr(st, "secrets"):
+        return default
+    nilai = st.secrets.get("DEEPSEEK_MODEL", default)
+    return nilai if isinstance(nilai, str) and nilai.strip() else default
+
+
+DEEPSEEK_MODEL = _baca_deepseek_model()
+
+
+st.set_page_config(
+    page_title="Media Crawl AIS — Pusat Strategi Kebijakan Pengawasan",
+    page_icon="📰",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ── Akses publik ke Repositori Isu (tanpa password) ─────────────────────
+# Dicek sebelum gerbang password agar Repositori Isu bisa diakses via
+# ?page=repositori tanpa login.
+akses_publik_repositori = st.query_params.get("page") == "repositori"
+
+if akses_publik_repositori:
+    exec(open('repositori_isu.py').read())
     st.stop()
 
-# ── LOAD & PROCESS DATA ──────────────────────────────────────
-last_source = st.session_state.get("_dash_last_source")
-if has_upload and has_session:
-    pakai_upload = last_source != "session"
-else:
-    pakai_upload = has_upload
+# ── Gerbang password (satu password untuk seluruh tim) ──────────────────
+# Melindungi halaman Crawl & Analisis dan Dashboard AIS (keduanya dieksekusi
+# lewat exec() di app.py, jadi satu gate ini cukup). Tidak berlaku untuk
+# Repositori Isu — lihat akses_publik_repositori di atas.
+def cek_password():
+    if st.session_state.get("ais_authenticated", False):
+        return True
 
-if pakai_upload:
-    # Upload manual dipilih — baik karena cuma ini satu-satunya sumber
-    # yang ada, atau karena ini yang paling terakhir dilakukan user
-    # dibanding sesi crawl yang sedang aktif. Dibaca dari cache
-    # session_state (bukan langsung dari widget) — lihat catatan di atas.
-    df_raw = st.session_state["_dash_upload_df_raw"]
-    meta = st.session_state["_dash_upload_meta"]
-    sumber_data = "upload"
-    klaster_meta = []  # narasi klaster lengkap tidak tersedia dari Excel, hanya nama per baris
-
-    # Hidrasi status telaah dari file yang di-upload ke session_state,
-    # di-guard per file_id supaya hanya jalan sekali (tidak menimpa telaah
-    # baru yang sedang berjalan).
-    file_id = st.session_state["_dash_upload_file_id"]
-    if st.session_state.get("_review_hydrated_from") != file_id and "StatusReview" in df_raw.columns:
-        st.session_state.setdefault("review_klaster", {})
-        sudah_direview_df = df_raw[df_raw["StatusReview"] == "Sudah Direview"]
-        for nama_klaster, grup in sudah_direview_df.groupby("Klaster"):
-            baris = grup.iloc[0]
-            st.session_state["review_klaster"].setdefault(nama_klaster, {
-                "sektor": baris.get("Sektor", "-"),
-                "tema": baris.get("Tema", "-"),
-                "topik": baris.get("Topik", "-"),
-                "dampak_implikasi_final": baris.get("DampakImplikasiFinal", "-"),
-                "gap_pengawasan": baris.get("GapPengawasan", "-"),
-                "usulan_pengawasan": baris.get("UsulanPengawasan", "-"),
-                "status_review": "Sudah Direview",
-            })
-        st.session_state["_review_hydrated_from"] = file_id
-
-else:
-    # Ambil dari hasil crawl halaman 1
-    hasil_list  = st.session_state["hasil"]
-    label_sesi  = st.session_state.get("label_isu", "Hasil Crawl")
-    klaster_meta = st.session_state.get("klaster", [])
-    df_raw = pd.DataFrame([{
-        'No':          i + 1,
-        'Klaster':     h.get('klaster', '-'),
-        'Tanggal':     h.get('tanggal', '-'),
-        'Sumber':      h.get('sumber', '-'),
-        'Link':        h.get('link', '-'),
-        'Judul':       h.get('judul', '-'),
-        'Ringkasan':   h.get('ringkasan_isu', '-'),
-        'IsuSubisu':   h.get('isu_subisu', '-'),
-        'AktorLokasi': h.get('aktor_lokasi', '-'),
-        'Tone':        h.get('tone', 'Netral'),
-        'Risiko':      h.get('risiko', '-'),
-        'TindakLanjut': h.get('area_perhatian', '-'),
-        'KondisiPemicu': h.get('kondisi_pemicu', '-'),
-        'RelevansiPengawasan': h.get('relevansi_pengawasan', '-'),
-        'DimensiPengawasan': ", ".join(h.get('dimensi_pengawasan') or []),
-    } for i, h in enumerate(hasil_list)])
-    meta = {
-        "isu":      label_sesi,
-        "generate": "dari sesi crawl aktif",
-        "total":    str(len(df_raw)),
-        "unit":     "Pusat Strategi Kebijakan Pengawasan BPKP"
+    # Layar ini dieksekusi SEBELUM blok <style> font utama di bawah (yang
+    # baru jalan setelah login) — tanpa import sendiri di sini, gerbang
+    # password jatuh ke font default browser dan kelihatan polos/putus
+    # nyambung dengan identitas amber-navy di halaman-halaman lain.
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap');
+    html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
+    .st-key-login_card {
+        max-width: 440px; margin: 64px auto 0;
+        background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
+        border-radius: 14px; border-top: 3px solid #F5A623;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+        padding: 8px 8px 20px;
+        position: relative;
     }
-    sumber_data = "session"
+    .login-kicker {
+        font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.18em; color: #F5A623; text-transform: uppercase; margin-bottom: 10px;
+    }
+    .login-title { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.3; margin-bottom: 6px; }
+    .login-org   { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55); margin-bottom: 14px; }
+    .login-desc  { font-size: 12.5px; color: rgba(255,255,255,0.68); line-height: 1.6; max-width: 320px; margin: 0 auto 22px; }
+    /* Badge status "Beta" — dipasang pojok kanan-atas kartu login (bukan
+       nempel di judul) supaya tidak menambah risiko wrap 2 baris pada
+       "Analisis Isu Strategis Pengawasan" di layar sempit. Netral abu-abu:
+       ini penanda status internal, bukan ajakan aksi seperti tombol/link
+       oranye di kartu ini. */
+    .login-badge-beta {
+        position: absolute; top: 14px; right: 14px;
+        font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+        color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.14);
+        border-radius: 4px; padding: 3px 7px; text-transform: uppercase;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-df, stats = compute_stats(df_raw)
+    # Judul (nama lengkap) dan nama unit dipisah jadi dua level tipografi
+    # sendiri-sendiri, bukan digabung satu baris dengan em dash — supaya
+    # tidak ambigu mana judul aplikasi dan mana nama organisasinya. Ditambah
+    # satu kalimat penjelasan singkat: sebelum ini gerbang password langsung
+    # menyodorkan form login tanpa info apa pun soal aplikasinya sendiri.
+    with st.container(key="login_card"):
+        st.markdown("""
+        <div class="login-badge-beta">Beta</div>
+        <div style='text-align:center'>
+          <div class="login-kicker">AIS</div>
+          <div class="login-title">Analisis Isu Strategis Pengawasan</div>
+          <div class="login-org">Pusat Strategi Kebijakan Pengawasan BPKP</div>
+          <div class="login-desc">Pemantauan media otomatis untuk pengawasan isu strategis.</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ── Update Excel (Langkah Kerja 3) ───────────────────────────
-# Perlu df_raw & meta yang sudah ter-resolve, jadi diletakkan setelah blok
-# upload/session_state di atas (bukan di sidebar awal).
+        pw_input = st.text_input("Password Akses Tim", type="password", key="pw_gate_input")
+        masuk = st.button("Masuk", use_container_width=True, type="primary")
+
+        if masuk:
+            pw_benar = st.secrets.get("APP_PASSWORD", "") if hasattr(st, "secrets") else ""
+            if not pw_benar:
+                st.error("APP_PASSWORD belum dikonfigurasi di Streamlit Secrets. Hubungi pengelola aplikasi.")
+            elif pw_input == pw_benar:
+                st.session_state["ais_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Password salah.")
+
+        # Link Repositori publik — diperbesar & ditegaskan (dulu 11px/opacity
+        # 0.5, nyaris tak kelihatan). Badge "PUBLIK" dipisah dari teks link
+        # supaya info "bisa diakses tanpa login" kebaca sekilas tanpa perlu
+        # baca seluruh kalimat dulu — bukan metanarasi, ini penanda status
+        # akses (sama fungsinya dengan badge "Beta" di atas, tapi oranye
+        # karena ini mengarah ke aksi/link, bukan sekadar info status).
+        st.markdown("""
+        <div style='text-align:center;margin-top:16px;font-size:13px'>
+          <span style='color:rgba(255,255,255,0.6)'>Mencari hasil analisis isu?</span>
+          <a href='?page=repositori' style='color:#F5A623;font-weight:600;text-decoration:none'>
+            <span style='display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.06em;color:#0D1B2A;background:#F5A623;border-radius:4px;padding:2px 6px;text-transform:uppercase;margin:0 2px 0 6px;vertical-align:middle'>Publik</span>
+            Buka Repositori Isu Strategis →
+          </a>
+        </div>
+        """, unsafe_allow_html=True)
+
+    return False
+
+if not cek_password():
+    st.stop()
+
+# ── NAVIGASI ───────────────────────────────────────────────────────────────
 with st.sidebar:
-    review_klaster = st.session_state.get("review_klaster", {})
-    jml_direview = len(review_klaster)
+    # CSS ini berlaku di semua halaman (blok with st.sidebar ini selalu
+    # dieksekusi di setiap run, tidak seperti CSS spesifik per-halaman di
+    # bawah) — merapatkan jarak antar elemen sidebar yang sebelumnya terlalu
+    # lebar, plus styling tombol logout & label section yang mentereng.
+    st.markdown("""
+    <style>
+    [data-testid="stSidebar"] hr { margin: 0.5rem 0; }
+    [data-testid="stSidebar"] .stMarkdown { margin-bottom: 0; }
+    .sidebar-section-label {
+        font-size: 0.78rem; font-weight: 700; color: #F5A623;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        margin: 2px 0 4px 0;
+    }
+    .st-key-sidebar_brand_row { margin-bottom: 12px; }
+    /* Streamlit menampilkan label min/max slider ("stSliderTickBar") secara
+       default HANYA saat hover/drag (opacity:0 -> 1), termasuk untuk
+       select_slider Rentang Waktu Artikel ("1 hari" ... "Semua (tanpa
+       batas)"). Di sidebar yang sempit, dua label itu berdempetan dan
+       terlihat kebesaran/berantakan begitu muncul — jadi dimatikan total,
+       bukan cuma dikecilkan, karena nilai yang aktif sudah selalu
+       ditampilkan lewat stSliderThumbValue (teks oranye di atas thumb). */
+    [data-testid="stSidebar"] [data-testid="stSliderTickBar"] { display: none !important; }
+    /* Navigasi 3-menu — "tile" bukan radio polos, biar 3 fungsi utama app
+       (crawl, klasterisasi/analisis, repositori) kelihatan sebagai 3 modul
+       yang setara, bukan sekadar daftar link. Diskusi & di-tes langsung:
+       st.radio TIDAK BISA dikasih subteks per-opsi (label-nya cuma teks
+       polos 1 baris), jadi diganti 3x st.button, masing-masing labelnya
+       pakai markdown 2 baris ("**Judul**\\n\\nSubteks kecil") — ini
+       DIDUKUNG native oleh st.button (dites di probe terpisah), jauh lebih
+       simpel & stabil daripada trik "tombol transparan ditumpuk di atas
+       markdown" yang sempat dipertimbangkan. Highlight tile yang lagi aktif
+       diatur lewat CSS dinamis di bawah (bukan di sini), karena butuh tahu
+       st.session_state["ais_page"] saat itu.
+    */
+    /* Opsi 2 (revisi ruang sidebar): tile dipangkas jadi 1 baris (badge +
+       judul saja, subteks dihapus dari sini) — subteksnya sudah nongol lagi
+       persis sama di judul halaman utama, jadi di sidebar cukup labelnya
+       biar nggak makan tinggi. Ini yang bikin field Kata Kunci Isu & Nama
+       File nggak kegeser turun terlalu jauh. */
+    [class*="st-key-navtile_"] { margin-bottom: 4px; }
+    [class*="st-key-navtile_"] button {
+        width: 100% !important; text-align: left !important;
+        justify-content: flex-start !important;
+        /* white-space:nowrap DIHAPUS — badge nomor (di bawah) makan ~28px
+           ruang horizontal yang sebelumnya nggak diperhitungkan. Di layar
+           sempit (HP), label terpanjang ("Repositori Isu Strategis") jadi
+           kepotong/ke-clip di tepi tombol karena dipaksa 1 baris tapi
+           nggak muat. Ganti ke normal supaya label yang kepanjangan
+           WRAP ke baris ke-2 (aman, height:auto sudah nampung), bukan
+           malah kepotong hilang sebagian hurufnya. */
+        white-space: normal !important; height: auto !important;
+        line-height: 1.35 !important; padding: 8px 14px !important;
+        border-radius: 8px !important;
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+    }
+    /* justify-content di <button> saja ternyata belum cukup — Streamlit
+       membungkus label tombol dalam SATU <div> anak lagi (bukan cuma teks
+       langsung di <button>) yang JUGA display:flex + justify-content:center
+       sendiri, independen dari kondisi <button> induknya. Efeknya baru
+       kelihatan jelas di label pendek ("Crawl Berita") yang nyisa banyak
+       ruang kosong kalau di-center; label panjang ("Klasterisasi & Analisis")
+       kebetulan hampir sepanjang tombol jadi terlihat rata kiri padahal
+       sebenarnya juga masih ke-center — bukan soal tile aktif/nggak aktif.
+       Perbaikannya: paksa div anak langsung ini juga rata kiri. */
+    [class*="st-key-navtile_"] button > div { justify-content: flex-start !important; }
+    [class*="st-key-navtile_"] button p { font-size: 13px !important; }
+    /* Badge nomor urut 1/2/3 (gaya "stepper", hasil diskusi) — dibuat pakai
+       CSS counter di ::before <button>, BUKAN emoji ikon lagi, supaya
+       nomornya selalu sinkron sama urutan render NAV_ITEMS tanpa perlu
+       di-hardcode manual. counter-reset di scope stSidebar (bukan di
+       elemen tile-nya sendiri) supaya hitungannya jalan berurutan lintas
+       3 tile yang tiap-tiap punya class unik sendiri (st-key-navtile_crawl
+       dkk), bukan ke-reset ulang tiap tile. Garis penghubung ala stepper
+       di mockup SENGAJA tidak dibuat — tile di sini masing-masing punya
+       kartu/border sendiri (beda dari mockup yang list polos tanpa kartu),
+       jadi garis lurus bakal kepotong-potong nembus border tiap kartu dan
+       malah kelihatan rusak, bukan rapi. */
+    [data-testid="stSidebar"] { counter-reset: navstep 0; }
+    [class*="st-key-navtile_"] button::before {
+        counter-increment: navstep;
+        content: counter(navstep);
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px; margin-top: 1px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(255,255,255,0.35);
+        color: rgba(255,255,255,0.75);
+        font-family: monospace; font-size: 11px; font-weight: 700;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    fn_update = st.container(key="sidebar_fn_update")
-    fn_update.markdown(f"""
-    <div class='sidebar-fn-title'>🔄 Update Excel</div>
-    <div class='sidebar-fn-desc'>
-      {f"{jml_direview} klaster sudah ditelaah dan siap ditulis ke Excel." if jml_direview > 0 else "Belum ada klaster yang ditelaah. Isi form telaah di Tab Klasterisasi Isu."}
+    with st.container(key="sidebar_brand_row"):
+        # Round 2 redesign — kartu ini diubah TERANG, bukan lagi gradient
+        # navy gelap. Alasannya persis yang dilaporkan: logo PNG transparan
+        # itu elemen "bpkp"-nya gelap, jadi chip putih di belakangnya
+        # (round 1) kelihatan seperti stiker ditempel di atas card navy —
+        # ada kotak putih yang mencolok sendiri. Dengan card-nya sendiri
+        # dibikin terang, logo tidak butuh chip terpisah lagi (background-
+        # nya sudah sewarna dari sononya) — jadi logo langsung ditaruh di
+        # atas tanpa div pembungkus tambahan, otomatis nyatu tanpa
+        # terlihat "tempelan".
+        # Putih polos (round 2 awal) dirasa kurang elegan — diganti krem
+        # hangat (#F5F0E6), senada sama aksen amber (#F5A623) yang sudah
+        # dipakai di seluruh app, supaya kartu ini kerasa "institusional"
+        # bukan steril. Masih cukup terang jadi teks navy & logo gelap
+        # tetap kontras jelas — nggak perlu ganti warna teks lain.
+        # "AIS" (wordmark singkat) dihapus total — "Analisis Isu Strategis"
+        # sekarang jadi judul utama, dibuat bold & agak besar tapi
+        # font-size-nya sengaja dites supaya tetap muat 1 baris (bukan
+        # dipaksa nowrap yang berisiko malah kepotong di layar sempit).
+        # Kata "BPKP" di baris bawah dihapus juga — sudah terwakili oleh
+        # logo itu sendiri, jadi redundan kalau diulang di teks.
+        # Badge "Beta" dipasang pojok kanan-atas kartu (position:absolute),
+        # bukan nempel di sebelah judul — supaya tidak menambah risiko wrap
+        # 2 baris pada "Analisis Isu Strategis" yang sudah pas-pasan muat 1
+        # baris di layar sempit (lihat catatan font-size 13px di atas).
+        _logo_b64 = _logo_bpkp_base64()
+        _logo_tag = f"<img src='data:image/png;base64,{_logo_b64}' style='height:28px;width:auto;display:block;margin-bottom:10px'>" if _logo_b64 else ""
+        st.markdown(f"""
+        <div style='background:#F5F0E6;
+                    border-radius:8px;padding:14px 16px;text-align:left;
+                    border-bottom:3px solid #F5A623;position:relative'>
+          <div style='position:absolute;top:10px;right:10px;font-size:9px;font-weight:700;letter-spacing:0.06em;color:rgba(13,27,42,0.55);background:rgba(13,27,42,0.08);border-radius:4px;padding:2px 6px;text-transform:uppercase'>Beta</div>
+          {_logo_tag}
+          <div>
+            <div style='font-size:13px;font-weight:800;letter-spacing:0;color:#0D1B2A;line-height:1.25'>Analisis Isu Strategis</div>
+            <div style='font-size:11px;font-weight:500;color:rgba(13,27,42,0.6);margin-top:4px;line-height:1.4'>Pusat Strategi Kebijakan Pengawasan</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Nama final hasil diskusi — dulunya tiap item juga punya "desc" (subteks
+    # fungsi, sama persis dengan subtitle judul halaman) tapi itu sudah
+    # dihapus dari tampilan sidebar sejak Opsi 2 (soal ruang), begitu juga
+    # "icon" emoji per-item — sekarang diganti badge nomor urut 1/2/3 (CSS
+    # counter, lihat ::before di atas), jadi field-field itu tidak
+    # dipertahankan lagi di sini.
+    NAV_ITEMS = [
+        {"id": "crawl",   "label": "Crawl Berita"},
+        {"id": "klaster", "label": "Klasterisasi & Analisis"},
+        {"id": "repo",    "label": "Repositori Isu Strategis"},
+    ]
+
+    if "ais_page" not in st.session_state:
+        st.session_state["ais_page"] = "crawl"
+
+    # Highlight tile aktif — di-generate dinamis tiap rerun karena butuh
+    # tahu halaman mana yang lagi aktif saat ini.
+    st.markdown(f"""
+    <style>
+    .st-key-navtile_{st.session_state['ais_page']} button {{
+        background: rgba(245,166,35,0.14) !important;
+        border: 1px solid rgba(245,166,35,0.45) !important;
+        border-left: 3px solid #F5A623 !important;
+    }}
+    .st-key-navtile_{st.session_state['ais_page']} button p:first-child {{ color: #F5A623 !important; }}
+    .st-key-navtile_{st.session_state['ais_page']} button::before {{
+        background: #F5A623 !important; border-color: #F5A623 !important; color: #0D1B2A !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    for item in NAV_ITEMS:
+        with st.container(key=f"navtile_{item['id']}"):
+            if st.button(
+                f"**{item['label']}**",
+                key=f"navbtn_{item['id']}",
+                use_container_width=True,
+            ):
+                if st.session_state["ais_page"] != item["id"]:
+                    st.session_state["ais_page"] = item["id"]
+                    st.rerun()
+
+    page = st.session_state["ais_page"]
+    st.divider()
+
+# ── Excel builder (top-level agar bisa dipanggil dari dashboard_ais.py) ──
+def buat_excel(data: list, label_isu: str) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Identifikasi Isu"
+
+    C_NAVY="1F3864"; C_WHITE="FFFFFF"; C_SUB="D9E1F2"; C_ODD="EEF2F7"; C_EVEN="FFFFFF"
+    TONE_C={"Positif":"C6EFCE","Netral":"FFEB9C","Negatif":"FFC7CE"}
+    HEADERS=["No","Klaster Isu","Tanggal","Sumber","Link/Bukti","Judul/Post","Ringkasan Isu","Isu/Subisu","Aktor/Lokasi","Tone Berita","Risiko","Area Perhatian","Kondisi Klaster","Relevansi Pengawasan",
+             "Sektor","Tema","Topik","Dampak/Implikasi (Final)","Gap Pengawasan","Usulan Pengawasan","Status Review",
+             # Ditambahkan di paling AKHIR (kolom ke-22), SENGAJA bukan disisipkan
+             # dekat "Relevansi Pengawasan" — supaya posisi kolom 1-21 (termasuk
+             # blok telaah manusia Sektor..Status Review di 15-21) tidak bergeser
+             # dan file lama (21 kolom) tetap terbaca benar oleh dashboard_ais.py.
+             "Dimensi Pengawasan (GRCC AnCoDe)"]
+    NCOL=len(HEADERS)
+    COL_STATUS_REVIEW = HEADERS.index("Status Review") + 1  # posisi eksplisit,
+    # bukan diasumsikan "kolom terakhir" — supaya penambahan kolom baru di masa
+    # depan tidak diam-diam salah mewarnai kolom yang salah (ini yang dulu
+    # nyaris kejadian pas nambah kolom Dimensi Pengawasan di atas).
+    s=Side(style="thin",color="CCCCCC")
+    BD=Border(left=s,right=s,top=s,bottom=s)
+
+    def style(c,bg,bold=False,sz=9,center=False,fc=C_NAVY):
+        c.font=Font(name="Arial",size=sz,bold=bold,color=fc)
+        c.fill=PatternFill("solid",fgColor=bg)
+        c.alignment=Alignment(horizontal="center" if center else "left",vertical="top",wrap_text=True)
+        c.border=BD
+
+    ws.merge_cells(f"A1:{get_column_letter(NCOL)}1")
+    c=ws["A1"]; c.value="IDENTIFIKASI ISU HARIAN — ANALISIS ISU STRATEGIS PENGAWASAN"
+    style(c,C_NAVY,bold=True,sz=13,center=True,fc=C_WHITE); ws.row_dimensions[1].height=28
+
+    ws.merge_cells(f"A2:{get_column_letter(NCOL)}2")
+    c=ws["A2"]
+    c.value=f"Isu: {label_isu}  |  Generate: {datetime.now().strftime('%d %B %Y, %H:%M')}  |  Total: {len(data)} artikel  |  Pusat Strategi Kebijakan Pengawasan BPKP"
+    style(c,C_SUB,sz=9); ws.row_dimensions[2].height=16; ws.row_dimensions[3].height=5
+
+    for col,h in enumerate(HEADERS,1):
+        c=ws.cell(row=4,column=col,value=h); style(c,C_NAVY,bold=True,sz=10,center=True,fc=C_WHITE)
+    ws.row_dimensions[4].height=34
+
+    for i,d in enumerate(data):
+        r=5+i; bg=C_ODD if i%2==0 else C_EVEN
+        baris=[i+1,d.get("klaster","-"),d.get("tanggal","-"),d.get("sumber","-"),d.get("link","-"),d.get("judul","-"),
+               d.get("ringkasan_isu","-"),d.get("isu_subisu","-"),d.get("aktor_lokasi","-"),
+               d.get("tone","Netral"),d.get("risiko","-"),d.get("area_perhatian","-"),
+               d.get("kondisi_pemicu","-"),d.get("relevansi_pengawasan","-"),
+               d.get("sektor","-"),d.get("tema","-"),d.get("topik","-"),
+               d.get("dampak_implikasi_final","-"),d.get("gap_pengawasan","-"),d.get("usulan_pengawasan","-"),
+               d.get("status_review","Belum Direview"),
+               ", ".join(d.get("dimensi_pengawasan") or [])]
+        for col,val in enumerate(baris,1):
+            c=ws.cell(row=r,column=col,value=val); style(c,bg)
+        tone_val=d.get("tone","Netral")
+        ws.cell(row=r,column=10).fill=PatternFill("solid",fgColor=TONE_C.get(tone_val,"FFEB9C"))
+        status_val=d.get("status_review","Belum Direview")
+        STATUS_C={"Sudah Direview":"C6EFCE","Belum Direview":"F2F2F2"}
+        ws.cell(row=r,column=COL_STATUS_REVIEW).fill=PatternFill("solid",fgColor=STATUS_C.get(status_val,"F2F2F2"))
+        ws.row_dimensions[r].height=60
+
+    for col,w in enumerate([5,28,12,18,35,40,45,25,25,12,45,40,45,40,30,28,40,45,40,45,16,40],1):
+        ws.column_dimensions[get_column_letter(col)].width=w
+
+    buf=io.BytesIO(); wb.save(buf); buf.seek(0)
+    return buf.read()
+
+# ══════════════════════════════════════════════════════════════════════════
+# HALAMAN 1 — CRAWL & ANALISIS
+# ══════════════════════════════════════════════════════════════════════════
+if page == "crawl":
+
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+    html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
+    /* Gradien navy gelap + border-bottom amber disamakan persis dengan
+       .ais-topbar di dashboard_ais.py (halaman Klasterisasi & Analisis),
+       supaya ketiga judul halaman terasa satu sistem visual — sebelumnya
+       cuma halaman ini yang polos biru terang tanpa aksen amber. */
+    .main-header {
+        background: linear-gradient(135deg, #0D1B2A 0%, #1C3D5A 100%);
+        padding: 14px 20px; border-radius: 10px; margin-bottom: 14px;
+        border-bottom: 3px solid #F5A623;
+    }
+    .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; color: #F5A623; }
+    .main-header p  { font-size: 0.85rem; margin: 0; font-family: 'IBM Plex Mono', monospace; color: rgba(255,255,255,0.75); }
+    /* Ikon unduh kecil di pojok kanan atas banner header -- round diskusi
+       "tombol kecil sebelumnya makan 1 row sendiri, jelek". Container ini
+       dirender SETELAH banner header di kode (lihat pemanggilannya), lalu
+       margin-top NEGATIF di sini dipakai buat "menarik" box-nya naik
+       nutupin pojok kanan atas banner -- karena keduanya sibling terpisah
+       di DOM (banner cuma HTML mentah di st.markdown, bukan parent asli
+       dari tombol beneran), bukan lewat position:absolute+ancestor yang
+       butuh nesting asli. Box belakangan otomatis kegambar DI ATAS banner
+       di titik yang overlap (urutan DOM biasa, nggak perlu z-index).
+       margin-bottom positif buat kompensasi supaya konten sesudahnya
+       nggak ketarik naik ikut kepepet. */
+    .st-key-download_top_corner {
+        margin-top: -54px !important; margin-bottom: 34px !important;
+        /* stVerticalBlock Streamlit defaultnya flex-direction:column -- jadi
+           justify-content di situ ngatur SUMBU VERTIKAL, bukan horizontal
+           (sempat salah pakai justify-content:flex-end, hasilnya malah
+           nempel di bawah, bukan di kanan). align-items yang bener buat
+           narik child-nya ke KANAN dalam container column-flex. */
+        display: flex !important; align-items: flex-end !important;
+        padding-right: 6px !important; position: relative !important; z-index: 5 !important;
+    }
+    .st-key-download_top_corner button {
+        padding: 2px 10px !important; min-height: 28px !important; height: 28px !important;
+        font-size: 13px !important; line-height: 1 !important;
+        background: rgba(255,255,255,0.1) !important; border: 1px solid rgba(255,255,255,0.35) !important;
+        color: #fff !important; border-radius: 6px !important;
+    }
+    .st-key-download_top_corner button:hover {
+        background: rgba(245,166,35,0.25) !important; border-color: #F5A623 !important;
+    }
+    /* Kartu panduan "Cara memulai" — dibuat setara gaya kartu "Belum Ada
+       Data" di Dashboard AIS (border putus-putus, background transparan
+       tipis, warna teks ikut tema dark via `inherit`/opacity) supaya kedua
+       halaman terasa satu sistem visual yang sama, bukan white-card ala
+       dokumen yang kontras dengan tema dark aplikasi. */
+    .st-key-crawl_empty_guide {
+        border: 2px dashed rgba(128,128,128,0.3) !important;
+        border-radius: 12px !important;
+        background: rgba(128,128,128,0.06) !important;
+        padding: 20px 24px !important;
+        margin-bottom: 1.5rem !important;
+    }
+    .empty-guide-title { font-size: 16px; font-weight: 600; color: inherit; margin-bottom: 10px; text-align: center; }
+    .empty-guide ol { margin: 0; padding-left: 1.2rem; max-width: 520px; margin-left: auto; margin-right: auto; }
+    .empty-guide li { margin-bottom: 0.45rem; font-size: 12.5px; color: inherit; opacity: 0.75; line-height: 1.6; }
+    .empty-guide li b { opacity: 1; font-weight: 600; }
+    /* Kartu "Unduh Hasil" — sengaja beraksen amber (primaryColor app ini)
+       supaya jadi satu-satunya elemen berwarna di antara kartu-kartu
+       putih/netral lainnya, menandakan ini aksi penutup yang paling
+       penting. Judul + tombol disatukan dalam satu container (bukan
+       heading kecil terpisah dari tombol polos seperti sebelumnya) supaya
+       bobot visualnya terasa setara. */
+    .st-key-download_cta {
+        background: linear-gradient(135deg, rgba(245,166,35,0.16), rgba(245,166,35,0.05)) !important;
+        border: 1px solid rgba(245,166,35,0.4) !important;
+        border-radius: 12px !important;
+        padding: 22px 24px !important;
+    }
+    .download-cta-icon { font-size: 26px; text-align: center; margin-bottom: 8px; }
+    .download-cta-title { font-size: 16px; font-weight: 700; color: #F5A623; margin-bottom: 4px; text-align: center; }
+    .download-cta-sub { font-size: 12px; color: inherit; opacity: 0.7; margin-bottom: 16px; line-height: 1.5; text-align: center; }
+    /* Kartu statistik & kartu artikel — SEBELUMNYA putih polos, peninggalan
+       dari sebelum seluruh app ini dibikin bertema navy gelap (login,
+       sidebar, kartu klaster, kotak Query semua sudah dimigrasi; ini
+       "pulau" terang terakhir). Round diskusi "font artikel kegedean" —
+       ternyata bukan cuma soal angka px, tapi bobot visual: judul navy
+       tebal 16px di atas kartu putih memang menonjol keras di tengah
+       halaman gelap. Dimigrasi penuh ke sistem warna yang sama dipakai di
+       seluruh app (rgba abu-abu utk card, oranye/biru utk aksen, palet
+       tone Positif/Netral/Negatif yang sama dgn dashboard_ais.py), DAN
+       ukuran fontnya diturunkan sedikit supaya proporsional dengan kartu
+       lain (klaster, spotlight) yang judulnya 13-15px bukan 16px. */
+    .stat-card {
+        background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.2);
+        border-radius: 10px; padding: 1.1rem 1.5rem; text-align: center;
+    }
+    .stat-number { font-size: 1.65rem; font-weight: 700; color: #F5A623; line-height: 1; }
+    .stat-label  { font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-top: 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .artikel-card {
+        background: rgba(128,128,128,0.05); border: 1px solid rgba(128,128,128,0.18);
+        border-left: 3px solid #F5A623; border-radius: 8px;
+        padding: 1.1rem 1.4rem; margin-bottom: 1rem;
+    }
+    .artikel-judul { font-size: 0.92rem; font-weight: 600; color: rgba(250,250,250,0.92); margin-bottom: 0.4rem; line-height: 1.45; }
+    /* Warna link judul dibuat permanen (bukan cuma muncul saat hover) —
+       sebelumnya sama persis dengan warna teks biasa saat tidak disentuh
+       kursor, jadi nyaris tidak kelihatan kalau judulnya bisa diklik.
+       Panah "↗" juga diperkuat (opacity & ketebalan naik) sebagai sinyal
+       kedua. Opsi ini dipilih karena "teks biru = bisa diklik" adalah
+       konvensi web paling universal, tidak perlu penjelasan tambahan.
+       Warna disesuaikan ke aksen biru terang (bukan navy gelap #1a56c4
+       lama) supaya tetap kontras di atas kartu gelap. */
+    .artikel-judul a.judul-link { color: #63B3ED; text-decoration: none; }
+    .artikel-judul a.judul-link:hover { color: #8ECBFA; text-decoration: underline; }
+    .artikel-judul a.judul-link::after { content: "↗"; font-size: 0.8em; font-weight: 700; opacity: 0.75; margin-left: 5px; white-space: nowrap; }
+    .artikel-meta  { font-size: 0.75rem; color: rgba(255,255,255,0.55); margin-bottom: 0.7rem; font-family: 'IBM Plex Mono', monospace; }
+    .artikel-ringkasan { font-size: 0.85rem; color: rgba(255,255,255,0.8); line-height: 1.6; margin-bottom: 0.5rem; }
+    .tone-positif { background: rgba(39,174,96,0.15); color: #27AE60; padding:2px 10px; border-radius:12px; font-size:0.72rem; font-weight:600; }
+    .tone-netral  { background: rgba(149,165,166,0.15); color: #95A5A6; padding:2px 10px; border-radius:12px; font-size:0.72rem; font-weight:600; }
+    .tone-negatif { background: rgba(231,76,60,0.15); color: #E74C3C; padding:2px 10px; border-radius:12px; font-size:0.72rem; font-weight:600; }
+    /* Pill sumber & badge aktor/topik — disamakan PERSIS ke versi gelap
+       yang sudah ada di Dashboard AIS (pill nama media oranye, badge
+       topik indigo, badge aktor slate), bukan reinvent warna baru lagi. */
+    .pill-sumber {
+        display: inline-block; font-size: 10px; font-weight: 700;
+        font-family: 'IBM Plex Mono', monospace;
+        color: #F5A623; background: rgba(245,166,35,0.12);
+        border: 1px solid rgba(245,166,35,0.35);
+        padding: 1px 7px; border-radius: 3px;
+        margin-right: 6px; letter-spacing: 0.02em;
+        text-transform: uppercase; vertical-align: middle;
+    }
+    .badge-pill {
+        display: inline-block; font-size: 10px; font-weight: 600;
+        font-family: 'IBM Plex Mono', monospace;
+        padding: 2px 7px; border-radius: 3px;
+        margin-right: 4px; margin-top: 4px;
+    }
+    .badge-topik { background: rgba(99,102,241,0.15); color: #818CF8; }
+    .badge-aktor { background: rgba(148,163,184,0.16); color: #94A3B8; }
+    .artikel-tanggal { opacity: 0.65; }
+    /* Kotak Query — SEBELUMNYA warnanya di-hardcode buat tema TERANG
+       (#eff6ff/#1e40af), padahal seluruh app ini sudah navy gelap. Itu
+       sebabnya kotak ini kelihatan paling mencolok/berat di layar (bug
+       tema, bukan cuma soal ukuran font) — persis masalah yang sama yang
+       sudah dibenahi di kartu "Cara memulai" (.st-key-crawl_empty_guide)
+       tapi belum sempat menyentuh kotak ini. Diselaraskan ke aksen biru
+       yang sudah dipakai di tempat lain (hover kartu artikel, tombol
+       Telaah) sebagai warna "informasional" — beda dari oranye (brand/
+       aksi utama) dan merah (risiko), supaya kode warna semantiknya tetap
+       konsisten. Daftar query juga diubah dari tumpukan baris jadi
+       pill/chip mengalir (round diskusi "lebih elegan") — lebih scannable
+       terutama saat query-nya banyak (bisa sampai puluhan). */
+    .query-box {
+        background: rgba(99,179,237,0.06);
+        border: 1px solid rgba(99,179,237,0.25);
+        border-radius: 8px;
+        padding: 0.75rem 1rem 0.85rem; margin-bottom: 1rem;
+    }
+    .query-box-label {
+        font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+        text-transform: uppercase; color: #63B3ED; opacity: 0.85;
+        margin-bottom: 8px; font-family: 'IBM Plex Mono', monospace;
+    }
+    .query-pill {
+        display: inline-block; font-size: 11px; font-weight: 500;
+        font-family: 'IBM Plex Mono', monospace;
+        color: #8ECBFA; background: rgba(99,179,237,0.1);
+        border: 1px solid rgba(99,179,237,0.3);
+        padding: 3px 9px; border-radius: 12px;
+        margin: 3px 5px 0 0;
+    }
+    /* Judul tahapan proses ("Proses Crawl & Analisis") — sebelumnya
+       st.subheader() bawaan Streamlit (putih polos, ~24px), satu-satunya
+       heading di app ini yang tidak ikut gaya khas (aksen oranye, dsb).
+       Diselaraskan PERSIS ke gaya label section sidebar (.sidebar-
+       section-label — dipakai "KATA KUNCI ISU"/"RENTANG WAKTU") supaya
+       satu bahasa desain, bukan bikin gaya heading baru lagi. */
+    .process-section-label {
+        font-size: 0.78rem; font-weight: 700; color: #F5A623;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        margin: 4px 0 14px 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Tier sumber ────────────────────────────────────────────────────────
+    TIER1_KEYWORDS = {
+        "kompas","tempo","detik","cnnindonesia","republika","antaranews",
+        "mediaindonesia","bisnis","kontan","tribunnews","liputan6","okezone",
+        "sindonews","jpnn","suara","kumparan","rmol","inews","katadata",
+        "validnews","thejakartapost","jawapos",
+    }
+
+    def tier_sumber(url: str) -> str:
+        domain = re.sub(r"https?://(www\.)?", "", url).split("/")[0].lower()
+        for t1 in TIER1_KEYWORDS:
+            if t1 in domain:
+                return "Tier 1"
+        return "Tier 2"
+
+    def extract_sumber_dari_judul(judul: str) -> str:
+        m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
+        if m:
+            sumber = m.group(1).strip()
+            sumber = re.sub(r"\s*\[.*?\]\s*$", "", sumber).strip()
+            return sumber if sumber else ""
+        return ""
+
+    def bersihkan_judul_dari_sumber(judul: str) -> str:
+        """Buang suffix ' - NamaSumber' Google News dari judul untuk
+        ditampilkan \u2014 nama sumbernya sendiri sudah tampil terpisah sebagai
+        pill (lihat pill-sumber), sama seperti tweak yang sudah diterapkan
+        di Dashboard AIS."""
+        m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
+        return judul[:m.start()].strip() if m else judul.strip()
+
+    # ── PROMPT SISTEM (analisis per-artikel) ───────────────────────────────
+    PROMPT_SISTEM = """Kamu adalah analis isu strategis pengawasan pemerintahan Indonesia untuk BPKP Pusat Strategi Kebijakan Pengawasan.
+
+LANGKAH WAJIB — lakukan secara berurutan sebelum mengisi JSON:
+
+LANGKAH 1 — BACA JUDUL DAN KONTEN SECARA LITERAL
+Identifikasi: siapa yang disebut, apa yang terjadi, ada angka/besaran/tanggal apa, ada kata kunci negatif apa (dugaan, korupsi, gagal, mangkrak, turun, naik, dll). Kalau field "Konten" tersedia, gali detail konkret di dalamnya (nominal, jumlah, nama pihak/jabatan spesifik, tahapan/kegiatan yang disebutkan) — jangan cuma parafrase judul. Jangan tambahkan asumsi yang tidak ada di judul/konten.
+
+LANGKAH 2 — ISI JSON
+Output harus berupa JSON murni tanpa teks apapun di luar kurung kurawal:
+{
+  "ringkasan_isu"  : "3-4 kalimat FAKTUAL dan SEDETAIL MUNGKIN, gaya LEAD BERITA LANGSUNG (siapa-apa-kapan/di mana di kalimat pertama) — bukan esai yang mendeskripsikan artikelnya. WAJIB DIHINDARI, dalam kalimat mana pun (pembuka ATAUPUN penutup): frasa meta seperti 'Artikel [sumber] berjudul ...', 'Video berjudul ...', '... mengangkat isu/praktik/topik ...', '... membahas ...', '... mengulas ...', '... menyoroti ...', atau menyebut ulang nama sumber media dan tanggal publikasi (nama sumber & tanggal SUDAH tampil terpisah di UI, tidak perlu diulang di ringkasan). Langsung sampaikan FAKTANYA. Sebutkan nama program/institusi/jabatan spesifik, angka/nominal/tanggal kalau disebutkan, dan pemicu/konteksnya. Artikel ini harus bisa dipahami BERDIRI SENDIRI tanpa perlu membaca artikel lain di klasternya — utamakan detail konkret dari artikel ini sendiri, bukan kalimat generik yang bisa berlaku untuk artikel manapun di topik yang sama. JANGAN simpulkan risiko/relevansi/prioritas bagi pengawasan BPKP di sini — itu dinilai belakangan di level klaster, dengan konteks seluruh artikel sejenis, bukan per-artikel.
+
+Contoh SALAH (meta-naratif, bertele-tele): 'Artikel Kompas.id berjudul Tak Lagi Nama, Ketika Calon Manajer Kopdes Merah Putih Dipanggil dengan Angka mengangkat praktik pemanggilan calon manajer Koperasi Desa (Kopdes) Merah Putih menggunakan angka, bukan nama. Hal ini terjadi dalam konteks seleksi calon manajer untuk program Kopdes Merah Putih. Artikel ini menyoroti aspek etika dan prosedur dalam proses seleksi manajer koperasi desa tersebut.'
+Contoh BENAR (langsung ke fakta): 'Calon manajer Koperasi Desa (Kopdes) Merah Putih dipanggil menggunakan nomor urut, bukan nama, dalam proses seleksi program Kopdes Merah Putih yang digagas pemerintah. Praktik ini dinilai mengurangi harkat dan martabat calon manajer, yang seharusnya diperlakukan secara profesional dan manusiawi. Belum ada penjelasan resmi soal alasan penggunaan sistem penomoran ini dalam prosedur seleksi.'",
+  "isu_subisu"     : "Nama isu utama / subisu spesifik (gunakan istilah dari judul, bukan abstraksi)",
+  "aktor_lokasi"   : "Nama institusi/jabatan/lokasi yang DISEBUT SECARA EKSPLISIT di judul atau konten artikel ini SENDIRI. JANGAN mengambil atau menggabungkan nama dari 'Topik crawl' kalau nama itu tidak benar-benar muncul di judul/konten artikel ini -- 'Topik crawl' cuma kata kunci pencarian, bukan fakta tentang siapa aktornya. Kalau tidak ada aktor/lokasi spesifik yang disebut di judul/konten, kosongkan atau tulis nama institusi umum yang benar-benar ada di konten saja",
+  "tone"           : "Positif" atau "Netral" atau "Negatif"
+}
+
+Aturan tambahan:
+- Tone HANYA: Positif, Netral, atau Negatif
+- Gunakan nama program/instansi/angka yang ada di judul/konten — jangan ganti dengan abstraksi
+- Kalau judul & konten SAMA-SAMA tidak cukup untuk memastikan artikel ini benar-benar membahas topik crawl (mis. konten kosong, judul cuma nama instansi/halaman umum tanpa menyebut isu spesifik), JANGAN paksakan framing topik crawl ke "ringkasan_isu"/"isu_subisu"/"aktor_lokasi" seolah pasti nyambung — tulis apa adanya dari yang BENAR-BENAR diketahui (instansi, jenis publikasi, tanggal), dan nyatakan eksplisit keterkaitannya ke topik crawl belum bisa dipastikan. Contoh isu_subisu yang BENAR untuk kasus begini: "Publikasi resmi [instansi] — substansi belum dapat dipastikan" (bukan dipaksa jadi nama topik crawl-nya).
+- "Topik crawl" HANYA konteks kata kunci pencarian yang dipakai untuk menemukan artikel ini, BUKAN daftar fakta tentang aktor/tokoh yang terlibat. "Topik crawl" bisa berisi gabungan beberapa kata kunci berbeda yang TIDAK SALING BERELASI (mis. dua nama tokoh berbeda yang kebetulan digabung jadi satu baris pencarian oleh pengguna) — JANGAN pernah mengasumsikan itu satu nama orang/entitas yang sama, dan JANGAN menyalin potongan kata dari "Topik crawl" ke "aktor_lokasi" atau field lain kecuali kata itu juga benar-benar muncul di judul/konten artikel ini
+- Bahasa Indonesia formal
+- Output HANYA JSON murni"""
+
+    # ── PROMPT KLASTER (klasterisasi + analisis risiko/area perhatian) ─────
+    PROMPT_KLASTER = """Kamu adalah analis isu strategis pengawasan BPKP Pusat Strategi Kebijakan Pengawasan.
+
+Kamu akan menerima daftar artikel (no, judul, ringkasan_isu, isu_subisu) hasil crawl SATU keyword/topik yang sama.
+Meski semua artikel membahas topik yang sama, arah/akar persoalannya bisa berbeda-beda.
+
+TUGAS 1 — KLASTERISASI:
+Kelompokkan artikel-artikel ini ke dalam klaster isu utama berdasarkan KESAMAAN AKAR PERSOALAN DAN ARAH ISU — bukan sekadar kesamaan kata kunci permukaan.
+
+ATURAN KLASTERISASI:
+1. JUMLAH KLASTER 3 SAMPAI 5 — INI BATAS KERAS. Tidak boleh kurang dari 3, tidak boleh lebih dari 5, berapa pun banyaknya artikel — TERMASUK kalau seluruh artikel terasa membahas satu peristiwa/narasi besar yang sama.
+2. Kalau artikel-artikelnya terasa homogen (satu topik/peristiwa besar yang sama), JANGAN jadikan itu alasan untuk menggabungkan semua jadi 1 klaster. Cari perbedaan SUDUT PANDANG, SKALA, atau FOKUS di antara artikel-artikel tersebut — misalnya: kasus/insiden spesifik vs tren atau daftar kumulatif yang berulang, fakta kejadian vs opini/analisis akar penyebab, level nasional vs level daerah/lokasi tertentu, atau tindakan pelaku vs respons institusi. Perbedaan semacam ini SELALU ada kalau dicari dengan teliti, dan itulah dasar pemecahan klasternya.
+3. JANGAN membuat klaster terlalu granular berdasarkan detail permukaan (nama tokoh, nama acara, judul spesifik). Klaster harus berdasarkan AKAR PERSOALAN/ARAH ISU yang sama — kalau dua artikel sama-sama soal "kepercayaan investor" atau "tata kelola internal", gabungkan jadi satu klaster meski judul dan tokoh yang disebut berbeda.
+4. Setiap artikel HARUS masuk tepat satu klaster (tidak ada yang terlewat, tidak ada duplikasi).
+
+TUGAS 2 — ANALISIS RISIKO & AREA PERHATIAN PER KLASTER:
+Untuk SETIAP klaster yang terbentuk, analisis berdasarkan KESELURUHAN artikel anggotanya (bukan satu artikel saja) untuk menjawab:
+- "risiko": APA yang bisa terjadi jika kondisi/pola pada klaster ini tidak diintervensi (kerugian, kegagalan, penyimpangan). Ini PERNYATAAN RISIKO, bukan rencana kerja. JANGAN diawali label kategori (TATA KELOLA/PELAKSANAAN/KEBIJAKAN/EKSTERNAL) — tulis langsung isinya. DILARANG menulis frasa generik seperti "perlu transparansi", "perlu akuntabilitas", "tata kelola yang baik".
+- "area_perhatian": TITIK LEMAH atau CELAH KONKRET yang melatarbelakangi risiko tersebut — bukan jenis kegiatan pengawasan yang harus dilakukan. JANGAN menulis "audit terhadap...", "reviu terhadap...", "perlu dilakukan pemeriksaan...". Tulis sebagai temuan/celah, bukan instruksi kerja.
+
+Contoh SALAH (area_perhatian berbentuk kegiatan pengawasan):
+"Audit kinerja dan keuangan terhadap pengelolaan dapur MBG oleh BGN"
+
+Contoh BENAR (area_perhatian berbentuk titik lemah):
+"Standar kebersihan dan kualitas bahan baku pada dapur penyedia MBG belum terverifikasi secara independen, sementara pengelolaan dapur melibatkan banyak penyedia pihak ketiga dengan pengawasan harian yang minim dari BGN"
+
+TUGAS 3 — TAG DIMENSI PENGAWASAN (GRCC AnCoDe):
+Tandai klaster ini dengan dimensi pengawasan mana saja yang BENAR-BENAR didukung isi artikelnya. Pilih HANYA dari daftar ini (boleh lebih dari satu, boleh KOSONG kalau memang tidak ada yang jelas-jelas cocok — JANGAN dipaksakan):
+- "Governance": persoalan tata kelola/struktur kewenangan/akuntabilitas kelembagaan
+- "Risk": ada indikasi risiko/ancaman terhadap capaian program yang belum terealisasi (bukan masalah yang sudah terjadi)
+- "Control": ada indikasi lemahnya/tidak berjalannya mekanisme pengendalian internal
+- "Compliance": ada indikasi ketidaksesuaian dengan aturan/regulasi/prosedur yang berlaku
+- "Anti-Corruption": ada indikasi penyalahgunaan wewenang, gratifikasi, atau korupsi
+- "Debottlenecking": ada indikasi hambatan birokrasi/regulasi yang memperlambat program prioritas nasional
+
+Ini KLASIFIKASI, bukan narasi — jangan tulis penjelasan, cukup daftar nama dimensi yang cocok.
+
+FORMAT OUTPUT setiap klaster wajib diberi:
+- "nama": nama klaster singkat (maks 8 kata), mencerminkan isu utama bukan sekadar topik umum
+- "kondisi_pemicu": 1-2 kalimat KONDISI/SITUASI konkret yang menyatukan artikel-artikel ini — NETRAL, sekadar menjelaskan latar/situasinya, TIDAK harus berupa "pemicu" atau kondisi negatif/kausal. Ikuti nada isi artikelnya apa adanya: kalau isunya soal upaya/program yang sedang berjalan (positif/netral), tulis apa adanya begitu — jangan dipaksa terdengar seperti ada yang salah. Framing risiko/kelemahan sepenuhnya jadi tugas "risiko" dan "area_perhatian" di bawah, bukan di sini.
+- "risiko": sesuai aturan Tugas 2 di atas
+- "area_perhatian": sesuai aturan Tugas 2 di atas
+- "relevansi_pengawasan": mengapa klaster ini relevan/tidak terlalu prioritas bagi pengawasan BPKP
+- "dimensi_pengawasan": array sesuai aturan Tugas 3 di atas (bisa array kosong [])
+- "anggota": array berisi nomor (No) artikel yang masuk klaster ini
+
+Urutkan array klaster dari yang paling kritikal/prioritas bagi pengawasan BPKP ke yang paling rendah prioritas.
+Balas HANYA dalam format JSON murni, TANPA teks lain, TANPA markdown code fence, TANPA penjelasan di luar JSON.
+
+Format output:
+{"klaster": [{"nama": "...", "kondisi_pemicu": "...", "risiko": "...", "area_perhatian": "...", "relevansi_pengawasan": "...", "dimensi_pengawasan": ["Governance"], "anggota": [1,2,3]}]}
+"""
+
+    DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Corruption", "Debottlenecking"}
+
+    # ── Query expansion ────────────────────────────────────────────────────
+    def ekspansi_keyword_deepseek(client, keyword: str) -> list:
+        prompt = f"""Kamu adalah asisten pencarian berita. Dari input keyword berikut, buat variasi query pencarian berita yang lebih spesifik dan efektif untuk Google News.
+
+Keyword input: "{keyword}"
+
+Aturan:
+- Variasikan dengan sinonim, singkatan, nama lokasi spesifik, atau aspek berbeda dari isu yang sama
+- Buat sebanyak yang relevan dan bermakna saja -- untuk keyword yang sudah sempit/spesifik cukup sedikit (2-3), untuk keyword yang luas/ambigu boleh lebih banyak, maksimal 10. Jangan mengada-ada variasi yang tidak nyambung hanya demi menambah jumlah
+- Gunakan bahasa Indonesia
+- Kembalikan HANYA array JSON berisi string query, tanpa teks lain
+
+Contoh output: ["query 1", "query 2", "query 3"]"""
+        try:
+            resp = client.chat.completions.create(
+                model=DEEPSEEK_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=500,
+                # Matikan thinking mode: v4-flash aktifkan reasoning
+                # chain-of-thought secara default (effort "high") yang jauh
+                # lebih lambat dan tidak dibutuhkan untuk tugas sederhana
+                # ini (query expansion). Tanpa ini, waktu respons bisa
+                # berkali-kali lipat lebih lama dari perilaku deepseek-chat
+                # lama, bahkan bisa menghabiskan max_tokens untuk proses
+                # "berpikir" sebelum sempat menjawab.
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+            teks = resp.choices[0].message.content.strip()
+            teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+            queries = json.loads(teks)
+            if isinstance(queries, list):
+                # Jaring pengaman: prompt sudah minta maks 10, tapi model
+                # tidak selalu patuh -- dibatasi ulang di sini supaya jumlah
+                # query per keyword tidak bisa meledak tak terkendali dan
+                # membuat waktu crawl jadi tidak terprediksi.
+                return [keyword] + [q for q in queries if isinstance(q, str)][:10]
+        except Exception:
+            pass
+        return [keyword]
+
+    # ── Filter video ───────────────────────────────────────────────────────
+    DOMAIN_VIDEO = {"kompas.tv","metrotvnews.com","tvone.co.id","rctiplus.com","vidio.com","youtube.com","youtu.be"}
+    JUDUL_VIDEO  = ["[full]","[live]","[video]","[breaking]","live streaming","siaran langsung","tonton video","nonton:","breaking news:","full video"]
+
+    def is_video(judul: str, domain: str) -> bool:
+        judul_lower = judul.lower()
+        for dv in DOMAIN_VIDEO:
+            if dv in domain.lower(): return True
+        for marker in JUDUL_VIDEO:
+            if marker in judul_lower: return True
+        return False
+
+    def bersihkan_snippet(snippet: str, judul: str) -> str:
+        teks = snippet.replace("&nbsp;"," ").replace("&amp;","&")
+        teks = re.sub(r"&[a-z]+;"," ",teks)
+        teks = re.sub(r"<[^>]+>","",teks)
+        teks = re.sub(r"\s+"," ",teks).strip()
+        judul_bersih = re.sub(r"\s+"," ",judul).strip().lower()
+        if teks.lower().startswith(judul_bersih[:40].lower()):
+            return ""
+        return teks
+
+    # ── Crawl Google News RSS ──────────────────────────────────────────────
+    # Catatan penting: pencarian Google News RSS TIDAK mengurutkan/membatasi
+    # berdasarkan tanggal — hasil di-ranking berdasarkan relevansi teks saja.
+    # Artinya artikel lama (evergreen/feature) yang kata kuncinya cocok bisa
+    # ikut lolos walau umurnya sudah bertahun-tahun, meskipun query-nya
+    # spesifik. Makanya filter umur di bawah ini perlu, bukan cuma dedup
+    # link & skip video.
+    def crawl_google_news(queries: list, max_articles: int, max_umur_hari=None):
+        articles   = []
+        seen       = set()
+        skipped    = 0   # video
+        skipped_lawas = 0
+        headers    = {"User-Agent": "Mozilla/5.0 (compatible; AIS-Crawler/1.0)"}
+        hari_ini   = datetime.now()
+
+        # total_kandidat = semua artikel unik & bukan-video yang match query,
+        # SEBELUM difilter tanggal — dipakai supaya pesan hasil akhir bisa
+        # bilang "X ditemukan, Y dalam rentang waktu" sekaligus, bukan dua
+        # angka terpisah yang harus dijumlah manual sama user.
+        def _total_kandidat():
+            return len(articles) + skipped_lawas
+
+        def _lapor_skip():
+            if skipped > 0:
+                st.caption(f"ℹ️ {skipped} artikel video dilewati.")
+
+        for q in queries:
+            url = f"https://news.google.com/rss/search?q={quote_plus(q)}&hl=id&gl=ID&ceid=ID:id"
+            try:
+                feed = feedparser.parse(url, request_headers=headers)
+                for entry in feed.entries:
+                    link = entry.get("link","")
+                    if link in seen: continue
+                    seen.add(link)
+
+                    judul  = entry.get("title","-")
+                    domain = re.sub(r"https?://(www\.)?","",link).split("/")[0]
+                    if is_video(judul, domain):
+                        skipped += 1
+                        continue
+
+                    tanggal_dt = None
+                    try:
+                        tanggal_dt = datetime(*entry.published_parsed[:3])
+                        tanggal    = tanggal_dt.strftime("%d %b %Y")
+                    except Exception:
+                        pub = entry.get("published","")
+                        tanggal = pub[:10] if pub else "-"
+
+                    if max_umur_hari is not None and tanggal_dt is not None:
+                        if (hari_ini - tanggal_dt).days > max_umur_hari:
+                            skipped_lawas += 1
+                            continue
+
+                    konten      = bersihkan_snippet(re.sub(r"<[^>]+>","",entry.get("summary","")), judul)
+                    sumber_nama = extract_sumber_dari_judul(judul) or re.sub(r"https?://(www\.)?","",link).split("/")[0]
+                    tier_asli   = tier_sumber(sumber_nama.lower())
+
+                    articles.append({
+                        "judul": judul, "link": link, "tanggal": tanggal,
+                        "sumber": sumber_nama, "snippet": konten, "tier": tier_asli,
+                    })
+                    if len(articles) >= max_articles:
+                        _lapor_skip()
+                        return articles, _total_kandidat()
+            except Exception as e:
+                st.warning(f"Gagal crawl '{q}': {e}")
+
+        _lapor_skip()
+        return articles, _total_kandidat()
+
+    # ── Analisis: DeepSeek ─────────────────────────────────────────────────
+    def analisis_deepseek(client, artikel: dict, rate_status=None) -> dict:
+        konten = str(artikel.get("snippet","") or "").strip()
+        konten_info = f"Konten  : {konten}" if konten else "Konten  : [tidak tersedia — analisis berdasarkan judul dan topik crawl]"
+        prompt = (
+            f"Topik crawl: {artikel.get('label_isu','-')}\n"
+            f"Judul   : {artikel['judul']}\n"
+            f"Sumber  : {artikel['sumber']}\n"
+            f"Tanggal : {artikel['tanggal']}\n"
+            f"{konten_info}\n\nHasilkan JSON analisis."
+        )
+
+        MAX_RETRY  = 4
+        BASE_DELAY = 5
+
+        for attempt in range(MAX_RETRY):
+            try:
+                resp = client.chat.completions.create(
+                    model=DEEPSEEK_MODEL,
+                    messages=[
+                        {"role": "system", "content": PROMPT_SISTEM},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=800,
+                    # Matikan thinking mode — lihat catatan di
+                    # ekspansi_keyword_deepseek(). Di sini dampaknya lebih
+                    # kritis: 800 token bisa habis untuk "berpikir" sebelum
+                    # model sempat menulis JSON hasil analisis, sehingga
+                    # parsing gagal terus dan artikel jatuh ke fallback.
+                    extra_body={"thinking": {"type": "disabled"}},
+                )
+                return _parse_json(resp.choices[0].message.content)
+
+            except Exception as e:
+                err_str = str(e).lower()
+                if "429" in err_str or "rate" in err_str:
+                    wait = BASE_DELAY * (2 ** attempt)
+                    if rate_status:
+                        rate_status.warning(f"⏳ Rate limit tercapai — menunggu {wait}s (retry {attempt+1}/{MAX_RETRY})...")
+                    time.sleep(wait)
+                elif attempt < MAX_RETRY - 1:
+                    time.sleep(BASE_DELAY)
+                    continue
+                else:
+                    return _fallback_error(artikel, str(e)[:200])
+
+        return _fallback_error(artikel, "Rate limit tercapai — semua retry habis")
+
+    # ── Klasterisasi + Analisis Risiko/Area Perhatian per klaster ──────────
+    def klasterisasi_isu_deepseek(client, hasil_list: list) -> list:
+        """Kirim seluruh ringkasan isu per-artikel ke DeepSeek untuk (1)
+        dikelompokkan jadi 3-5 klaster isu utama, dan (2) dianalisis risiko
+        & area perhatian berdasarkan keseluruhan artikel dalam tiap klaster
+        (bukan per-artikel). Mengembalikan list klaster (bisa kosong jika
+        gagal — pemanggil wajib menangani fallback)."""
+        ringkasan_list = [
+            {
+                "no": i + 1,
+                "judul": h.get("judul", "-"),
+                "ringkasan_isu": h.get("ringkasan_isu", "-"),
+                "isu_subisu": h.get("isu_subisu", "-"),
+            }
+            for i, h in enumerate(hasil_list)
+        ]
+        prompt = json.dumps(ringkasan_list, ensure_ascii=False)
+
+        MAX_RETRY   = 4
+        BASE_DELAY  = 6
+        MIN_KLASTER = 3  # selaras dengan "batas keras" di PROMPT_KLASTER
+        catatan_koreksi = ""
+
+        for attempt in range(MAX_RETRY):
+            try:
+                resp = client.chat.completions.create(
+                    model=DEEPSEEK_MODEL,
+                    messages=[
+                        {"role": "system", "content": PROMPT_KLASTER},
+                        {"role": "user",   "content": prompt + catatan_koreksi},
+                    ],
+                    temperature=0.2,
+                    max_tokens=3500,
+                    # Matikan thinking mode — lihat catatan di
+                    # ekspansi_keyword_deepseek(). Ini yang bikin tahap
+                    # "Mengelompokkan isu & menganalisis risiko per
+                    # klaster..." terasa muter lama: input klasterisasi
+                    # berisi ringkasan SELURUH artikel sekaligus, jadi kalau
+                    # thinking mode aktif, reasoning-nya jauh lebih panjang.
+                    extra_body={"thinking": {"type": "disabled"}},
+                )
+                teks = (resp.choices[0].message.content or "").strip()
+
+                if not teks:
+                    wait = BASE_DELAY * (2 ** attempt)
+                    time.sleep(wait)
+                    continue
+
+                teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+                m = re.search(r"\{.*\}", teks, flags=re.DOTALL)
+                if m:
+                    teks = m.group(0)
+                parsed = json.loads(teks)
+                klaster_list = parsed.get("klaster", [])
+
+                # Validasi: pastikan setiap anggota klaster adalah int yang valid
+                total_artikel = len(hasil_list)
+                anggota_terpakai = set()
+                klaster_valid = []
+                for kl in klaster_list:
+                    anggota = [a for a in kl.get("anggota", []) if isinstance(a, int) and 1 <= a <= total_artikel]
+                    if not anggota:
+                        continue
+                    anggota_terpakai.update(anggota)
+                    # Sanitasi dimensi_pengawasan: cuma terima nilai dari daftar
+                    # resmi (jaga-jaga AI berhalusinasi nama dimensi lain/typo),
+                    # dan cuma terima kalau memang berbentuk list — bukan
+                    # dipaksa selalu ada isinya (klaster tanpa dimensi jelas =
+                    # list kosong, itu valid).
+                    dimensi_mentah = kl.get("dimensi_pengawasan", [])
+                    dimensi = [d for d in dimensi_mentah if isinstance(d, str) and d in DIMENSI_PENGAWASAN_VALID] if isinstance(dimensi_mentah, list) else []
+                    klaster_valid.append({**kl, "anggota": anggota, "dimensi_pengawasan": dimensi})
+
+                # Tegakkan batas BAWAH (min 3 klaster) di kode, bukan cuma di
+                # prompt. PROMPT_KLASTER sudah menulis aturan ini sebagai
+                # "batas keras", tapi teks prompt saja tidak selalu ditaati:
+                # kalau kumpulan artikelnya sangat homogen (satu keyword besar
+                # yang menarik banyak berita dari satu narasi yang sama, mis.
+                # "OTT KPK" -> 25 artikel yang semuanya soal maraknya OTT
+                # kepala daerah 2026), model bisa memutuskan itu cukup 1
+                # klaster raksasa — padahal biasanya tetap ada sudut/skala
+                # berbeda (kasus spesifik vs tren umum, fakta vs analisis akar
+                # sebab, dst.) yang layak dipisah untuk kebutuhan pengawasan.
+                # Kalau ini kejadian, retry dengan teguran eksplisit alih-alih
+                # diam-diam meloloskan hasil yang melanggar aturannya sendiri
+                # (analog dengan penegakan batas ATAS/maks 5 klaster di bawah).
+                if len(klaster_valid) < MIN_KLASTER and attempt < MAX_RETRY - 1:
+                    catatan_koreksi = (
+                        f"\n\nPERINGATAN: Percobaan sebelumnya cuma menghasilkan "
+                        f"{len(klaster_valid)} klaster untuk {total_artikel} artikel — "
+                        f"ini MELANGGAR aturan wajib (JUMLAH KLASTER 3 SAMPAI 5, berapa "
+                        f"pun banyaknya artikel, bahkan kalau akar masalahnya terasa "
+                        f"sama). WAJIB pecah lebih detail kali ini: cari sudut pandang, "
+                        f"skala, atau fokus yang berbeda dalam kumpulan artikel ini — "
+                        f"misalnya kasus/insiden spesifik vs tren atau daftar kumulatif "
+                        f"yang berulang, fakta kejadian vs opini/analisis akar penyebab, "
+                        f"atau level nasional vs level daerah/lokasi tertentu — lalu "
+                        f"jadikan masing-masing sudut sebagai klaster terpisah."
+                    )
+                    time.sleep(BASE_DELAY)
+                    continue
+
+                # Artikel yang tidak masuk klaster manapun -> klaster "Isu Lainnya"
+                sisa = [n for n in range(1, total_artikel + 1) if n not in anggota_terpakai]
+                if sisa:
+                    klaster_valid.append({
+                        "nama": "Isu Lainnya",
+                        "kondisi_pemicu": "Artikel dengan arah isu yang tidak terkelompok ke klaster utama.",
+                        "risiko": "-",
+                        "area_perhatian": "-",
+                        "relevansi_pengawasan": "Perlu ditelaah manual — tidak teridentifikasi pola yang jelas.",
+                        "dimensi_pengawasan": [],
+                        "anggota": sisa,
+                    })
+
+                # Tegakkan batas maks 5 klaster di kode (bukan hanya di prompt)
+                MAKS_KLASTER = 5
+                if len(klaster_valid) > MAKS_KLASTER:
+                    klaster_valid.sort(key=lambda k: len(k.get("anggota", [])), reverse=True)
+                    dipertahankan = klaster_valid[:MAKS_KLASTER - 1]
+                    digabung = klaster_valid[MAKS_KLASTER - 1:]
+                    anggota_gabungan = sorted(set(a for kl in digabung for a in kl.get("anggota", [])))
+                    dipertahankan.append({
+                        "nama": "Isu Lainnya",
+                        "kondisi_pemicu": "Gabungan beberapa isu kecil yang tidak cukup signifikan untuk jadi klaster tersendiri.",
+                        "risiko": "-",
+                        "area_perhatian": "Perlu ditelaah manual per artikel — masing-masing berdiri sendiri tanpa pola dominan.",
+                        "relevansi_pengawasan": "-",
+                        "dimensi_pengawasan": [],
+                        "anggota": anggota_gabungan,
+                    })
+                    klaster_valid = dipertahankan
+
+                nama_lainnya = [kl for kl in klaster_valid if kl.get("nama") == "Isu Lainnya"]
+                if len(nama_lainnya) > 1:
+                    anggota_gab = sorted(set(a for kl in nama_lainnya for a in kl.get("anggota", [])))
+                    klaster_valid = [kl for kl in klaster_valid if kl.get("nama") != "Isu Lainnya"]
+                    klaster_valid.append({**nama_lainnya[0], "anggota": anggota_gab})
+
+                return klaster_valid
+
+            except Exception:
+                if attempt < MAX_RETRY - 1:
+                    time.sleep(BASE_DELAY)
+                    continue
+                return []  # fallback: dashboard/Excel akan tampil tanpa klaster
+
+        return []
+
+    # ── Helpers parse & fallback ───────────────────────────────────────────
+    def _parse_json(teks: str) -> dict:
+        teks = teks.strip()
+        teks = re.sub(r"^```json\s*|^```\s*|\s*```$", "", teks).strip()
+        m = re.search(r"\{.*\}", teks, flags=re.DOTALL)
+        if m:
+            teks = m.group(0)
+        hasil = json.loads(teks)
+        if hasil.get("tone") not in ("Positif", "Netral", "Negatif"):
+            hasil["tone"] = "Netral"
+        return hasil
+
+    def _fallback_error(artikel: dict, pesan: str) -> dict:
+        return {
+            "ringkasan_isu": artikel.get("judul","-"),
+            "isu_subisu": "-", "aktor_lokasi": "-",
+            "tone": "Netral",
+            "_error": pesan,
+        }
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SIDEBAR — konfigurasi provider & input
+    # ══════════════════════════════════════════════════════════════════════
+    with st.sidebar:
+        # Header "Media Crawl AIS" dihapus — sudah terwakili oleh brand "AIS"
+        # di nav atas, jadi ini dulu redundant dan makan tempat vertikal.
+
+        # ── API Key DeepSeek ─────────────────────────────────────────────
+        # Kalau sudah dikonfigurasi lewat Secrets, tidak perlu ditunjukkan
+        # ke user — itu detail teknis provider AI, bukan sesuatu yang perlu
+        # mereka pahami/pikirkan. UI cukup langsung siap pakai; kotak isian
+        # API Key hanya muncul (plus divider-nya) kalau memang belum
+        # dikonfigurasi — supaya tidak ada divider ganda yang mengapit ruang
+        # kosong saat key sudah tersedia dari Secrets.
+        deepseek_key_default = st.secrets.get("DEEPSEEK_API_KEY","") if hasattr(st,"secrets") else ""
+        if deepseek_key_default:
+            active_key = deepseek_key_default
+        else:
+            active_key = st.text_input("DeepSeek API Key", type="password", placeholder="sk-...")
+            st.divider()
+
+        # Label section custom (bukan label bawaan Streamlit) supaya field
+        # kunci ini — kata kunci pencarian & nama file — terlihat mentereng
+        # dan jelas, bukan sekadar label abu-abu standar.
+        st.markdown('<div class="sidebar-section-label">🔍 Kata Kunci Isu</div>', unsafe_allow_html=True)
+        keywords_raw = st.text_area(
+            "Kata Kunci Isu",
+            placeholder="Contoh:\nMBG, makan bergizi gratis\nDanantara ekspor\nPertamax BBM",
+            height=120,
+            label_visibility="collapsed",
+        )
+        st.markdown('<div class="sidebar-section-label">📁 Label Isu (nama file Excel)</div>', unsafe_allow_html=True)
+        label_isu = st.text_input(
+            "Label Isu (nama file Excel)",
+            placeholder="Contoh: Pertamax BBM Juni 2026",
+            label_visibility="collapsed",
+        )
+        # Label native st.slider (default) fontnya beda sendiri dari label
+        # custom lain di sidebar ("Kata Kunci Isu", "Rentang Waktu", dst
+        # yang semuanya pakai class sidebar-section-label) — disamakan di
+        # sini biar konsisten, pakai pola yang sama: markdown custom +
+        # label_visibility="collapsed" di widgetnya.
+        st.markdown('<div class="sidebar-section-label">🎚️ Maks. Artikel</div>', unsafe_allow_html=True)
+        max_art   = st.slider(
+            "Maks. Artikel", min_value=5, max_value=25, value=20, step=5,
+            label_visibility="collapsed",
+        )
+        # Google News RSS me-ranking hasil berdasarkan relevansi teks, BUKAN
+        # tanggal — artikel lawas yang kata kuncinya cocok bisa ikut lolos
+        # walau sudah bertahun-tahun. Filter ini membuang artikel di luar
+        # rentang waktu yang dipilih setelah crawl (mirip filter video).
+        # Label dipendekkan jadi "Rentang Waktu" saja (kata "Artikel" di
+        # akhir dihapus, sudah cukup jelas dari konteks di bawah "Maks.
+        # Artikel").
+        st.markdown('<div class="sidebar-section-label">🕒 Rentang Waktu</div>', unsafe_allow_html=True)
+        _opsi_umur = {
+            "1 hari": 2,
+            "7 hari terakhir": 7,
+            "30 hari terakhir": 30,
+            "90 hari terakhir": 90,
+            "180 hari terakhir": 180,
+            "1 tahun terakhir": 365,
+            "Semua (tanpa batas)": None,
+        }
+        _label_umur = st.select_slider(
+            "Rentang Waktu Artikel",
+            options=list(_opsi_umur.keys()),
+            value="7 hari terakhir",
+            label_visibility="collapsed",
+        )
+        max_umur_hari = _opsi_umur[_label_umur]
+        st.divider()
+        # disabled=True selama crawl_running True — supaya tombol ini betul-
+        # betul tidak bisa diklik lagi (bukan cuma "diabaikan") selama
+        # proses crawl+analisis AI sedang berjalan. Lihat komentar di trigger
+        # "if run_btn and not ... crawl_running" di bawah untuk alasan
+        # lengkap kenapa ini butuh 1x rerun ekstra sebelum proses berat
+        # mulai.
+        run_btn = st.button(
+            "🔍 Mulai Crawl", use_container_width=True,
+            disabled=st.session_state.get("crawl_running", False),
+        )
+
+    # ── Main area ──────────────────────────────────────────────────────────
+    # Provider AI (DeepSeek) sengaja tidak lagi ditampilkan sebagai pill di
+    # header — sama seperti badge API key di sidebar, itu detail teknis
+    # implementasi yang tidak perlu diketahui/dipikirkan user.
+    st.markdown("""
+    <div class="main-header">
+      <h1>🔍 Crawl Berita</h1>
+      <p>Tarik & analisis berita baru</p>
     </div>
     """, unsafe_allow_html=True)
 
-    if fn_update.button("🔄 Perbarui Excel", use_container_width=True):
-        # Dicek dari sumber_data (hasil resolusi df_raw/meta di atas),
-        # bukan dari nilai widget "uploaded" — widget itu bisa kosong
-        # walau datanya berasal dari upload (lihat catatan panjang soal
-        # has_upload di bagian SIDEBAR di atas).
-        if sumber_data == "session":
-            # Sumber: sesi crawl aktif — hasil_list mentah sudah dalam
-            # format dict yang dipahami buat_excel.
-            sumber_baris = st.session_state["hasil"]
-            label_file = st.session_state.get("label_isu", "Hasil Crawl")
-        else:
-            # Sumber: upload Excel manual — konversi dataframe (df_raw,
-            # hasil load_from_excel) balik ke format dict per baris.
-            sumber_baris = [
-                {
-                    "klaster": r.get("Klaster", "-"),
-                    "tanggal": r.get("Tanggal", "-"),
-                    "sumber": r.get("Sumber", "-"),
-                    "link": r.get("Link", "-"),
-                    "judul": r.get("Judul", "-"),
-                    "ringkasan_isu": r.get("Ringkasan", "-"),
-                    "isu_subisu": r.get("IsuSubisu", "-"),
-                    "aktor_lokasi": r.get("AktorLokasi", "-"),
-                    "tone": r.get("Tone", "Netral"),
-                    "risiko": r.get("Risiko", "-"),
-                    "area_perhatian": r.get("TindakLanjut", "-"),
-                    "kondisi_pemicu": r.get("KondisiPemicu", "-"),
-                    "relevansi_pengawasan": r.get("RelevansiPengawasan", "-"),
-                }
-                for r in df_raw.to_dict("records")
-            ]
-            label_file = meta.get("isu", "Hasil Upload")
+    # Ikon unduh kecil di pojok kanan atas banner -- percobaan pertama
+    # ditaruh sebagai tombol biasa tepat di bawah kartu statistik, tapi
+    # user lapor itu makan 1 row sendiri & keliatan jelek. Dipindah ke sini
+    # (lihat CSS .st-key-download_top_corner di atas soal cara nariknya ke
+    # pojok header) supaya BENERAN nggak makan row apapun. excel_buf/
+    # nama_file dibangun di sini (bukan di bawah dekat kartu statistik lagi)
+    # supaya tombol pojok ini punya datanya dari awal; dipakai ulang nanti
+    # di kartu unduh besar di paling bawah, jadi tetap cuma dibangun sekali.
+    #
+    # Label sempat cuma ikon "📥" doang -- tapi 📥 itu literal artinya
+    # "kotak masuk" (inbox tray), bukan simbol universal "unduh", dan
+    # penjelasannya ("Unduh Excel") cuma nongol kalau di-hover (tooltip),
+    # jadi first-time user yang nggak iseng hover duluan nggak langsung
+    # tau itu tombol apa. Ditambah teks "Unduh" -- masih satu kata/ringkas,
+    # tapi langsung kebaca tanpa perlu hover atau nebak dari ikon doang.
+    if "hasil" in st.session_state:
+        excel_buf = buat_excel(st.session_state["hasil"], st.session_state["label_isu"])
+        nama_file = f"MediaCrawl_AIS_{st.session_state['label_isu'].replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        with st.container(key="download_top_corner"):
+            st.download_button("📥 Unduh", data=excel_buf, file_name=nama_file,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Unduh Excel", key="download_excel_top")
 
-        hasil_terbaru = []
-        for h in sumber_baris:
-            h2 = dict(h)
-            nama_klaster = h2.get("klaster", "-")
-            review = review_klaster.get(nama_klaster)
-            if review:
-                h2["sektor"] = review.get("sektor", "-")
-                h2["tema"] = review.get("tema", "-")
-                h2["topik"] = review.get("topik", "-")
-                h2["dampak_implikasi_final"] = review.get("dampak_implikasi_final", "-")
-                h2["gap_pengawasan"] = review.get("gap_pengawasan", "-")
-                h2["usulan_pengawasan"] = review.get("usulan_pengawasan", "-")
-                h2["status_review"] = review.get("status_review", "Belum Direview")
-            hasil_terbaru.append(h2)
+    # Pesan hasil crawl sebelumnya (sukses/gagal/warning) — dicatat ke
+    # session_state alih-alih langsung st.success()/st.error() di tempat
+    # kejadian, karena alur proteksi klik-ganda di bawah SELALU diakhiri
+    # st.rerun() supaya tombol "Mulai Crawl" kembali aktif; pesan yang
+    # ditampilkan langsung sebelum rerun akan hilang sebelum sempat
+    # terbaca. Jadi ditulis dulu ke sini, baru ditampilkan di render
+    # berikutnya (persis setelah rerun).
+    for _level, _pesan in st.session_state.pop("_crawl_pesan", []):
+        getattr(st, _level)(_pesan)
 
-        # buat_excel() dari app.py (scope sama, dieksekusi via exec())
-        excel_bytes = buat_excel(hasil_terbaru, label_file)
-        fn_update.download_button(
-            "⬇️ Download Excel",
-            data=excel_bytes,
-            file_name=f"MediaCrawl_AIS_{str(label_file).replace(' ','_')}_telaah.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
-
-    fn_drive = st.container(key="sidebar_fn_drive")
-    fn_drive.markdown("""
-    <div class='sidebar-fn-title'>📁 Drive Hasil Telaah</div>
-    <div class='sidebar-fn-desc'>Unggah hasil telaah Anda ke folder ini.</div>
-    """, unsafe_allow_html=True)
-    fn_drive.link_button(
-        "📁 Folder Drive",
-        "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
-        use_container_width=True,
-    )
-
-# Info banner sumber data
-if sumber_data == "session":
-    st.info(f"📡 Menampilkan hasil crawl sesi ini: **{meta.get('isu','—')}** · {meta.get('total','—')} artikel — Upload file Excel di sidebar untuk mengganti data.")
-
-# Apply filters
-df_filtered = df[
-    (df['Tone'].isin(filter_tone)) & 
-    (df['level_risiko'].isin(filter_risiko))
-].reset_index(drop=True)
-
-# ── TOPBAR ───────────────────────────────────────────────────
-st.markdown(f"""
-<div class="ais-topbar">
-  <div>
-    <div class="ais-logo">📊 Klasterisasi & Analisis</div>
-    <div class="ais-subtitle">Klasterisasi, tren & telaah — {meta.get('unit','Pusat Strategi Kebijakan Pengawasan BPKP')}</div>
-  </div>
-  <div>
-    <span class="ais-badge">ISU: {meta.get('isu','—').upper()}</span>
-    &nbsp;
-    <span style='font-size:11px;color:rgba(255,255,255,0.5)'>{meta.get('generate','—')}</span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-# ── TABS ─────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📋 Ikhtisar", "🗂️ Klasterisasi Isu", "📊 Analisis & Distribusi"])
-
-
-# ════════════════════════════════════════════
-# TAB 1 — IKHTISAR
-# ════════════════════════════════════════════
-with tab1:
-
-    # Stat row — primer (Total & Dominasi Negatif, dua metrik paling
-    # actionable untuk pengawasan) di atas, rincian tone sebagai sekunder
-    # di bawahnya supaya bobot visual tidak rata.
-    c_p1, c_p2 = st.columns(2)
-    with c_p1:
-        # Sparkline+delta volume harian -- mencerminkan pola di kartu
-        # "Dominasi Negatif" di sebelahnya, supaya kedua kartu primer
-        # simetris tanpa salah satu terasa lowong. Beda dari kartu
-        # Dominasi Negatif: delta di sini netral (oranye, bukan merah/
-        # hijau) karena volume naik bukan otomatis sinyal buruk/baik.
-        tv = tren_volume(df)
-        tv_html = ""
-        if tv:
-            pct = tv['pct']
-            # Panah dihapus (sebelumnya ▲/▼) -- lihat catatan panjang di
-            # kartu Dominasi Negatif di bawah soal kenapa. Konteks periode
-            # (rentang tanggal) sekarang teks kecil yang SELALU kelihatan;
-            # detail rata-rata/hari muncul lewat tooltip custom (.ais-tip,
-            # lihat blok <style>) yang instan, bukan title="" bawaan
-            # browser yang delay-nya ~1 detik dan nggak bisa diatur.
-            tv_tip = (f"Dibandingkan {tv['label_awal']} (rata-rata {tv['avg_awal']} artikel/hari) "
-                      f"vs {tv['label_akhir']} (rata-rata {tv['avg_akhir']} artikel/hari)")
-            # Warna sparkline ikut INTENSITAS sinyal (oranye = ada
-            # perubahan berarti, abu-abu = stabil) -- BUKAN ikut arah
-            # naik/turun kayak kartu Dominasi Negatif di sebelah, karena
-            # volume naik/turun bukan otomatis sinyal buruk/baik (beda
-            # dari %negatif yang jelas ada baik-buruknya). Tetap disamain
-            # sama teksnya sendiri (oranye solid pas berubah, abu2 pas
-            # stabil) biar nggak ada elemen visual yang kontradiktif.
-            if pct >= 20:
-                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>meningkat {pct}%</div>"
-                tv_spark_color = '#F5A623'
-            elif pct <= -20:
-                tv_delta_html = f"<div style='font-size:10px;color:#F5A623;margin-top:4px'>menurun {abs(pct)}%</div>"
-                tv_spark_color = '#F5A623'
-            else:
-                tv_delta_html = f"<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
-                tv_spark_color = '#7F8C8D'
-            tv_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tv['label_awal']} vs {tv['label_akhir']}</div>"
-            tv_html = (f"<div class='ais-tip' style='margin-top:6px'>"
-                       f"<div style='display:flex;justify-content:center'>{sparkline_svg(tv['nilai'], color=tv_spark_color)}</div>"
-                       f"{tv_delta_html}{tv_periode_html}<span class='ais-tip-box'>{tv_tip}</span></div>")
-        st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #F5A623">
-          <div class="stat-num-primary">{stats['total']}</div>
-          <div class="stat-label-primary">Total Artikel</div>
-          {tv_html}
-        </div>""", unsafe_allow_html=True)
-    with c_p2:
-        # Sparkline + delta arah tren -- pengganti "Distribusi Sentimen
-        # Pemberitaan" yang dihapus (cuma mengulang angka pct_neg/pct_net/
-        # pct_pos yang sudah ada di kartu-kartu stat ini). Bandingkan
-        # separuh awal vs akhir periode: >=5 poin dianggap memburuk/
-        # membaik, di bawah itu dianggap noise/relatif stabil.
-        #
-        # Panah (▲/▼) DIHAPUS. Awalnya dicoba dibalik supaya ikut PENILAIAN
-        # (▲ hijau = membaik, ▼ merah = memburuk) bukan arah angka mentah
-        # -- tapi user lapor itu masih kebaca kontradiktif di layar
-        # beneran (bentuk sparkline nunjukkin angka mentah, sementara badge
-        # di bawahnya nunjukkin penilaian -- dua hal beda yang gampang
-        # disalahartikan harus searah). Kata "membaik"/"memburuk" saja
-        # sudah cukup jelas tanpa simbol arah yang berpotensi disalah-
-        # baca. Rentang tanggal sekarang teks kecil yang SELALU kelihatan;
-        # detail rata-rata % muncul lewat tooltip custom (.ais-tip, lihat
-        # blok <style>) yang instan (CSS :hover murni), bukan title=""
-        # bawaan browser yang delay-nya ~1 detik dan nggak bisa diatur.
-        tren = tren_negativitas(df)
-        tren_html = ""
-        if tren:
-            d = tren['delta']
-            tren_tip = (f"Dibandingkan {tren['label_awal']} (rata-rata {tren['avg_awal']}% negatif) "
-                        f"vs {tren['label_akhir']} (rata-rata {tren['avg_akhir']}% negatif)")
-            # Warna sparkline ikut POLARITAS (bukan cuma intensitas kayak
-            # Total Artikel) -- merah=memburuk, hijau=membaik, abu=stabil
-            # -- disamain PERSIS sama warna teks di bawahnya. Sebelumnya
-            # garis ini selalu merah apapun arahnya, jadi kalau tren lagi
-            # membaik (teks hijau) garisnya tetap merah -- kontradiksi
-            # yang sama persis kayak masalah panah yang sudah dibenerin.
-            if d >= 5:
-                delta_html = f"<div style='font-size:10px;color:#E74C3C;margin-top:4px'>memburuk {d} poin</div>"
-                tren_spark_color = '#E74C3C'
-            elif d <= -5:
-                delta_html = f"<div style='font-size:10px;color:#27AE60;margin-top:4px'>membaik {abs(d)} poin</div>"
-                tren_spark_color = '#27AE60'
-            else:
-                delta_html = f"<div style='font-size:10px;color:inherit;opacity:0.5;margin-top:4px'>relatif stabil</div>"
-                tren_spark_color = '#7F8C8D'
-            tren_periode_html = f"<div style='font-size:9px;color:inherit;opacity:0.4;margin-top:2px'>{tren['label_awal']} vs {tren['label_akhir']}</div>"
-            # Satu baris tanpa newline -- lihat catatan di sparkline_svg().
-            tren_html = (f"<div class='ais-tip' style='margin-top:6px'>"
-                         f"<div style='display:flex;justify-content:center'>{sparkline_svg(tren['nilai'], color=tren_spark_color)}</div>"
-                         f"{delta_html}{tren_periode_html}<span class='ais-tip-box'>{tren_tip}</span></div>")
-        # Label diganti dari "Dominasi Negatif" -- istilah itu implisit
-        # nyiratkan mayoritas (jadi ganjil kalau angkanya rendah, misal
-        # "Dominasi Negatif: 20%"), dan orang yang baru pertama buka app
-        # nggak otomatis tau itu maksudnya "% artikel bernada negatif dari
-        # total". "% Artikel Negatif" aman di semua nilai + self-explanatory.
-        # Ikon (i) di sebelahnya pakai pola tooltip custom yang sama kayak
-        # sparkline (instan, CSS :hover, bukan title="" bawaan browser) --
-        # jelasin definisi metrik sekali hover, biar kartu tetap ringkas
-        # buat yang udah paham tapi ada penjelasan buat yang belum. Teks
-        # awalnya kepanjangan & muter-muter jelasin cara hitung tren segala
-        # (user bilang "metanarasi", susah dicerna sekali baca) -- dipotong
-        # jadi satu kalimat pendek, cuma definisi intinya. Detail cara
-        # hitung tren udah cukup terwakili lewat kata "membaik"/"memburuk"
-        # + tooltip terpisah di sparkline-nya sendiri, nggak perlu diulang
-        # di sini.
-        info_tip = "Persentase artikel bernada negatif dari seluruh artikel yang dianalisis pada periode ini."
-        # ais-tip ditaruh di DIV LABEL itu sendiri (bukan cuma di span ikon
-        # kecilnya) -- karena div ini full-width (block, bukan inline),
-        # tooltip yang center relatif ke elemen ini jadi center ke LEBAR
-        # KARTU, bukan ke ikon kecil di ujung teks. Kalau nempel di ikon
-        # aja, box 240px-nya kepusatkan di posisi ikon (yang nggak persis
-        # di tengah kartu), jadi meluber ke kartu sebelah.
-        label_html = (f"<div class='stat-label-primary ais-tip'>% Artikel Negatif "
-                      f"<span style='opacity:0.55;cursor:help'>&#9432;</span>"
-                      f"<span class='ais-tip-box' style='text-align:left'>{info_tip}</span>"
-                      f"</div>")
-        st.markdown(f"""<div class="stat-card-primary" style="border-top:4px solid #E74C3C">
-          <div class="stat-num-primary" style="color:#E74C3C">{stats['pct_neg']}%</div>
-          {label_html}
-          {tren_html}
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(f"""<div class="stat-card-secondary">
-          <div class="stat-num-secondary" style="color:#E74C3C">{stats['negatif']}</div>
-          <div class="stat-label-secondary">🔴 Negatif</div>
-        </div>""", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"""<div class="stat-card-secondary">
-          <div class="stat-num-secondary" style="color:#7F8C8D">{stats['netral']}</div>
-          <div class="stat-label-secondary">⚪ Netral</div>
-        </div>""", unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"""<div class="stat-card-secondary">
-          <div class="stat-num-secondary" style="color:#27AE60">{stats['positif']}</div>
-          <div class="stat-label-secondary">🟢 Positif</div>
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
-
-    # Spotlight — artikel paling relevan dengan topik crawl.
-    # Prioritas: (1) Negatif + judul relevan, (2) Negatif apapun, (3) artikel pertama
-    def skor_relevansi(row, topik: str) -> int:
-        """Hitung relevansi judul terhadap topik crawl."""
-        kata_topik = set(topik.lower().replace("-","").replace("_"," ").split())
-        kata_judul = set(str(row['Judul']).lower().split())
-        # Jumlah kata topik yang muncul di judul
-        match = len(kata_topik & kata_judul)
-        # Bonus jika Negatif
-        tone_bonus = 3 if str(row['Tone']) == 'Negatif' else 0
-        # Bonus panjang ringkasan (konten lebih kaya)
-        content_bonus = min(2, len(str(row['Ringkasan'])) // 100)
-        return match * 2 + tone_bonus + content_bonus
-
-    topik_crawl = meta.get('isu', '')
-    df_score = df.copy()
-    df_score['relevansi'] = df_score.apply(lambda r: skor_relevansi(r, topik_crawl), axis=1)
-    df_score = df_score.sort_values('relevansi', ascending=False)
-
-    spotlight_idx = df_score.index[0] if len(df_score) > 0 else None
-
-    if len(df_score) > 0:
-        spotlight = df_score.iloc[0]
-        tone_spotlight = str(spotlight['Tone'])
-        tone_color = {'Negatif': '#E74C3C', 'Netral': '#95A5A6', 'Positif': '#27AE60'}.get(tone_spotlight, '#95A5A6')
-        judul_spotlight, sumber_spotlight = pisahkan_sumber_judul(spotlight['Judul'])
-        st.markdown(f"""
-        <div class="spotlight-box">
-          <div class="spotlight-eyebrow">⚡ Isu Prioritas — Paling Relevan & Signifikan</div>
-          <div class="spotlight-title">{pill_sumber_html(sumber_spotlight)}{judul_link_html(judul_spotlight, spotlight['Link'])}</div>
-          <div class="spotlight-body">{spotlight['Ringkasan']}</div>
-          <div class="spotlight-risiko-box">
-            <div class="spotlight-risiko-label">⚠ Risiko</div>
-            <div class="spotlight-risiko-text">{spotlight['Risiko']}</div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Artikel risiko tinggi — ditaruh sebelum chart supaya insight yang
-    # paling actionable terlihat duluan, baru statistik pendukungnya.
-    # Artikel yang sudah muncul di Spotlight di-exclude supaya tidak dobel.
-    st.markdown("**Artikel Risiko Tinggi — Perlu Perhatian**")
-    df_tinggi = df[df['level_risiko'] == 'Tinggi']
-    if spotlight_idx is not None:
-        df_tinggi = df_tinggi[df_tinggi.index != spotlight_idx]
-    df_tinggi = df_tinggi.head(3)
-    if len(df_tinggi) == 0:
-        df_tinggi = df[df['Tone'] == 'Negatif']
-        if spotlight_idx is not None:
-            df_tinggi = df_tinggi[df_tinggi.index != spotlight_idx]
-        df_tinggi = df_tinggi.head(3)
-
-    if len(df_tinggi) == 0:
-        st.info("Tidak ada artikel risiko tinggi/negatif lain di luar Isu Prioritas pada periode ini.")
-    else:
-        cols_tinggi = st.columns(min(3, len(df_tinggi)))
-        for i, (_, row) in enumerate(df_tinggi.iterrows()):
-            with cols_tinggi[i]:
-                tone_class = str(row['Tone']).lower()
-                aktor_short = str(row['AktorLokasi'])[:40]
-                judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
-                judul_disp = judul_bersih[:80] + ('…' if len(judul_bersih) > 80 else '')
-                st.markdown(f"""
-                <div class="issue-card issue-card-highlight {tone_class}">
-                  <div class="issue-title">{pill_sumber_html(sumber_row)}{judul_link_html(judul_disp, row['Link'])}</div>
-                  <div class="issue-sub">{str(row['IsuSubisu'])}</div>
-                  <div class="issue-summary">{str(row['Ringkasan'])[:160]}…</div>
-                  <div style='margin-top:6px'>
-                    <span class="badge badge-{tone_class}">{row['Tone']}</span>
-                    <span class="badge badge-aktor">👤 {aktor_short}</span>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-    st.markdown("---")
-
-    # "Distribusi Sentimen Pemberitaan" (stacked bar Negatif/Netral/Positif)
-    # sengaja dihapus dari sini -- angkanya persis pct_neg/pct_net/pct_pos
-    # yang sudah ditampilkan dua kali di atas (kartu "Dominasi Negatif" +
-    # tiga kartu sekunder Negatif/Netral/Positif), dan sekali lagi di Tab
-    # Analisis & Distribusi ("Distribusi Sentimen → Keseluruhan periode"). Diganti
-    # dengan sparkline+delta tren negativitas di kartu "Dominasi Negatif"
-    # (lihat tren_negativitas()) -- informasi baru (arah tren), bukan angka
-    # yang sama dibentuk ulang.
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        # Level risiko breakdown
-        st.markdown("**Level Risiko Artikel**")
-        tinggi = stats['tinggi']; sedang = stats['sedang']
-        rendah = stats['total'] - tinggi - sedang
-        for label, count, color in [("Tinggi", tinggi, "#E74C3C"), ("Sedang", sedang, "#F5A623"), ("Rendah", rendah, "#27AE60")]:
-            pct = round(count/stats['total']*100) if stats['total'] else 0
-            st.markdown(f"""
-            <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-              <div style='font-size:11px;color:inherit;opacity:0.7;width:50px'>{label}</div>
-              <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                <div style='width:{pct}%;height:100%;background:{color};border-radius:3px'></div>
-              </div>
-              <div style='font-size:10px;font-family:monospace;color:#95A5A6;width:24px'>{count}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    with col_right:
-        st.markdown("**Sebaran Risiko per Aktor/Lokasi**")
-        st.caption("Diurutkan berdasarkan jumlah artikel risiko Tinggi — menunjukkan instansi/aktor yang paling sering terkait isu berisiko")
-        aktor_risiko = risiko_per_aktor(df, top_n=8)
-
-        if not aktor_risiko:
-            st.info("Belum ada data Aktor/Lokasi yang bisa dianalisis.")
-        else:
-            max_total = max(a['total'] for a in aktor_risiko)
-            for a in aktor_risiko:
-                label = (a['aktor'][:32]+'…') if len(a['aktor'])>32 else a['aktor']
-                pct_tinggi = round(a['tinggi'] / max_total * 100)
-                pct_sedang = round(a['sedang'] / max_total * 100)
-                pct_rendah = round(a['rendah'] / max_total * 100)
-                st.markdown(f"""
-                <div style='margin-bottom:10px'>
-                  <div style='display:flex;justify-content:space-between;margin-bottom:3px'>
-                    <span style='font-size:11px;color:inherit;opacity:0.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px' title='{a["aktor"]}'>{label}</span>
-                    <span style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5'>{a['total']} artikel</span>
-                  </div>
-                  <div style='display:flex;height:12px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                    <div style='width:{pct_tinggi}%;height:100%;background:#E74C3C' title='Tinggi: {a["tinggi"]}'></div>
-                    <div style='width:{pct_sedang}%;height:100%;background:#F5A623' title='Sedang: {a["sedang"]}'></div>
-                    <div style='width:{pct_rendah}%;height:100%;background:#27AE60' title='Rendah: {a["rendah"]}'></div>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
+    # Panduan awal — hanya tampil sebelum sesi ini pernah punya hasil crawl.
+    # Begitu "hasil" masuk ke session_state (crawl pertama berhasil), guard
+    # ini otomatis False untuk sisa sesi, jadi tidak mengganggu tampilan
+    # hasil di rerun berikutnya. `not run_btn` mencegah kartu ini sempat
+    # nongol sekilas di pass rerun saat tombol baru saja diklik. Judul
+    # sengaja "Cara memulai" (bukan "Mulai di sini") karena kartu ini ada
+    # di area konten utama, sedangkan aksi sesungguhnya (isi kata kunci,
+    # klik tombol) ada di sidebar kiri — bukan di kartu ini sendiri.
+    #
+    # `not crawl_running` WAJIB ikut di sini juga (bukan cuma `not
+    # run_btn`) — round diskusi "progress hijau/loading harus langsung
+    # kelihatan tanpa scroll". Tanpa ini, begitu proses crawl beneran
+    # jalan, run_btn sudah balik False lagi (bukan klik BARU di render
+    # itu), jadi kartu ini nongol LAGI persis di atas blok "⏳ Proses
+    # Crawl & Analisis" di bawah — user harus scroll dulu buat lihat
+    # progressnya. Dengan guard ini, begitu crawl_running True kartu
+    # langsung hilang; begitu crawl gagal/selesai (crawl_running balik
+    # False lewat `finally` di bawah) dan belum ada hasil, kartu muncul
+    # lagi seperti semula supaya user masih dapat panduan buat coba lagi.
+    if "hasil" not in st.session_state and not run_btn and not st.session_state.get("crawl_running", False):
+        with st.container(key="crawl_empty_guide"):
             st.markdown("""
-            <div style='display:flex;gap:14px;margin-top:8px;font-size:10px;color:inherit;opacity:0.7'>
-              <span>🔴 Tinggi</span><span>🟡 Sedang</span><span>🟢 Rendah</span>
-            </div>
+            <div class="empty-guide-title">👈 Cara memulai</div>
+            <ol>
+              <li>Isi <b>kata kunci isu</b> di sidebar kiri (boleh lebih dari satu, satu per baris)</li>
+              <li>Beri <b>nama file Excel</b> yang mudah dikenali nanti</li>
+              <li>Klik <b>🔍 Mulai Crawl</b> — hasil analisisnya akan muncul di halaman ini</li>
+            </ol>
             """, unsafe_allow_html=True)
 
+    # ── Trigger crawl ──────────────────────────────────────────────────────
+    # Klik pertama HANYA menyalakan flag lalu langsung st.rerun() — belum
+    # melakukan proses berat apa pun. Ini disengaja: tombol di sidebar
+    # sudah terlanjur ter-render "aktif" ke browser SEBELUM baris ini
+    # sempat dieksekusi, dan Streamlit tidak mengirim ulang status tombol
+    # di tengah eksekusi skrip yang sama. Kalau proses crawl+analisis AI
+    # (yang bisa makan waktu lama) langsung dijalankan di sini, tombolnya
+    # akan tetap terlihat aktif & bisa diklik lagi selama proses
+    # berlangsung — dan klik kedua itu BUKAN cuma diabaikan, tapi
+    # membatalkan proses yang sedang jalan lalu memulai crawl baru dari
+    # nol (buang kuota AI + waktu percuma). Rerun di sini memaksa render
+    # ulang SEBELUM proses berat dimulai, supaya tombol terkirim ke
+    # browser dalam kondisi disabled=True lebih dulu.
+    if run_btn and not st.session_state.get("crawl_running", False):
+        st.session_state["crawl_running"] = True
+        st.rerun()
 
-# ════════════════════════════════════════════
-# TAB 2 — DAFTAR ISU
-# ════════════════════════════════════════════
-with tab2:
-    # Teks lama ("... ditampilkan berdasarkan filter aktif") menyesatkan —
-    # filter_tone/filter_risiko di sidebar di-hardcode isi SEMUA nilai
-    # (lihat komentar di blok sidebar), jadi df_filtered TIDAK PERNAH benar-
-    # benar menyaring apa pun; sebutan "filter aktif" sisa dari versi lama
-    # yang dulu punya widget filter beneran. Diganti kalimat yang menjelaskan
-    # apa yang sebenarnya terjadi di halaman ini: artikel individual
-    # diagregasi jadi klaster isu di bawah.
-    ada_klaster_ringkas = 'Klaster' in df_filtered.columns and (df_filtered['Klaster'] != '-').any()
-    if ada_klaster_ringkas:
-        jml_klaster_ringkas = df_filtered.loc[df_filtered['Klaster'] != '-', 'Klaster'].nunique()
-        st.markdown(f"Ditemukan **{jml_klaster_ringkas} klaster isu** dari **{len(df_filtered)} artikel** yang di-crawl")
-    else:
-        st.markdown(f"**{len(df_filtered)} artikel** ditampilkan")
+    if st.session_state.get("crawl_running", False):
+        def _catat_pesan(pesan, level="info"):
+            st.session_state.setdefault("_crawl_pesan", []).append((level, pesan))
 
-    if len(df_filtered) == 0:
-        st.info("Tidak ada artikel untuk data ini.")
-    else:
-        # Split: list kiri, detail kanan
-        col_list, col_detail = st.columns([5, 4])
+        def _gagal(pesan, level="error"):
+            _catat_pesan(pesan, level)
+            st.rerun()
 
-        with col_list:
-            # Pilih artikel — default None (belum ada yang diklik), BUKAN 0,
-            # supaya tidak ada artikel yang ke-highlight "terpilih" atau
-            # panel kanan menampilkan detail artikel acak sebelum user
-            # benar-benar mengklik "Lihat detail →".
-            selected_idx = st.session_state.get('selected_idx')
+        try:
+            if not active_key:
+                _gagal("Masukkan API Key terlebih dahulu.")
+            if not keywords_raw.strip():
+                _gagal("Masukkan minimal satu kata kunci.")
+            if not label_isu.strip():
+                _gagal("Isi Label Isu untuk nama file Excel.")
 
-            ada_klaster = 'Klaster' in df_filtered.columns and (df_filtered['Klaster'] != '-').any()
+            # Split HANYA di baris baru — koma dalam satu baris SENGAJA
+            # dipertahankan (bukan dianggap pemisah), karena placeholder di
+            # atas sendiri nyontohin "MBG, makan bergizi gratis" sebagai SATU
+            # topik gabungan (akronim + kepanjangannya). Versi lama split di
+            # koma JUGA, jadi "MBG, makan bergizi gratis" kepotong jadi dua
+            # keyword lepas ("MBG" dan "makan bergizi gratis") sebelum sempat
+            # di-blend — akibatnya ekspansi_keyword_deepseek() cuma nerima
+            # potongan kata sendirian tanpa konteks temannya, query hasil
+            # ekspansinya generik/nggak nyambung ke topik gabungannya (mis.
+            # "PPATK, Judol" kepotong jadi "PPATK" sendirian, nariknya jadi
+            # berita PPATK apa pun — bukan spesifik soal judol).
+            keywords_input = [k.strip() for k in keywords_raw.splitlines() if k.strip()]
 
-            def render_artikel_item(i, row, compact=False):
-                tone_class = str(row['Tone']).lower()
-                is_selected = (i == selected_idx)
-                border_style = "border:2px solid rgba(99,179,237,0.8);" if is_selected else "border:1px solid rgba(128,128,128,0.2);"
-                bg_style = "background:rgba(99,179,237,0.08);" if is_selected else "background:transparent;"
-                varian_class = "issue-card-member" if compact else ""
+            ai_client = get_deepseek_client(active_key)
 
-                judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
-                judul_short = judul_bersih[:75]+'…' if len(judul_bersih)>75 else judul_bersih
+            # ── Antrean crawl lintas-sesi ────────────────────────────────────
+            # Kalau slot sedang penuh (banyak orang crawl bersamaan), tunggu di
+            # sini dengan status yang jelas alih-alih membiarkan semua sesi
+            # membebani proses Streamlit sekaligus. Lihat _CrawlSlotManager di
+            # bagian atas file untuk alasan lengkapnya.
+            slot_mgr = _get_crawl_slot_manager()
+            antre_status = st.empty()
+            def _lapor_antre(active, mx):
+                antre_status.warning(
+                    f"🕐 Sedang antre ({active}/{mx} slot terpakai). Permintaan Anda akan "
+                    f"diproses otomatis begitu slot tersedia — mohon tunggu di halaman ini, "
+                    f"jangan ditutup atau di-refresh."
+                )
+            slot_mgr.acquire_blocking(on_wait=_lapor_antre)
+            antre_status.empty()
 
-                btn_key = f"artikel_{i}"
-                # Card HTML + tombol "Lihat detail" dibungkus SATU
-                # st.container(key=...) supaya keduanya benar-benar
-                # bertetangga dalam satu elemen DOM (bukan dua widget
-                # terpisah yang cuma kebetulan berdekatan) — sebelumnya ini
-                # bikin gak jelas tombol itu milik card di atas atau malah
-                # nempel ke card berikutnya. CSS di bawah menyambungkan
-                # visualnya jadi satu unit: card persegi di atas, tombol
-                # jadi strip footer nempel tanpa celah di bawahnya.
-                with st.container(key=f"artikel_card_{i}"):
-                    st.markdown(f"""
-                    <div class="issue-card artikel-card-attached {varian_class} {tone_class}" style="{border_style}{bg_style}">
-                      <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px'>
-                        <div>
-                          <div class="issue-title">{pill_sumber_html(sumber_row, compact=compact)}{judul_short}</div>
-                          <div class="issue-sub">{str(row['IsuSubisu'])}</div>
-                        </div>
-                        <span class="badge badge-{tone_class}" style='flex-shrink:0'>{row['Tone']}</span>
-                      </div>
-                      <div style='margin-top:6px;font-size:10px;color:inherit;opacity:0.5;font-family:monospace'>
-                        📅 {row['Tanggal']} &nbsp;·&nbsp; 🏢 {str(row['AktorLokasi'])[:40]}
-                      </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+            try:
+                st.markdown('<div class="process-section-label">⏳ Proses Crawl & Analisis</div>', unsafe_allow_html=True)
 
-                    if st.button(f"Lihat detail →", key=btn_key, use_container_width=True):
-                        st.session_state['selected_idx'] = i
-                        st.rerun()
+                with st.spinner("Memperluas keyword..."):
+                    all_queries = []
+                    for kw in keywords_input:
+                        expanded = ekspansi_keyword_deepseek(ai_client, kw)
+                        all_queries.extend(expanded)
 
-            narasi_klaster = {}  # selalu didefinisikan, diisi jika ada_klaster True
+                query_pills = "".join(f'<span class="query-pill">🔍 {q}</span>' for q in all_queries)
+                st.markdown(f'<div class="query-box"><div class="query-box-label">Query ({len(all_queries)} variasi)</div>{query_pills}</div>', unsafe_allow_html=True)
 
-            if not ada_klaster:
-                # Fallback: tampilan datar (Excel lama tanpa kolom Klaster)
-                for i, (_, row) in enumerate(df_filtered.iterrows()):
-                    render_artikel_item(i, row)
-            else:
-                # Bangun lookup narasi klaster (jika tersedia dari sesi crawl aktif)
-                narasi_klaster = {k.get('nama', '-'): k for k in klaster_meta} if klaster_meta else {}
+                prog_bar  = st.progress(0, text="Crawling Google News...")
+                status_tx = st.empty()
+                status_tx.info(f"Crawling {len(all_queries)} query...")
+                artikel_raw, total_kandidat = crawl_google_news(all_queries, max_art, max_umur_hari)
 
-                df_filtered_idx = df_filtered.reset_index(drop=True)
-                klaster_order = [k.get('nama','-') for k in klaster_meta] if klaster_meta else None
-                nama_unik = df_filtered_idx['Klaster'].fillna('-').unique().tolist()
-                if klaster_order:
-                    nama_terurut = [n for n in klaster_order if n in nama_unik] + [n for n in nama_unik if n not in klaster_order]
+                if not artikel_raw:
+                    _gagal("Tidak ada artikel ditemukan.", level="warning")
+
+                # Kalau ada artikel yang dibuang karena kelewat lawas, sebutkan
+                # dua angkanya sekaligus (total kandidat vs. yang lolos rentang
+                # waktu) supaya user tidak perlu jumlah manual dari caption
+                # terpisah.
+                if total_kandidat > len(artikel_raw):
+                    status_tx.success(
+                        f"✅ {total_kandidat} artikel ditemukan, {len(artikel_raw)} di antaranya "
+                        f"dalam {_label_umur.lower()}. Memulai analisis..."
+                    )
                 else:
-                    nama_terurut = sorted(nama_unik, key=lambda n: -(df_filtered_idx['Klaster']==n).sum())
+                    status_tx.success(f"✅ {len(artikel_raw)} artikel ditemukan. Memulai analisis...")
 
-                for nama in nama_terurut:
-                    sub_idx = df_filtered_idx[df_filtered_idx['Klaster'] == nama]
-                    jumlah = len(sub_idx)
-                    if jumlah == 0:
-                        continue
+                hasil_list  = []
+                rate_status = st.empty()
 
-                    tone_dom = sub_idx['Tone'].value_counts().idxmax() if jumlah else 'Netral'
-                    dom_color = {'Negatif':'#E74C3C','Netral':'#95A5A6','Positif':'#27AE60'}.get(tone_dom,'#95A5A6')
+                for idx, art in enumerate(artikel_raw):
+                    pct = int((idx + 1) / len(artikel_raw) * 100)
+                    prog_bar.progress(pct, text=f"Menganalisis artikel {idx+1}/{len(artikel_raw)}...")
 
-                    # Status review dipindah ke judul expander (round diskusi
-                    # "belum direview taruh di atas?") — sebelumnya cuma
-                    # muncul di baris paling bawah kartu yang sudah dibuka
-                    # (setelah Kondisi + Risiko/Area Perhatian + Relevansi
-                    # BPKP), jadi reviewer harus expand SEMUA klaster satu-
-                    # satu cuma buat tahu mana yang belum digarap. Dengan
-                    # ditaruh di judul collapsed, seluruh daftar klaster bisa
-                    # di-scan tanpa expand apa pun. Dihapus dari posisi lama
-                    # supaya tidak dobel info yang sama persis di 1 kartu.
-                    # Teks badge sengaja "Ditelaah" (bukan "Direview") --
-                    # menyelaraskan ke istilah yang sudah dipakai konsisten
-                    # di seluruh fitur ini (tombol "Telaah klaster ini",
-                    # panel "TELAAH KLASTER", caption sidebar "sudah
-                    # ditelaah"). Ini CUMA teks tampilan -- nilai yang
-                    # disimpan & ditulis ke kolom Excel (StatusReview /
-                    # "Sudah Direview") TIDAK diubah, supaya file Excel yang
-                    # sudah beredar tetap kebaca kalau di-upload ulang.
-                    review_tersimpan_hdr = st.session_state.get("review_klaster", {}).get(nama, {})
-                    sudah_direview_hdr = bool(review_tersimpan_hdr.get("status_review") == "Sudah Direview")
-                    status_hdr = ":green[🟢 Sudah Ditelaah]" if sudah_direview_hdr else ":gray[⚪ Belum Ditelaah]"
-                    # Judul dipisah ke baris sendiri dari "N artikel ·
-                    # status" (round diskusi "enter biar tidak segaris") --
-                    # sebelumnya semua di 1 baris teks yang cuma wrap
-                    # otomatis kalau kepanjangan, hasilnya potongannya beda-
-                    # beda tiap kartu (kadang mentok di tengah frasa "...
-                    # Belum \n Ditelaah" di layar sempit). Dipisah eksplisit
-                    # jadi 2 baris SELALU konsisten: baris 1 nama klaster
-                    # (boleh wrap sendiri kalau memang panjang), baris 2
-                    # metadata (jumlah + status) tidak pernah kepotong di
-                    # tengah. "  \n" (2 spasi + newline) adalah hard-break
-                    # markdown standar -- dites render jadi <br> sungguhan
-                    # di label expander Streamlit, bukan cuma spasi.
-                    label_expander = f"🗂️ **{nama}**  \n:gray[{jumlah} artikel]  ·  {status_hdr}"
-                    # Semua klaster tertutup by default (bukan cuma klaster
-                    # pertama) — user baru tidak langsung dihadapkan detail
-                    # klaster + panel artikel di kanan sebelum sempat
-                    # memindai daftar klaster yang ada.
-                    #
-                    # key= di sini WAJIB ada — itu yang membuat status
-                    # buka/tutup expander ini kebaca balik lewat
-                    # st.session_state[expander_key] di bawah, dipakai untuk
-                    # mendeteksi kapan klaster ini BARU SAJA ditutup lagi
-                    # (lihat blok reset panel kanan setelah expander ini).
-                    #
-                    # on_change= (no-op) WAJIB ikut disertakan juga — di versi
-                    # Streamlit yang dipakai, expander dengan key= TAPI TANPA
-                    # on_change= tidak pernah benar-benar menulis nilainya ke
-                    # st.session_state; key-nya "mati", jadi .get() di bawah
-                    # selalu balik ke default False walau klaster sedang
-                    # terbuka. Efeknya panel kanan langsung ke-reset lagi
-                    # sesaat setelah "Lihat detail" diklik, padahal klasternya
-                    # belum ditutup. Menambahkan on_change (biar isinya no-op)
-                    # membuat Streamlit benar-benar menyinkronkan status
-                    # buka/tutup ke session_state seperti seharusnya.
-                    expander_key = f"exp_klaster_{nama}"
-                    with st.expander(label_expander, expanded=False, key=expander_key, on_change=lambda: None):
-                        info_klaster = narasi_klaster.get(nama)
+                    # DeepSeek berbayar, tanpa RPM ketat -> delay ringan cukup
+                    time.sleep(0.3)
 
-                        # Fallback: rekonstruksi field klaster dari data
-                        # artikel jika narasi klaster tidak tersedia (mis.
-                        # sumber data dari upload Excel).
-                        if not info_klaster:
-                            def _ambil_unik(kolom):
-                                if kolom not in sub_idx.columns:
-                                    return "-"
-                                nilai = sub_idx[kolom].dropna()
-                                nilai = nilai[nilai != "-"]
-                                return nilai.iloc[0] if len(nilai) else "-"
+                    art["label_isu"] = label_isu.strip()
+                    analisis = analisis_deepseek(ai_client, art, rate_status)
+                    hasil_list.append({**art, **analisis})
 
-                            # Dimensi Pengawasan disimpan di Excel sebagai
-                            # string dipisah koma (mis. "Anti-Corruption, Control")
-                            # — pecah balik jadi list, dan saring ulang ke
-                            # daftar resmi supaya kalau file diedit manual
-                            # (typo, format lain) tidak ikut nyasar ke UI,
-                            # cukup diam-diam diabaikan.
-                            DIMENSI_PENGAWASAN_VALID = {"Governance", "Risk", "Control", "Compliance", "Anti-Corruption", "Debottlenecking"}
-                            dimensi_mentah = _ambil_unik('DimensiPengawasan')
-                            dimensi_upload = (
-                                [d.strip() for d in dimensi_mentah.split(",") if d.strip() in DIMENSI_PENGAWASAN_VALID]
-                                if dimensi_mentah and dimensi_mentah != "-" else []
-                            )
+                rate_status.empty()
+                prog_bar.progress(100, text="✅ Mengelompokkan jadi klaster isu...")
 
-                            info_klaster = {
-                                "kondisi_pemicu":       _ambil_unik('KondisiPemicu'),
-                                "risiko":               _ambil_unik('Risiko'),
-                                "area_perhatian":       _ambil_unik('TindakLanjut'),
-                                "relevansi_pengawasan": _ambil_unik('RelevansiPengawasan'),
-                                "dimensi_pengawasan":   dimensi_upload,
-                            }
+                with st.spinner("Mengelompokkan isu & menganalisis risiko per klaster..."):
+                    klaster_list = klasterisasi_isu_deepseek(ai_client, hasil_list)
 
-                        # Tag dimensi pengawasan (GRCC AnCoDe) — cuma render
-                        # baris ini kalau memang ada tag yang lolos sanitasi di
-                        # klasterisasi_isu_deepseek(); klaster tanpa dimensi
-                        # jelas (list kosong) tidak dipaksa tampil baris kosong.
-                        dimensi_list = info_klaster.get('dimensi_pengawasan') or []
-                        dimensi_html = "".join(f'<span class="badge badge-dimensi">{d}</span>' for d in dimensi_list)
-
-                        # Layout "Opsi B" (hasil diskusi redesain kartu Induk
-                        # Klaster): Kondisi diringkas jadi kalimat
-                        # pembuka bernada netral (bukan blok besar setara
-                        # field lain), Risiko & Area Perhatian ditonjolkan
-                        # sebagai dua kartu kecil berdampingan dengan warna
-                        # semantik sendiri (merah/biru) karena dua field
-                        # itulah yang paling menentukan reviewer perlu
-                        # bertindak atau tidak, dan Relevansi Pengawasan BPKP
-                        # diringkas jadi satu baris footer supaya tidak
-                        # bersaing bobot visualnya dengan dua kartu sorotan.
-                        # Label kalimat pembuka ini sengaja "Kondisi", BUKAN
-                        # "Pemicu" — "pemicu" menyiratkan sesuatu yang
-                        # kausal/negatif, padahal field ini boleh netral
-                        # (mis. klaster soal upaya pencegahan yang sedang
-                        # berjalan, bukan insiden). Framing risiko/kelemahan
-                        # sudah jadi tugas kartu Risiko & Area Perhatian di
-                        # bawah, bukan di sini.
-                        dimensi_footer = f"<div style='display:flex;gap:6px;flex-wrap:wrap'>{dimensi_html}</div>" if dimensi_list else ""
-
-                        st.markdown(f"""
-                        <div style='
-                            background:rgba(128,128,128,0.05);
-                            border:1px solid rgba(128,128,128,0.18);
-                            border-radius:10px;
-                            padding:16px 18px 18px;
-                            margin-bottom:4px;
-                        '>
-                          <div style='font-size:10px;font-weight:800;letter-spacing:.1em;color:#F5A623;text-transform:uppercase;font-family:monospace;margin-bottom:10px;display:flex;align-items:center;gap:6px'>
-                            📁 INDUK KLASTER <span style='opacity:0.4'>·</span> <span style='opacity:0.55;font-weight:600;letter-spacing:normal;text-transform:none'>{jumlah} artikel anggota</span>
-                          </div>
-                          <div style='font-size:12.5px;line-height:1.6;opacity:0.7;margin-bottom:16px;padding-bottom:14px;border-bottom:1px dashed rgba(255,255,255,0.1)'>
-                            <b style='opacity:1;color:rgba(232,236,243,0.9);font-weight:600'>Kondisi:</b> {info_klaster.get('kondisi_pemicu','-')}
-                          </div>
-                          <div style='display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px'>
-                            <div style='border-radius:8px;padding:12px 13px;background:rgba(231,76,60,0.09);border:1px solid rgba(231,76,60,0.3)'>
-                              <div style='font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#E74C3C'>⚠️ Risiko</div>
-                              <div style='font-size:13.5px;line-height:1.55;font-weight:500'>{info_klaster.get('risiko','-')}</div>
-                            </div>
-                            <div style='border-radius:8px;padding:12px 13px;background:rgba(93,173,226,0.09);border:1px solid rgba(93,173,226,0.3)'>
-                              <div style='font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;color:#5DADE2'>🔍 Area Perhatian</div>
-                              <div style='font-size:13.5px;line-height:1.55;font-weight:500'>{info_klaster.get('area_perhatian','-')}</div>
-                            </div>
-                          </div>
-                          <div style='display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap'>
-                            <div style='font-size:11.5px;opacity:0.65;line-height:1.5;flex:1;min-width:200px'>
-                              <b style='color:#F5A623;opacity:1;font-weight:700'>Relevansi BPKP:</b> {info_klaster.get('relevansi_pengawasan','-')}
-                            </div>
-                            {dimensi_footer}
-                          </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        # Tombol buka telaah — form lengkap ada di panel kanan
-                        # (col_detail), diaktifkan lewat panel_mode="telaah".
-                        # Status review sudah dipindah ke judul expander di
-                        # atas (lihat status_hdr) — tidak diulang lagi di
-                        # sini, jadi tombol ini full-width sendirian.
-                        if st.button("✏️ Telaah klaster ini →", key=f"buka_telaah_{nama}", use_container_width=True):
-                            st.session_state["panel_mode"] = "telaah"
-                            st.session_state["selected_klaster"] = nama
-                            st.rerun()
-
-                        st.markdown("<div style='display:flex;align-items:center;gap:10px;margin:14px 0 10px 4px'><span style='font-size:10px;font-weight:700;letter-spacing:.08em;opacity:0.45;text-transform:uppercase;white-space:nowrap'>↳ Artikel Anggota</span><div style='flex:1;height:1px;background:rgba(128,128,128,0.25)'></div></div>", unsafe_allow_html=True)
-
-                        st.markdown("<div style='margin-left:14px;border-left:1px dashed rgba(128,128,128,0.25);padding-left:14px'>", unsafe_allow_html=True)
-                        for i, row in sub_idx.iterrows():
-                            render_artikel_item(i, row, compact=True)
-                        st.markdown("</div>", unsafe_allow_html=True)
-
-                    # Klaster ini sedang TERTUTUP (baik sejak awal, atau baru
-                    # saja ditutup ulang oleh user) — kalau panel kanan lagi
-                    # menampilkan sesuatu yang terkait klaster ini (artikel
-                    # anggotanya, atau form telaah klaster ini), reset ke
-                    # keadaan netral. Tanpa ini panel kanan "menggantung"
-                    # terus menampilkan detail dari klaster yang sudah
-                    # ditutup, padahal secara visual sudah tidak ada
-                    # hubungannya lagi dengan apa pun yang masih terbuka.
-                    if not st.session_state.get(expander_key, False):
-                        if st.session_state.get("selected_klaster") == nama:
-                            st.session_state["panel_mode"] = "detail"
-                            st.session_state["selected_klaster"] = None
-                        idx_sel = st.session_state.get("selected_idx")
-                        if (
-                            idx_sel is not None
-                            and 0 <= idx_sel < len(df_filtered_idx)
-                            and df_filtered_idx.iloc[idx_sel].get("Klaster") == nama
-                        ):
-                            st.session_state["selected_idx"] = None
-
-        with col_detail:
-            panel_mode = st.session_state.get("panel_mode", "detail")
-
-            with st.container(key="panel_kanan"):
-                if panel_mode == "telaah" and st.session_state.get("selected_klaster"):
-                    nama_aktif = st.session_state["selected_klaster"]
-                    review_key = f"review_{nama_aktif}"
-                    review_tersimpan = st.session_state.get("review_klaster", {}).get(nama_aktif, {})
-
-                    # Ambil draft risiko AI untuk klaster ini sebagai starting
-                    # point Dampak/Implikasi, dari narasi_klaster jika tersedia
-                    risiko_draft = narasi_klaster.get(nama_aktif, {}).get("risiko", "")
-                    if not risiko_draft:
-                        sub_match = df_filtered[df_filtered['Klaster'] == nama_aktif]
-                        risiko_vals = sub_match['Risiko'].dropna() if 'Risiko' in sub_match.columns else pd.Series([])
-                        risiko_draft = risiko_vals.iloc[0] if len(risiko_vals) else ""
-
-                    st.markdown(f"""
-                    <div style='display:flex;align-items:center;gap:6px;margin-bottom:10px;
-                        font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:0.08em;
-                        color:#F5A623;font-weight:700;text-transform:uppercase;'>
-                      ✏️ TELAAH KLASTER
-                    </div>
-                    <div style='font-size:14px;font-weight:700;margin-bottom:12px;line-height:1.4'>{nama_aktif}</div>
-                    """, unsafe_allow_html=True)
-
-                    if st.button("← Tutup telaah, lihat detail artikel", key="tutup_telaah", use_container_width=True):
-                        st.session_state["panel_mode"] = "detail"
-                        st.rerun()
-
-                    st.markdown("<hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>", unsafe_allow_html=True)
-
-                    sektor_list = list(STRUKTUR_APP.keys())
-                    sektor_default = review_tersimpan.get("sektor", sektor_list[0])
-                    sektor_idx = sektor_list.index(sektor_default) if sektor_default in sektor_list else 0
-
-                    col_sektor, col_tema, col_topik = st.columns(3)
-                    with col_sektor:
-                        sektor_pilih = st.selectbox("Sektor", sektor_list, index=sektor_idx, key=f"{review_key}_sektor")
-
-                    tema_list = list(STRUKTUR_APP.get(sektor_pilih, {}).keys())
-                    tema_default = review_tersimpan.get("tema", tema_list[0] if tema_list else None)
-                    tema_idx = tema_list.index(tema_default) if tema_default in tema_list else 0
-                    with col_tema:
-                        tema_pilih = st.selectbox("Tema", tema_list, index=tema_idx, key=f"{review_key}_tema") if tema_list else None
-
-                    topik_list = STRUKTUR_APP.get(sektor_pilih, {}).get(tema_pilih, []) if tema_pilih else []
-                    topik_default = review_tersimpan.get("topik", topik_list[0] if topik_list else None)
-                    topik_idx = topik_list.index(topik_default) if topik_default in topik_list else 0
-                    with col_topik:
-                        topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
-
-                    dampak_default = review_tersimpan.get("dampak_implikasi_final") or risiko_draft
-                    dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf awal)", value=dampak_default, key=f"{review_key}_dampak", height=110)
-
-                    gap_pilih = st.text_area("Gap Pengawasan", value=review_tersimpan.get("gap_pengawasan", ""), key=f"{review_key}_gap", height=90,
-                                               placeholder="Apa yang belum tercakup dalam pengawasan eksisting BPKP terhadap isu ini?")
-
-                    usulan_pilih = st.text_area("Usulan Pengawasan", value=review_tersimpan.get("usulan_pengawasan", ""), key=f"{review_key}_usulan", height=90,
-                                                  placeholder="Usulan lingkup/metodologi pengawasan untuk mengakomodir isu ini")
-
-                    if st.button("💾 Submit Telaah", key=f"{review_key}_submit", use_container_width=True, type="primary"):
-                        if "review_klaster" not in st.session_state:
-                            st.session_state["review_klaster"] = {}
-                        st.session_state["review_klaster"][nama_aktif] = {
-                            "sektor": sektor_pilih,
-                            "tema": tema_pilih or "-",
-                            "topik": topik_pilih or "-",
-                            "dampak_implikasi_final": dampak_pilih,
-                            "gap_pengawasan": gap_pilih,
-                            "usulan_pengawasan": usulan_pilih,
-                            "status_review": "Sudah Direview",
-                        }
-                        st.success(f"Telaah tersimpan. Klik 'Update Excel' di sidebar untuk menulis ke file.")
-                        st.rerun()
-
-                else:
-                    idx = st.session_state.get('selected_idx')
-                    if idx is not None and idx < len(df_filtered):
-                        row = df_filtered.iloc[idx]
-                        tone_class = str(row['Tone']).lower()
-                        judul_bersih, sumber_row = pisahkan_sumber_judul(row['Judul'])
-
-                        # Aktor/Lokasi dipecah jadi pill per nama (bukan satu
-                        # blob teks) supaya tiap pihak yang terlibat gampang
-                        # dipindai satu-satu, dan dikasih ikon 👤 + warna
-                        # slate yang beda dari badge topik (indigo) di
-                        # atasnya — dua-duanya kelihatan sama sebelum ini
-                        # padahal beda level informasi (kategori isu vs.
-                        # pihak yang terlibat).
-                        daftar_aktor = [a.strip() for a in str(row['AktorLokasi']).split(',') if a.strip() and a.strip() != '-']
-                        aktor_pills = "".join(f'<span class="badge badge-aktor">👤 {a}</span>' for a in daftar_aktor) or '<span class="badge badge-aktor">👤 -</span>'
-
-                        st.markdown(f"""
-                        <div style='
-                            display:flex;align-items:center;gap:6px;margin-bottom:14px;
-                            font-family:"JetBrains Mono",monospace;font-size:10px;
-                            letter-spacing:0.08em;color:#F5A623;font-weight:700;
-                            text-transform:uppercase;
-                        '>
-                          📋 Detail Artikel
-                        </div>
-
-                        <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px'>
-                          <div style='font-size:14px;font-weight:700;color:inherit;line-height:1.4;flex:1'>{pill_sumber_html(sumber_row)}{judul_bersih}</div>
-                          <span class="badge badge-{tone_class}" style='font-size:11px;padding:3px 8px;flex-shrink:0'>{row['Tone']}</span>
-                        </div>
-
-                        <div style='margin-bottom:10px'>
-                          <span class="badge badge-topik">🏷️ {row['IsuSubisu']}</span>
-                        </div>
-
-                        <div class="detail-label" style='margin-bottom:6px'>Aktor / Lokasi Terkait</div>
-                        <div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px'>
-                          {aktor_pills}
-                        </div>
-
-                        <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
-
-                        <div class="detail-section">
-                          <div class="detail-label">Ringkasan Isu</div>
-                          <div class="detail-text">{row['Ringkasan']}</div>
-                        </div>
-
-                        <hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>
-                        <div style='font-size:11px;color:inherit;display:flex;align-items:center;gap:8px;flex-wrap:wrap'>
-                          <span style='opacity:0.5'>📅 {row['Tanggal']}</span>
-                          <span style='opacity:0.3'>·</span>
-                          <a href="{row['Link']}" target="_blank" class="link-artikel-asli">🔗 Buka artikel asli →</a>
-                        </div>
-                        """, unsafe_allow_html=True)
+                # Sebarkan nama klaster, risiko, area_perhatian, kondisi_pemicu, dan
+                # relevansi_pengawasan dari hasil klasterisasi ke setiap artikel
+                # anggotanya — semua field ini TIDAK lagi dianalisis per-artikel,
+                # melainkan diwarisi dari analisis tingkat klaster (lebih kaya
+                # konteks, lebih sedikit panggilan AI).
+                klaster_per_no = {}
+                for kl in klaster_list:
+                    for no in kl.get("anggota", []):
+                        klaster_per_no[no] = kl
+                for i, h in enumerate(hasil_list):
+                    kl = klaster_per_no.get(i + 1)
+                    if kl:
+                        h["klaster"]               = kl.get("nama", "-")
+                        h["risiko"]                = kl.get("risiko", "-")
+                        h["area_perhatian"]        = kl.get("area_perhatian", "-")
+                        h["kondisi_pemicu"]        = kl.get("kondisi_pemicu", "-")
+                        h["relevansi_pengawasan"]  = kl.get("relevansi_pengawasan", "-")
+                        h["dimensi_pengawasan"]    = kl.get("dimensi_pengawasan", [])
                     else:
-                        st.info("Pilih artikel di kiri untuk melihat detail.")
+                        h["klaster"]               = "-"
+                        h["risiko"]                = "-"
+                        h["area_perhatian"]        = "-"
+                        h["kondisi_pemicu"]        = "-"
+                        h["relevansi_pengawasan"]  = "-"
+                        h["dimensi_pengawasan"]    = []
 
+                prog_bar.progress(100, text="✅ Selesai!")
+                status_tx.empty()
 
-# ════════════════════════════════════════════
-# TAB 3 — ANALISIS & DISTRIBUSI
-# ════════════════════════════════════════════
-# Nama tab ini sebelumnya "Analisis & Tren", tapi indikator tren yang
-# paling menonjol (sparkline+delta) sudah pindah ke Tab Ikhtisar --
-# sisa isi tab ini didominasi breakdown proporsional/frekuensi (4 dari
-# 6 bagian judulnya literally "Distribusi X"), jadi nama "Tren" jadi
-# melebih-lebihkan porsi kontennya. "Distribusi per Tanggal" di bawah
-# tetap berbasis waktu, jadi bukan berarti aspek waktu hilang total.
-# Digabung dari 2 tab lama (Sentimen & Tren + Kata Kunci) -- keduanya
-# sama-sama "insight agregat, bukan kerja telaah", jadi digabung jadi
-# satu tempat. "Sentimen per Subisu" dihapus dari sini: groupby-nya
-# pakai teks IsuSubisu persis sama, padahal label itu dibuat AI per
-# artikel dan hampir selalu unik walau ceritanya sama -- hasilnya bukan
-# tabel agregat, cuma me-relist tiap artikel satu-satu (tiap baris N:1)
-# dengan tampilan seolah sudah dikelompokkan.
-with tab3:
-    # Catatan analitis ditaruh paling atas — ini kesimpulan yang dicari
-    # user, tabel & chart di bawah adalah rincian pendukungnya.
-    _klaster_order = [k.get('nama', '-') for k in klaster_meta] if klaster_meta else None
-    neg_issues = klaster_dominan_by_tone(df, 'Negatif', _klaster_order, n=3)
-    pos_issues = klaster_dominan_by_tone(df, 'Positif', _klaster_order, n=2)
+                st.session_state["hasil"]     = hasil_list
+                st.session_state["klaster"]   = klaster_list
+                st.session_state["label_isu"] = label_isu.strip()
+                st.session_state["ais_ready"] = True
+                st.session_state["ais_errors"] = [h.get("_error") for h in hasil_list if h.get("_error")]
+                # Tandai crawl BARU ini sebagai sumber data TERAKTIF di Dashboard AIS
+                # — sebelumnya Dashboard AIS selalu mengutamakan Excel upload manual
+                # apa pun yang terjadi belakangan, jadi hasil crawl baru bisa
+                # "kalah" ditimpa tampilan upload lama yang masih tersimpan di
+                # sesi. Lihat dashboard_ais.py bagian "LOAD & PROCESS DATA".
+                st.session_state["_dash_last_source"] = "session"
 
-    st.markdown("**Catatan Analitis**")
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        st.markdown(f"""
-        <div style='background:rgba(231,76,60,0.12);border-radius:6px;padding:12px;border-left:3px solid #E74C3C'>
-          <div style='font-size:10px;font-weight:700;color:#E74C3C;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Dominan Negatif</div>
-          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in neg_issues) if neg_issues else "—"}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_b:
-        st.markdown(f"""
-        <div style='background:rgba(245,166,35,0.12);border-radius:6px;padding:12px;border-left:3px solid #F5A623'>
-          <div style='font-size:10px;font-weight:700;color:#c47d0a;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Volume Pemberitaan</div>
-          <div style='font-size:11px;color:inherit;line-height:1.6'>
-            Total <strong>{stats['total']}</strong> artikel dalam periode ini.<br>
-            {stats['negatif']} negatif ({stats['pct_neg']}%) menunjukkan tekanan pemberitaan yang perlu diwaspadai.
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_c:
-        st.markdown(f"""
-        <div style='background:rgba(39,174,96,0.12);border-radius:6px;padding:12px;border-left:3px solid #27AE60'>
-          <div style='font-size:10px;font-weight:700;color:#27AE60;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em'>Isu Bernada Positif</div>
-          <div style='font-size:11px;color:inherit;line-height:1.6'>{"<br>".join(f"• {x}" for x in pos_issues) if pos_issues else "—"}</div>
-        </div>
-        """, unsafe_allow_html=True)
+                if not klaster_list:
+                    _catat_pesan("⚠️ Klasterisasi gagal — Excel & dashboard tetap tersedia, tapi tanpa pengelompokan isu, risiko, dan area perhatian.", level="warning")
+                _catat_pesan("✅ Analisis selesai. Buka **📊 Klasterisasi & Analisis** di sidebar untuk visualisasi lengkap.", level="success")
+            finally:
+                # WAJIB dilepas apa pun yang terjadi (termasuk kegagalan
+                # validasi/crawl di atas, atau error tak terduga) — kalau
+                # slot bocor/tidak pernah dilepas, app ini akan makin
+                # "penuh" terus-menerus sampai di-restart, dan pengguna
+                # berikutnya antre selamanya walau sebenarnya tidak ada
+                # crawl lain yang benar-benar berjalan.
+                slot_mgr.release()
+        finally:
+            # Tombol "Mulai Crawl" dikunci lagi ke kondisi bisa diklik, apa
+            # pun hasil akhirnya (sukses, gagal validasi via _gagal(), atau
+            # error tak terduga) — supaya user tidak pernah macet dengan
+            # tombol yang ke-disable permanen.
+            st.session_state["crawl_running"] = False
+        # Rerun terakhir supaya browser benar-benar menampilkan tombol
+        # dalam keadaan aktif kembali (nilai session_state saja tidak
+        # otomatis terkirim ulang ke frontend tanpa render baru), dan pesan
+        # di _crawl_pesan tampil bersih di render berikutnya.
+        st.rerun()
 
-    st.markdown("---")
+    # ── Error diagnostik ───────────────────────────────────────────────────
+    if st.session_state.get("ais_errors"):
+        errs  = st.session_state["ais_errors"]
+        total = len(st.session_state.get("hasil", []))
+        with st.expander(f"⚠️ {len(errs)} dari {total} artikel gagal dianalisis", expanded=True):
+            st.code(errs[0])
+            low = errs[0].lower()
+            if "rate" in low or "429" in low or "quota" in low:
+                st.warning("🕐 Rate limit — retry otomatis sudah berjalan. Jika masih banyak yang kosong, tunggu 1–2 menit lalu ulangi.")
+            elif "auth" in low or "401" in low:
+                st.warning("🔑 Masalah API Key. Cek kembali key di Streamlit Secrets.")
+            elif "json" in low or "expecting" in low:
+                st.warning("📋 Respons non-JSON dari AI. Biasanya sementara — coba ulangi.")
 
-    st.markdown("**Distribusi Sentimen**")
+    # ── Hasil & download ───────────────────────────────────────────────────
+    if "hasil" in st.session_state:
+        hasil_list = st.session_state["hasil"]
+        label_isu  = st.session_state["label_isu"]
 
-    colors_map = {'Negatif': '#E74C3C', 'Netral': '#BDC3C7', 'Positif': '#27AE60'}
-    col_sentimen, col_tanggal = st.columns(2)
+        tone_counts = {"Positif":0,"Netral":0,"Negatif":0}
+        for h in hasil_list:
+            t = h.get("tone","Netral")
+            tone_counts[t] = tone_counts.get(t,0) + 1
 
-    with col_sentimen:
-        st.caption("Keseluruhan periode")
-        # Donut chart (bukan stacked bar) -- ini part-to-whole dengan satu
-        # kategori yang mayoritas jelas (bukan "close values" yang dilarang
-        # anti-pattern dataviz skill buat pie/donut), jadi lubang tengah
-        # bisa langsung nunjukkin persentase dominannya sekali lihat.
-        tone_data = df['Tone'].value_counts()
-        urutan = [t for t in ['Negatif', 'Netral', 'Positif'] if t in tone_data.index]
-        segmen_data = [(t, int(tone_data[t]), colors_map.get(t, '#BDC3C7')) for t in urutan]
-        donut = donut_svg(segmen_data)
-        legenda = "".join(
-            f"<span style='margin-right:16px;white-space:nowrap'>"
-            f"<span style='display:inline-block;width:8px;height:8px;border-radius:50%;"
-            f"background:{colors_map.get(t,'#BDC3C7')};margin-right:4px'></span>"
-            f"{t} {tone_data[t]} ({round(tone_data[t]/stats['total']*100)}%)</span>"
-            for t in urutan
-        )
-        st.markdown(f"<div style='display:flex;justify-content:center;margin-bottom:10px'>{donut}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='font-size:11px;color:inherit;opacity:0.7;display:flex;"
-                    f"flex-wrap:wrap;justify-content:center'>{legenda}</div>", unsafe_allow_html=True)
+        c0,c1,c2,c3 = st.columns(4)
+        with c0:
+            st.markdown(f'<div class="stat-card"><div class="stat-number">{len(hasil_list)}</div><div class="stat-label">Total Artikel</div></div>', unsafe_allow_html=True)
+        for col,tone,warna,emoji in [(c1,"Positif","#27AE60","🟢"),(c2,"Netral","#95A5A6","🟡"),(c3,"Negatif","#E74C3C","🔴")]:
+            with col:
+                st.markdown(f'<div class="stat-card"><div class="stat-number" style="color:{warna}">{tone_counts[tone]}</div><div class="stat-label">{emoji} {tone}</div></div>', unsafe_allow_html=True)
 
-    with col_tanggal:
-        st.caption("Per tanggal")
-        # Parse 'Tanggal' ke datetime asli sebelum dikelompokkan -- bug yang
-        # sama kayak yang ditemukan di tren_negativitas()/tren_volume():
-        # groupby('Tanggal') langsung mengurutkan berdasarkan STRING, dan
-        # nama bulan singkatan nggak terurut benar sebagai teks lintas
-        # bulan/tahun. Krusial di sini karena ini SEKARANG line chart --
-        # garis tren jadi nggak bermakna (bahkan menyesatkan) kalau urutan
-        # tanggal di sumbu-x-nya salah.
-        d2 = _parse_tanggal_terurut(df)
-        if not d2.empty:
-            tanggal_counts = d2.groupby(d2['_tgl'].dt.date)['Tone'].value_counts().unstack(fill_value=0).sort_index()
-            hadir = [c for c in ['Negatif', 'Netral', 'Positif'] if c in tanggal_counts.columns]
-            tanggal_counts = tanggal_counts[hadir]
-            # Warna diambil per kolom Tone yang benar-benar ada di batch ini.
-            # Sebelumnya pakai gate all(...) yang cuma kasih warna kalau KETIGA
-            # Tone lengkap ada -- kalau satu Tone saja kosong di batch (mis. tidak
-            # ada artikel Positif), warnanya diam-diam jatuh ke palet biru default
-            # Streamlit, nggak nyambung sama tema merah/abu/hijau di seluruh app.
-            #
-            # line_chart (bukan bar_chart) -- job-nya "tren dari waktu ke
-            # waktu", dan dataviz skill merekomendasikan garis buat itu,
-            # bukan bar (bar lebih pas buat bandingin magnitude antar
-            # kategori terpisah, bukan memperlihatkan arah/pola dari waktu
-            # ke waktu).
-            chart_colors = [colors_map.get(col, '#BDC3C7') for col in tanggal_counts.columns]
-            st.line_chart(tanggal_counts, color=chart_colors, height=180)
+        # excel_buf/nama_file sudah dibangun di atas (tepat setelah banner
+        # header, buat ikon unduh pojok) -- dipakai ulang di sini & di kartu
+        # unduh besar di bawah, nggak dibangun lagi supaya tetap cuma sekali.
 
-    # ── Bekas Tab 4 (Kata Kunci) -- digabung ke sini ────────────────────
-    # Export JSON/CSV & "Aktor & Lembaga yang Disebut" sengaja tidak ikut
-    # dipindah -- JSON/CSV redundan dengan tombol "Download Excel" yang
-    # sudah mencakup seluruh data (termasuk hasil telaah), dan "Aktor &
-    # Lembaga" cuma versi lebih lemah (frekuensi mentah, tanpa breakdown
-    # risiko) dari "Sebaran Risiko per Aktor/Lokasi" yang sudah ada di Tab
-    # Ikhtisar (lihat risiko_per_aktor()).
-    st.markdown("---")
+        st.markdown("<br>", unsafe_allow_html=True)
+        # Diselaraskan ke gaya .process-section-label yang sama dipakai
+        # "Proses Crawl & Analisis" di atas (bukan lagi markdown ### bawaan
+        # Streamlit yang keluar jalur dari sistem heading app ini).
+        st.markdown('<div class="process-section-label">📰 Artikel yang Ditemukan</div>', unsafe_allow_html=True)
+        c_filter1, c_filter2 = st.columns(2)
+        with c_filter1:
+            filter_tone = st.selectbox("Filter tone:", ["Semua","Positif","Netral","Negatif"])
+        with c_filter2:
+            nama_klaster_list = ["Semua"] + sorted(set(h.get("klaster","-") for h in hasil_list))
+            filter_klaster = st.selectbox("Filter klaster:", nama_klaster_list)
 
-    col_dimensi, col_tier = st.columns(2)
+        tampil = hasil_list
+        if filter_tone != "Semua":
+            tampil = [h for h in tampil if h.get("tone") == filter_tone]
+        if filter_klaster != "Semua":
+            tampil = [h for h in tampil if h.get("klaster") == filter_klaster]
 
-    with col_dimensi:
-        st.markdown("**Distribusi Dimensi Pengawasan (GRCC AnCoDe)**")
-        st.caption("Jumlah klaster per dimensi -- satu klaster bisa masuk lebih dari satu dimensi")
-        dimensi_data = extract_dimensi_pengawasan(df)
-        if dimensi_data:
-            max_dimensi = max(v for _, v in dimensi_data)
-            for label, freq in dimensi_data:
-                pct = round(freq / max_dimensi * 100)
-                st.markdown(f"""
-                <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-                  <div style='font-size:11px;color:inherit;opacity:0.85;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{label}</div>
-                  <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                    <div style='width:{pct}%;height:100%;background:#F5A623;border-radius:3px'></div>
-                  </div>
-                  <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{freq}</div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("Belum ada data Dimensi Pengawasan (file lama sebelum fitur ini ditambahkan).")
+        # Caption ini sengaja eksplisit bilang "artikel individu" dan "tiap
+        # kartu di bawah adalah satu artikel" — sebelumnya heading-nya
+        # "Pratinjau Hasil Analisis" yang kesannya satu hasil analisis
+        # gabungan, padahal isinya daftar artikel satu-satu.
+        st.caption(f"Menampilkan **{len(tampil)} dari {len(hasil_list)}** artikel individu hasil crawl — tiap kartu di bawah adalah satu artikel.")
 
-    with col_tier:
-        st.markdown("**Sebaran Sumber Media per Tier**")
-        st.caption("Tier 1 = media arus utama, Tier 2 = sumber lain")
-        tier_counts = extract_sebaran_tier(df)
-        total_tier = sum(tier_counts.values())
-        if total_tier:
-            # Cuma 2 kategori -- bar penuh di sini kepanjangan buat informasi
-            # sesederhana ini. Dua stat tile berdampingan lebih ringkas dan
-            # langsung kebaca angkanya, tanpa perlu bandingin panjang bar.
-            t1, t2 = tier_counts.get("Tier 1", 0), tier_counts.get("Tier 2", 0)
-            pct1, pct2 = round(t1/total_tier*100), round(t2/total_tier*100)
+        for h in tampil:
+            tone = h.get("tone","Netral")
+            klaster_label = h.get("klaster","-")
+            link = h.get("link","")
+            judul_bersih = bersihkan_judul_dari_sumber(h.get("judul","-"))
+            sumber_pill = f'<span class="pill-sumber">{h.get("sumber","-")}</span>' if h.get("sumber") else ""
+            # Judul langsung jadi hyperlink ke artikel asli (bukan link
+            # terpisah di bawah card via expander) — lebih cepat diakses,
+            # dan tetap terasa satu kesatuan dengan card-nya. Nama sumber
+            # dipisah dari teks judul dan ditampilkan sebagai pill di
+            # depannya — sama seperti tweak pill sumber di Dashboard AIS.
+            if link and link != "-":
+                judul_html = f'{sumber_pill}<a href="{link}" target="_blank" rel="noopener" class="judul-link">{judul_bersih}</a>'
+            else:
+                judul_html = f'{sumber_pill}{judul_bersih}'
+
+            # Aktor/Lokasi dipecah jadi pill per-nama (bukan satu blob teks),
+            # dan Isu/Subisu ditampilkan sebagai badge topik — sama seperti
+            # tweak badge topik vs. aktor yang sudah diterapkan di panel
+            # Detail Analisis Dashboard AIS (dua level informasi berbeda,
+            # jadi dipisah warna: topik indigo, aktor slate).
+            daftar_aktor = [a.strip() for a in str(h.get("aktor_lokasi","")).split(",") if a.strip() and a.strip() != "-"]
+            aktor_pills = "".join(f'<span class="badge-pill badge-aktor">👤 {a}</span>' for a in daftar_aktor)
+            isu_subisu = h.get("isu_subisu","-")
+            topik_badge = f'<span class="badge-pill badge-topik">🏷️ {isu_subisu}</span>' if isu_subisu and isu_subisu != "-" else ""
+
             st.markdown(f"""
-            <div style='display:flex;gap:10px'>
-              <div style='flex:1;background:rgba(99,179,237,0.12);border-radius:6px;padding:10px 12px;border-left:3px solid #63B3ED'>
-                <div style='font-size:10px;color:inherit;opacity:0.7;margin-bottom:2px'>Tier 1</div>
-                <div style='font-size:20px;font-weight:700;color:#63B3ED'>{t1}<span style='font-size:11px;font-weight:400;color:inherit;opacity:0.6'> ({pct1}%)</span></div>
-              </div>
-              <div style='flex:1;background:rgba(148,163,184,0.12);border-radius:6px;padding:10px 12px;border-left:3px solid #94A3B8'>
-                <div style='font-size:10px;color:inherit;opacity:0.7;margin-bottom:2px'>Tier 2</div>
-                <div style='font-size:20px;font-weight:700;color:#94A3B8'>{t2}<span style='font-size:11px;font-weight:400;color:inherit;opacity:0.6'> ({pct2}%)</span></div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+            <div class="artikel-card">
+                <div class="artikel-judul">{judul_html}</div>
+                <div class="artikel-meta"><span class="artikel-tanggal">📅 {h.get('tanggal','-')}</span> &nbsp;·&nbsp; {h.get('tier','')} &nbsp;·&nbsp; <span class="tone-{tone.lower()}">{tone}</span></div>
+                <div style="margin:2px 0 10px 0">{topik_badge}{aktor_pills}</div>
+                <div class="artikel-ringkasan">{h.get('ringkasan_isu','-')}</div>
+                <div style="margin-top:8px;font-size:0.72rem;color:rgba(255,255,255,0.5)">🗂️ Klaster: {klaster_label}</div>
+            </div>""", unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("**Kata Kunci Dominan**")
-    keywords = extract_keywords(df)
-    if keywords:
-        max_freq = keywords[0][1]
-        for word, freq in keywords[:10]:
-            pct = round(freq / max_freq * 100)
-            st.markdown(f"""
-            <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-              <div style='font-size:11px;color:inherit;opacity:0.85;width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{word}</div>
-              <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                <div style='width:{pct}%;height:100%;background:#1C3D5A;border-radius:3px'></div>
-              </div>
-              <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{freq}</div>
-            </div>
+        # Kartu unduh — penutup alami setelah user selesai meninjau daftar
+        # artikel di atas. Sengaja dibuat menonjol (aksen amber, warna
+        # primaryColor app ini) supaya bobot visualnya setara dengan
+        # pentingnya aksi ini — sebelumnya cuma heading kecil + tombol
+        # polos, gampang terlewat padahal ini tujuan akhir dari crawl.
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.container(key="download_cta"):
+            st.markdown("""
+            <div class="download-cta-icon">📥</div>
+            <div class="download-cta-title">Unduh Hasil Lengkap</div>
+            <div class="download-cta-sub">Sudah selesai meninjau? Unduh seluruh artikel beserta analisis klaster, risiko, dan area perhatian dalam satu file Excel.</div>
             """, unsafe_allow_html=True)
+            # excel_buf/nama_file dipakai ulang dari yang sudah dibangun di
+            # atas (dekat kartu statistik) -- lihat catatan di sana. key
+            # eksplisit beda dari tombol kecil di atas (lihat catatan di sana
+            # soal kenapa ini wajib).
+            st.download_button("📥 Download Excel", data=excel_buf, file_name=nama_file,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, type="primary", key="download_excel_bottom")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# HALAMAN 2 — DASHBOARD AIS
+# ══════════════════════════════════════════════════════════════════════════
+elif page == "klaster":
+    exec(open('dashboard_ais.py').read())
+
+# ══════════════════════════════════════════════════════════════════════════
+# HALAMAN 3 — REPOSITORI ISU
+# ══════════════════════════════════════════════════════════════════════════
+elif page == "repo":
+    exec(open('repositori_isu.py').read())
