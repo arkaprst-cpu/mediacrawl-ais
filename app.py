@@ -677,6 +677,38 @@ if page == "crawl":
         text-transform: uppercase; letter-spacing: 0.04em;
         margin: 4px 0 14px 0;
     }
+    /* Kartu "Isu Aktual" -- ditaruh di AREA KONTEN UTAMA (di bawah kartu
+       "Cara memulai"), bukan sidebar -- round diskusi, sidebar kepanjangan
+       kalau ditambah kartu lagi. Karena area utama jauh lebih lebar dari
+       sidebar, layoutnya grid multi-kolom (auto-fit) alih-alih list
+       memanjang ke bawah, supaya ruang horizontal yang luas kepakai.
+       Aksen biru (bukan amber) supaya konsisten dengan kode warna semantik
+       yang sudah dipakai di tempat lain: biru = informasional (sama seperti
+       .query-box), amber tetap khusus buat brand/aksi utama.
+       Nama "Isu Aktual" -- sebelumnya "Isu Lagi Ramai", round diskusi:
+       kesannya kurang formal/serius buat aplikasi pengawasan BPKP. */
+    .trending-box { margin-top: 1.2rem; }
+    .trending-box-label {
+        font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+        text-transform: uppercase; color: #63B3ED; opacity: 0.9;
+        margin-bottom: 10px; font-family: 'IBM Plex Mono', monospace;
+    }
+    .trending-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 10px;
+    }
+    .trending-tile {
+        background: rgba(99,179,237,0.06); border: 1px solid rgba(99,179,237,0.2);
+        border-left: 3px solid #63B3ED; border-radius: 6px;
+        padding: 8px 12px; font-size: 12.5px; color: rgba(255,255,255,0.85);
+        line-height: 1.45;
+    }
+    .trending-sumber {
+        display: block; font-size: 10px; font-weight: 700;
+        font-family: 'IBM Plex Mono', monospace;
+        color: #63B3ED; opacity: 0.8; text-transform: uppercase;
+        letter-spacing: 0.02em; margin-bottom: 2px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -700,6 +732,37 @@ if page == "crawl":
         di Dashboard AIS."""
         m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
         return judul[:m.start()].strip() if m else judul.strip()
+
+    # -- Kartu "Isu Aktual" (area konten utama, di bawah "Cara memulai") ----
+    # Bukan hasil crawl -- ini cuma bantuan brainstorm SEBELUM crawl dimulai,
+    # supaya user nggak harus buka tab lain (Google Trends/Google News) buat
+    # nyari ide kata kunci apa yang lagi ramai diberitain. Sumbernya feed RSS
+    # "top stories" Google News Indonesia -- BEDA dari feed pencarian per-
+    # keyword yang dipakai proses crawl utama (itu perlu query dulu, justru
+    # ini buat SEBELUM ada query).
+    # Referensi doang -- klik-untuk-isi field sengaja tidak dibuat (round
+    # diskusi), biar user tetap yang milih & merumuskan kata kuncinya sendiri.
+    # @st.cache_data supaya nggak nge-fetch RSS ulang tiap kali sidebar
+    # re-render (Streamlit rerun sangat sering); TTL 30 menit -- "trending"
+    # nggak perlu presisi ke menit, & ngirit panggilan ke Google News.
+    @st.cache_data(ttl=1800, show_spinner=False)
+    def ambil_trending_headlines(n: int = 8) -> list:
+        try:
+            feed = feedparser.parse("https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id")
+            out = []
+            for entry in feed.entries[:n]:
+                judul_asli = (entry.get("title") or "").strip()
+                if not judul_asli:
+                    continue
+                sumber = extract_sumber_dari_judul(judul_asli)
+                judul  = bersihkan_judul_dari_sumber(judul_asli) if sumber else judul_asli
+                out.append({"judul": judul, "sumber": sumber})
+            return out
+        except Exception:
+            # Gagal diam-diam -- kalau RSS lagi bermasalah, kartu ini cukup
+            # tidak muncul (lihat pemanggilnya), TIDAK boleh bikin seluruh
+            # halaman Crawl error cuma gara-gara fitur bantu ini.
+            return []
 
     # ── PROMPT SISTEM (analisis per-artikel) ───────────────────────────────
     PROMPT_SISTEM = """Kamu adalah analis isu strategis pengawasan pemerintahan Indonesia untuk BPKP Pusat Strategi Kebijakan Pengawasan.
@@ -1301,6 +1364,29 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
               <li>Klik <b>🔍 Mulai Crawl</b> — hasil analisisnya akan muncul di halaman ini</li>
             </ol>
             """, unsafe_allow_html=True)
+
+        # Kartu "Isu Aktual" -- ditaruh TEPAT DI BAWAH kartu panduan di
+        # atas (bukan sidebar, round diskusi), bahan brainstorm kata kunci
+        # sebelum mulai crawl. Ikut guard yang sama (cuma tampil sebelum
+        # crawl pertama) -- begitu ada hasil, halaman ini beralih fungsi
+        # jadi halaman hasil crawl, kartu bantu ini nggak relevan lagi.
+        # Gagal-diam kalau RSS-nya kosong (jaringan/limit) -- fitur ini
+        # opsional, jangan sampai bikin halaman error gara-gara ini.
+        _trending = ambil_trending_headlines(8)
+        if _trending:
+            _tiles_html = "".join(
+                f"<div class='trending-tile'>"
+                f"<span class='trending-sumber'>{t['sumber']}</span>{t['judul']}"
+                f"</div>" if t["sumber"] else
+                f"<div class='trending-tile'>{t['judul']}</div>"
+                for t in _trending
+            )
+            st.markdown(
+                "<div class='trending-box'><div class='trending-box-label'>"
+                "📰 Isu Aktual (Google News) -- referensi kata kunci</div>"
+                "<div class='trending-grid'>" + _tiles_html + "</div></div>",
+                unsafe_allow_html=True,
+            )
 
     # ── Trigger crawl ──────────────────────────────────────────────────────
     # Klik pertama HANYA menyalakan flag lalu langsung st.rerun() — belum
