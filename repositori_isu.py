@@ -178,6 +178,18 @@ def parse_excel_klaster(file_bytes: bytes, nama_file: str, modified_time: str) -
     if not kolom_wajib.issubset(set(df.columns)):
         return pd.DataFrame()  # file lama / format tidak kompatibel — skip
 
+    # Nama kolom ini berubah di buat_excel() (app.py) pada 2026-08-31:
+    # "Kondisi/Pemicu Klaster" -> "Kondisi Klaster". Folder Drive berisi
+    # file dari SEBELUM dan SESUDAH perubahan itu, jadi dua-duanya harus
+    # diterima. Diseragamkan ke satu nama internal di sini supaya kode
+    # tampilan di bawah (row.get("Kondisi/Pemicu Klaster")) tidak perlu
+    # ikut bercabang.
+    if "Kondisi/Pemicu Klaster" not in df.columns:
+        if "Kondisi Klaster" in df.columns:
+            df = df.rename(columns={"Kondisi Klaster": "Kondisi/Pemicu Klaster"})
+        else:
+            df = df.assign(**{"Kondisi/Pemicu Klaster": "-"})
+          
     df = df[df["Status Review"] == "Sudah Direview"]
     if len(df) == 0:
         return pd.DataFrame()
