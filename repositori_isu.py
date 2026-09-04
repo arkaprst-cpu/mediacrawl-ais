@@ -9,8 +9,22 @@
 import streamlit as st
 import pandas as pd
 import io
+import re
 import html as html_lib
 from struktur_app import STRUKTUR_APP
+
+# Ikon per Sektor, dipakai di kartu navigasi Sektor. Nama pada kartu selalu
+# nama Sektor asli dari STRUKTUR_APP apa adanya (termasuk kode huruf di
+# depannya) — ikon ini cuma penanda visual tambahan, bukan pengganti nama.
+SEKTOR_IKON = {
+    "A": "🎓", "B": "🤝", "C": "🏗️", "D": "💰",
+    "E": "📈", "F": "🌾", "G": "⚡", "H": "🏛️",
+}
+
+
+def _slug(teks: str) -> str:
+    """Ubah teks bebas (nama Tema) jadi token aman buat CSS selector / widget key."""
+    return re.sub(r"[^a-zA-Z0-9]+", "_", teks).strip("_")[:40] or "x"
 
 st.markdown("""
 <style>
@@ -96,6 +110,46 @@ st.markdown("""
     background: rgba(34,197,94,0.08);
   }
   .sub-card.usulan .sub-label { color: #22C55E; }
+
+  /* Kartu navigasi Sektor & Tema — gaya stat-tile (dipinjam dari app.py),
+     ukuran seragam untuk semua kartu dalam 1 baris. Sengaja TIDAK dibuat
+     proporsional/bento (kartu besar untuk sektor dengan hitungan tinggi)
+     karena sebaran data Sektor biasanya sangat timpang (mis. 1 sektor
+     terisi, sisanya 0) — ukuran berbeda-beda akan terlihat rusak/tidak
+     seimbang dengan sebaran seperti itu. Tidak ada kartu "Semua" lagi di
+     grid (supaya jumlah kartu Sektor selalu genap 8 = 2 baris rapi) — reset
+     ke "semua" dipindah ke tombol kecil terpisah di sebelah label bagian.
+  */
+  [class*="st-key-repo_sektor_card_"] button,
+  [class*="st-key-repo_tema_card_"] button {
+    background: rgba(128,128,128,0.06) !important;
+    border: 1px solid rgba(128,128,128,0.2) !important;
+    border-radius: 10px !important;
+    height: auto !important;
+    line-height: 1.4 !important;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  [class*="st-key-repo_sektor_card_"] button {
+    padding: 1.3rem 1rem !important;
+  }
+  [class*="st-key-repo_sektor_card_"] button p {
+    font-size: 0.85rem !important;
+  }
+  [class*="st-key-repo_tema_card_"] button p {
+    font-size: 0.78rem !important;
+  }
+  [class*="st-key-repo_sektor_card_"] button:hover:not(:disabled),
+  [class*="st-key-repo_tema_card_"] button:hover:not(:disabled) {
+    background: rgba(245,166,35,0.1) !important;
+    border-color: rgba(245,166,35,0.4) !important;
+  }
+  /* Tombol reset kecil (bukan kartu) di sebelah label Sektor/Tema */
+  .st-key-repo_sektor_reset button, .st-key-repo_tema_reset button {
+    font-size: 0.72rem !important;
+    padding: 0.2rem 0.5rem !important;
+    height: auto !important;
+    opacity: 0.75;
+  }
 </style>
 """, unsafe_allow_html=True)
 
@@ -178,18 +232,6 @@ def parse_excel_klaster(file_bytes: bytes, nama_file: str, modified_time: str) -
     if not kolom_wajib.issubset(set(df.columns)):
         return pd.DataFrame()  # file lama / format tidak kompatibel — skip
 
-    # Nama kolom ini berubah di buat_excel() (app.py) pada 2026-08-31:
-    # "Kondisi/Pemicu Klaster" -> "Kondisi Klaster". Folder Drive berisi
-    # file dari SEBELUM dan SESUDAH perubahan itu, jadi dua-duanya harus
-    # diterima. Diseragamkan ke satu nama internal di sini supaya kode
-    # tampilan di bawah (row.get("Kondisi/Pemicu Klaster")) tidak perlu
-    # ikut bercabang.
-    if "Kondisi/Pemicu Klaster" not in df.columns:
-        if "Kondisi Klaster" in df.columns:
-            df = df.rename(columns={"Kondisi Klaster": "Kondisi/Pemicu Klaster"})
-        else:
-            df = df.assign(**{"Kondisi/Pemicu Klaster": "-"})
-          
     df = df[df["Status Review"] == "Sudah Direview"]
     if len(df) == 0:
         return pd.DataFrame()
@@ -272,67 +314,150 @@ if isinstance(rentang_tanggal, tuple) and len(rentang_tanggal) == 2:
 else:
     st.info("Pilih tanggal akhir untuk menerapkan filter rentang.")
 
-# ── Navigasi Sektor — bar chart cakupan ──────────────────────────────────
-# Daftar Sektor dari STRUKTUR_APP (bukan nilai unik df_repo) agar sektor
-# yang belum ditelaah tetap tampil dengan angka 0.
-sektor_counts = df_repo["Sektor"].value_counts().to_dict()
-daftar_sektor = list(STRUKTUR_APP.keys())
-maks_hitung = max(sektor_counts.values()) if sektor_counts else 1
-sektor_aktif = st.session_state.get("repo_sektor_pilih", "Semua Sektor")
+# ── PENCARIAN CEPAT — jalan pintas, melewati hierarki Sektor→Tema→Topik ──
+st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>🔎 Cari Cepat</div>", unsafe_allow_html=True)
 
-st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>🗂️ Sektor</div>", unsafe_allow_html=True)
-
-if sektor_aktif != "Semua Sektor":
-    c_label, c_reset = st.columns([5, 1.2])
-    with c_label:
-        st.markdown(f"<div style='font-size:13px;padding-top:6px'>Menampilkan sektor: <b>{sektor_aktif}</b></div>", unsafe_allow_html=True)
-    with c_reset:
-        if st.button("✕ Semua Sektor", use_container_width=True):
-            st.session_state["repo_sektor_pilih"] = "Semua Sektor"
+col_search, col_clear = st.columns([5, 1.2])
+# Tombol "Hapus" di-render lebih dulu di urutan kode (meski tampil di kanan
+# lewat kolom) supaya perubahan session_state["repo_cari_teks"]-nya terjadi
+# SEBELUM widget text_input dengan key yang sama diinstansiasi di bawah —
+# Streamlit melarang mengubah state widget setelah ia dibuat di run yang sama.
+with col_clear:
+    if st.session_state.get("repo_cari_teks", "").strip():
+        st.markdown("<div style='height:1.6rem'></div>", unsafe_allow_html=True)
+        if st.button("✕ Hapus", key="repo_cari_clear_btn", use_container_width=True):
+            st.session_state["repo_cari_teks"] = ""
             st.rerun()
+with col_search:
+    cari_teks = st.text_input(
+        "Cari klaster isu", placeholder="Cari klaster isu... (melewati navigasi Sektor/Tema/Topik)",
+        label_visibility="collapsed", key="repo_cari_teks",
+    )
 
-for nama_sektor in daftar_sektor:
-    jumlah = int(sektor_counts.get(nama_sektor, 0))
-    pct = round(jumlah / maks_hitung * 100) if maks_hitung else 0
-    kosong = jumlah == 0
-    terpilih = (nama_sektor == sektor_aktif)
+mode_cari = bool(cari_teks.strip())
 
-    c_bar, c_btn = st.columns([5, 1.2])
-    with c_bar:
-        st.markdown(f"""
-        <div style='display:flex;align-items:center;gap:10px;padding:5px 0'>
-          <div style='width:220px;flex-shrink:0;font-size:13px;{"opacity:0.4" if kosong else ""}{"font-weight:600" if terpilih else ""}'>{nama_sektor}</div>
-          <div style='flex:1;background:rgba(148,163,184,0.15);border-radius:4px;height:20px;position:relative;overflow:hidden'>
-            <div style='width:{pct}%;height:100%;background:{"rgba(148,163,184,0.35)" if kosong else "#F5A623"};border-radius:4px'></div>
-          </div>
-          <div style='width:26px;text-align:right;font-size:13px;font-weight:600;{"opacity:0.4" if kosong else ""}'>{jumlah}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with c_btn:
-        if not kosong and not terpilih:
-            if st.button("Lihat →", key=f"repo_pilih_sektor_{nama_sektor}", use_container_width=True):
-                st.session_state["repo_sektor_pilih"] = nama_sektor
+if mode_cari:
+    df_final = df_repo[df_repo["Klaster Isu"].str.contains(cari_teks.strip(), case=False, na=False, regex=False)]
+    st.markdown(f"**{len(df_final)} isu** cocok dengan pencarian \"{cari_teks.strip()}\".")
+
+else:
+    # ── Navigasi Sektor — kartu grid ala stat-tile ──────────────────────
+    # Daftar Sektor dari STRUKTUR_APP (bukan nilai unik df_repo) agar sektor
+    # yang belum ditelaah tetap tampil dengan angka 0.
+    sektor_counts = df_repo["Sektor"].value_counts().to_dict()
+    daftar_sektor = list(STRUKTUR_APP.keys())
+    sektor_aktif = st.session_state.get("repo_sektor_pilih", "Semua Sektor")
+
+    # Reset navigasi Tema begitu Sektor berubah, supaya tidak nyangkut di
+    # Tema yang sudah tidak relevan dengan Sektor yang baru dipilih.
+    if st.session_state.get("_repo_sektor_prev") != sektor_aktif:
+        st.session_state["repo_tema_pilih"] = "Semua Tema"
+        st.session_state["_repo_sektor_prev"] = sektor_aktif
+
+    # "" (tidak ada kartu aktif) waktu di Semua Sektor — tidak ada kartu
+    # "Semua" lagi di grid, resetnya lewat tombol kecil di sebelah label.
+    sektor_kode_aktif = "" if sektor_aktif == "Semua Sektor" else sektor_aktif.split(".")[0].strip()
+
+    st.markdown(f"""
+    <style>
+    .st-key-repo_sektor_card_{sektor_kode_aktif} button {{
+        background: rgba(245,166,35,0.16) !important;
+        border: 1px solid rgba(245,166,35,0.55) !important;
+    }}
+    .st-key-repo_sektor_card_{sektor_kode_aktif} button p {{ color: #F5A623 !important; font-weight: 700 !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    c_label1, c_reset1 = st.columns([5, 1.6])
+    with c_label1:
+        st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 8px'>🗂️ Sektor</div>", unsafe_allow_html=True)
+    with c_reset1:
+        if sektor_aktif != "Semua Sektor":
+            if st.button("↺ Semua Sektor", key="repo_sektor_reset", use_container_width=True):
+                st.session_state["repo_sektor_pilih"] = "Semua Sektor"
                 st.rerun()
 
-df_tahap1 = df_repo if sektor_aktif == "Semua Sektor" else df_repo[df_repo["Sektor"] == sektor_aktif]
+    # Nama kartu SELALU nama Sektor asli dari STRUKTUR_APP apa adanya
+    # (termasuk kode huruf A/B/C/... di depannya) — tidak diparafrase.
+    kartu_sektor = [
+        {"kode": nama_sektor.split(".")[0].strip(), "nama": nama_sektor,
+         "jumlah": int(sektor_counts.get(nama_sektor, 0))}
+        for nama_sektor in daftar_sektor
+    ]
 
-# ── NAVIGASI TEMA / TOPIK — TETAP DROPDOWN, MENGIKUTI SEKTOR TERPILIH ───
-st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>Perincian lebih lanjut</div>", unsafe_allow_html=True)
-col_f2, col_f3 = st.columns(2)
+    for baris_awal in range(0, len(kartu_sektor), 4):
+        kolom = st.columns(4)
+        for i, kartu in enumerate(kartu_sektor[baris_awal:baris_awal + 4]):
+            with kolom[i]:
+                with st.container(key=f"repo_sektor_card_{kartu['kode']}"):
+                    kosong = kartu["jumlah"] == 0
+                    icon = SEKTOR_IKON.get(kartu["kode"], "📌")
+                    label = f"{icon}\n\n**{kartu['jumlah']}**\n\n{kartu['nama']}"
+                    if st.button(label, key=f"repo_sektor_btn_{kartu['kode']}", use_container_width=True,
+                                 disabled=kosong, help=kartu["nama"]):
+                        if kartu["nama"] != sektor_aktif:
+                            st.session_state["repo_sektor_pilih"] = kartu["nama"]
+                            st.rerun()
 
-with col_f2:
-    tema_opsi = ["Semua Tema"] + sorted(df_tahap1["Tema"].dropna().unique().tolist())
-    tema_pilih = st.selectbox("Tema", tema_opsi)
+    df_tahap1 = df_repo if sektor_aktif == "Semua Sektor" else df_repo[df_repo["Sektor"] == sektor_aktif]
 
-df_tahap2 = df_tahap1 if tema_pilih == "Semua Tema" else df_tahap1[df_tahap1["Tema"] == tema_pilih]
+    # ── Navigasi Tema — kartu/chip, mengikuti Sektor terpilih ───────────
+    tema_counts = df_tahap1["Tema"].value_counts().to_dict()
+    daftar_tema = sorted(df_tahap1["Tema"].dropna().unique().tolist())
+    tema_aktif = st.session_state.get("repo_tema_pilih", "Semua Tema")
+    if tema_aktif != "Semua Tema" and tema_aktif not in daftar_tema:
+        tema_aktif = "Semua Tema"
+        st.session_state["repo_tema_pilih"] = "Semua Tema"
 
-with col_f3:
+    tema_kode_aktif = "" if tema_aktif == "Semua Tema" else _slug(tema_aktif)
+
+    st.markdown(f"""
+    <style>
+    .st-key-repo_tema_card_{tema_kode_aktif} button {{
+        background: rgba(245,166,35,0.16) !important;
+        border: 1px solid rgba(245,166,35,0.55) !important;
+    }}
+    .st-key-repo_tema_card_{tema_kode_aktif} button p {{ color: #F5A623 !important; font-weight: 700 !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    c_label2, c_reset2 = st.columns([5, 1.6])
+    with c_label2:
+        st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 8px'>🏷️ Tema</div>", unsafe_allow_html=True)
+    with c_reset2:
+        if tema_aktif != "Semua Tema":
+            if st.button("↺ Semua Tema", key="repo_tema_reset", use_container_width=True):
+                st.session_state["repo_tema_pilih"] = "Semua Tema"
+                st.rerun()
+
+    kartu_tema = [{"kode": _slug(t), "nama": t, "jumlah": int(tema_counts.get(t, 0))} for t in daftar_tema]
+
+    if kartu_tema:
+        for baris_awal in range(0, len(kartu_tema), 3):
+            kolom = st.columns(3)
+            for i, kartu in enumerate(kartu_tema[baris_awal:baris_awal + 3]):
+                with kolom[i]:
+                    with st.container(key=f"repo_tema_card_{kartu['kode']}"):
+                        label_pendek = kartu["nama"] if len(kartu["nama"]) <= 30 else kartu["nama"][:28] + "…"
+                        label = f"{label_pendek}  ·  {kartu['jumlah']}"
+                        if st.button(label, key=f"repo_tema_btn_{kartu['kode']}", use_container_width=True, help=kartu["nama"]):
+                            if kartu["nama"] != tema_aktif:
+                                st.session_state["repo_tema_pilih"] = kartu["nama"]
+                                st.rerun()
+    else:
+        st.caption("Tidak ada Tema untuk Sektor ini.")
+
+    df_tahap2 = df_tahap1 if tema_aktif == "Semua Tema" else df_tahap1[df_tahap1["Tema"] == tema_aktif]
+
+    # ── Topik — tetap dropdown ───────────────────────────────────────────
+    st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>Topik</div>", unsafe_allow_html=True)
     topik_opsi = ["Semua Topik"] + sorted(df_tahap2["Topik"].dropna().unique().tolist())
-    topik_pilih = st.selectbox("Topik", topik_opsi)
+    topik_pilih = st.selectbox("Topik", topik_opsi, label_visibility="collapsed")
 
-df_final = df_tahap2 if topik_pilih == "Semua Topik" else df_tahap2[df_tahap2["Topik"] == topik_pilih]
+    df_final = df_tahap2 if topik_pilih == "Semua Topik" else df_tahap2[df_tahap2["Topik"] == topik_pilih]
 
-st.markdown(f"**{len(df_final)} isu** ditemukan sesuai navigasi.")
+    st.markdown(f"**{len(df_final)} isu** ditemukan sesuai navigasi.")
+
 st.divider()
 
 # ── DAFTAR HASIL ──────────────────────────────────────────────────────────
