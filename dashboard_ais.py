@@ -326,21 +326,25 @@ st.markdown("""
     color: #63B3ED; opacity: 1;
   }
 
-  /* Tombol "Telaah klaster ini →" dan "← Tutup telaah, lihat detail
-     artikel" — sengaja BUKAN type="primary" (oranye solid dipakai khusus
-     buat aksi commit: Masuk, Mulai Crawl, Submit Telaah). Keduanya sama-
-     sama aksi navigasi buka/tutup panel telaah, jadi disamakan satu gaya:
-     aksen biru (senada hover kartu artikel di atas) — beda kelas dari
-     oranye tapi tetap "hidup", bukan afterthought abu-abu default. */
+  /* Tombol "Telaah klaster ini →", "✕ Tutup", dan "💾 Submit Telaah" --
+     SEMUA aksen biru yang sama (senada hover kartu artikel di atas), bukan
+     type="primary" oranye solid. Awalnya cuma "Telaah klaster ini"/"Tutup"
+     yang biru (Submit dibedain oranye sebagai "aksi commit utama"), tapi
+     round diskusi user minta Tutup & Submit warnanya DISAMAKAN ("setara")
+     -- jadi Submit ikut dipindah ke aksen biru ini juga, dibedain dari
+     Tutup HANYA lewat posisi (kiri/kanan, lihat st.columns pemanggilnya)
+     & teks, bukan lagi lewat warna. */
   [class*="st-key-buka_telaah_"] button,
-  [class*="st-key-tutup_telaah"] button {
+  [class*="st-key-tutup_telaah"] button,
+  .st-key-submit_telaah_btn button {
     border: 1.5px solid rgba(99,179,237,0.55) !important;
     background: rgba(99,179,237,0.08) !important;
     color: #63B3ED !important;
     font-weight: 600 !important;
   }
   [class*="st-key-buka_telaah_"] button:hover,
-  [class*="st-key-tutup_telaah"] button:hover {
+  [class*="st-key-tutup_telaah"] button:hover,
+  .st-key-submit_telaah_btn button:hover {
     background: rgba(99,179,237,0.2) !important;
     border-color: rgba(99,179,237,0.85) !important;
     color: #8ECBFA !important;
@@ -1825,20 +1829,27 @@ with tab2:
                         risiko_vals = sub_match['Risiko'].dropna() if 'Risiko' in sub_match.columns else pd.Series([])
                         risiko_draft = risiko_vals.iloc[0] if len(risiko_vals) else ""
 
-                    st.markdown(f"""
-                    <div style='display:flex;align-items:center;gap:6px;margin-bottom:10px;
+                    # Tombol "Tutup telaah" ROUND 1: dipindah dari baris lebar-
+                    # penuh+divider sendiri jadi ikon kecil sebaris label
+                    # "TELAAH KLASTER". ROUND 2 (ini): user lapor 3 field
+                    # Dampak/Gap/Usulan MASIH sempit, jadi digeser sekali lagi
+                    # -- Tutup dipindah ke BAWAH, sejajar kiri-kanan dengan
+                    # Submit (lihat st.columns dekat Submit Telaah di bawah),
+                    # bukan di header lagi. Label header balik jadi teks polos
+                    # tanpa tombol -- ruang vertikal yang kepakai buat baris
+                    # header jadi seminimal mungkin (cuma tinggi teks kecil,
+                    # bukan tinggi tombol), dan tinggi ketiga textarea di
+                    # bawah dinaikkan (lihat height= masing-masing) memakai
+                    # ruang yang kesisa dari kedua perubahan ini.
+                    st.markdown("""
+                    <div style='display:flex;align-items:center;gap:6px;
                         font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:0.08em;
                         color:#F5A623;font-weight:700;text-transform:uppercase;'>
                       ✏️ TELAAH KLASTER
                     </div>
-                    <div style='font-size:14px;font-weight:700;margin-bottom:12px;line-height:1.4'>{nama_aktif}</div>
                     """, unsafe_allow_html=True)
 
-                    if st.button("← Tutup telaah, lihat detail artikel", key="tutup_telaah", use_container_width=True):
-                        st.session_state["panel_mode"] = "detail"
-                        st.rerun()
-
-                    st.markdown("<hr style='border:none;border-top:1px solid rgba(245,166,35,0.2);margin:10px 0'>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:14px;font-weight:700;margin-bottom:12px;line-height:1.4'>{nama_aktif}</div>", unsafe_allow_html=True)
 
                     sektor_list = list(STRUKTUR_APP.keys())
                     sektor_default = review_tersimpan.get("sektor", sektor_list[0])
@@ -1860,29 +1871,56 @@ with tab2:
                     with col_topik:
                         topik_pilih = st.selectbox("Topik", topik_list, index=topik_idx, key=f"{review_key}_topik") if topik_list else None
 
+                    # Tinggi dinaikkan (110->190, 90->140, 90->140) -- round
+                    # diskusi lanjutan, versi sebelumnya (cuma mangkas baris
+                    # tombol Tutup) belum cukup, tiga field ini masih dilapor
+                    # sempit. Dampak dikasih porsi lebih besar dari Gap/Usulan
+                    # karena isinya draf AI yang biasanya paling panjang.
                     dampak_default = review_tersimpan.get("dampak_implikasi_final") or risiko_draft
-                    dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf awal)", value=dampak_default, key=f"{review_key}_dampak", height=110)
+                    dampak_pilih = st.text_area("Dampak / Implikasi (sempurnakan draf awal)", value=dampak_default, key=f"{review_key}_dampak", height=190)
 
-                    gap_pilih = st.text_area("Gap Pengawasan", value=review_tersimpan.get("gap_pengawasan", ""), key=f"{review_key}_gap", height=90,
+                    gap_pilih = st.text_area("Gap Pengawasan", value=review_tersimpan.get("gap_pengawasan", ""), key=f"{review_key}_gap", height=140,
                                                placeholder="Apa yang belum tercakup dalam pengawasan eksisting BPKP terhadap isu ini?")
 
-                    usulan_pilih = st.text_area("Usulan Pengawasan", value=review_tersimpan.get("usulan_pengawasan", ""), key=f"{review_key}_usulan", height=90,
+                    usulan_pilih = st.text_area("Usulan Pengawasan", value=review_tersimpan.get("usulan_pengawasan", ""), key=f"{review_key}_usulan", height=140,
                                                   placeholder="Usulan lingkup/metodologi pengawasan untuk mengakomodir isu ini")
 
-                    if st.button("💾 Submit Telaah", key=f"{review_key}_submit", use_container_width=True, type="primary"):
-                        if "review_klaster" not in st.session_state:
-                            st.session_state["review_klaster"] = {}
-                        st.session_state["review_klaster"][nama_aktif] = {
-                            "sektor": sektor_pilih,
-                            "tema": tema_pilih or "-",
-                            "topik": topik_pilih or "-",
-                            "dampak_implikasi_final": dampak_pilih,
-                            "gap_pengawasan": gap_pilih,
-                            "usulan_pengawasan": usulan_pilih,
-                            "status_review": "Sudah Direview",
-                        }
-                        st.success(f"Telaah tersimpan. Klik 'Update Excel' di sidebar untuk menulis ke file.")
-                        st.rerun()
+                    # Tutup & Submit sekarang SEBARIS kiri-kanan di paling
+                    # bawah (bukan Tutup di header lagi) -- round diskusi.
+                    # Submit dilepas dari type="primary" (oranye solid) biar
+                    # "setara" warnanya dengan Tutup -- keduanya sekarang
+                    # sama-sama pakai aksen biru dari CSS
+                    # st-key-tutup_telaah/submit_telaah_row di atas, BUKAN
+                    # beda kelas lagi seperti alasan desain sebelumnya
+                    # (commit vs navigasi) -- ini permintaan eksplisit user,
+                    # bukan salah baca css lama.
+                    col_tutup, col_submit = st.columns(2)
+                    with col_tutup:
+                        if st.button("✕ Tutup", key="tutup_telaah", use_container_width=True, help="Tutup telaah, lihat detail artikel"):
+                            st.session_state["panel_mode"] = "detail"
+                            st.rerun()
+                    with col_submit:
+                        # Dibungkus container KEY STATIS ("submit_telaah_btn")
+                        # supaya CSS di atas bisa nyasar tombolnya walau key
+                        # tombol aslinya DINAMIS per klaster (f"{review_key}_
+                        # submit") -- key dinamis itu tetap perlu dipertahankan
+                        # (state form per klaster harus kepisah), jadi bukan
+                        # tombolnya yang di-key statiskan, tapi wrapper-nya.
+                        with st.container(key="submit_telaah_btn"):
+                            if st.button("💾 Submit Telaah", key=f"{review_key}_submit", use_container_width=True):
+                                if "review_klaster" not in st.session_state:
+                                    st.session_state["review_klaster"] = {}
+                                st.session_state["review_klaster"][nama_aktif] = {
+                                    "sektor": sektor_pilih,
+                                    "tema": tema_pilih or "-",
+                                    "topik": topik_pilih or "-",
+                                    "dampak_implikasi_final": dampak_pilih,
+                                    "gap_pengawasan": gap_pilih,
+                                    "usulan_pengawasan": usulan_pilih,
+                                    "status_review": "Sudah Direview",
+                                }
+                                st.success(f"Telaah tersimpan. Klik 'Update Excel' di sidebar untuk menulis ke file.")
+                                st.rerun()
 
                 else:
                     idx = st.session_state.get('selected_idx')
