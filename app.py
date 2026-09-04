@@ -494,6 +494,52 @@ def buat_excel(data: list, label_isu: str) -> bytes:
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf.read()
 
+
+# ── Upload manual ke Drive (top-level agar bisa dipanggil dari
+#    dashboard_ais.py) — dipakai kartu "Drive Hasil Telaah" di sidebar
+#    supaya auditor bisa kirim file Excel langsung tanpa buka Drive.
+#    SENGAJA dipisah dari get_drive_service() di repositori_isu.py (scope
+#    drive.readonly): kalau service account belum diberi izin Editor di
+#    folder tujuan, cuma fitur unggah ini yang gagal — bagian baca halaman
+#    Repositori Isu Strategis tidak ikut kena dampak.
+@st.cache_resource
+def get_drive_service_tulis():
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+
+    if not hasattr(st, "secrets") or "gcp_service_account" not in st.secrets:
+        return None
+
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_dict,
+        # drive.file (bukan scope penuh "drive") — cukup untuk service
+        # account membuat file baru di folder yang sudah di-share ke email
+        # service account dengan akses Editor.
+        scopes=["https://www.googleapis.com/auth/drive.file"],
+    )
+    return build("drive", "v3", credentials=credentials)
+
+
+def unggah_file_ke_drive(file_bytes: bytes, nama_file: str, mimetype: str, folder_id: str):
+    """Upload satu file ke folder Drive tertentu. Return (True, None) kalau
+    sukses, (False, pesan_error) kalau gagal — error ditangkap di sini
+    (bukan dibiarkan exception) supaya pemanggil bisa tampilkan lewat
+    st.error() tanpa membuat seluruh halaman crash."""
+    from googleapiclient.http import MediaIoBaseUpload
+
+    service = get_drive_service_tulis()
+    if service is None:
+        return False, "Kredensial Google Drive (gcp_service_account) belum dikonfigurasi di Secrets."
+    try:
+        metadata = {"name": nama_file, "parents": [folder_id]}
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=False)
+        service.files().create(body=metadata, media_body=media, fields="id").execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # HALAMAN 1 — CRAWL & ANALISIS
 # ══════════════════════════════════════════════════════════════════════════
@@ -514,6 +560,27 @@ if page == "crawl":
     }
     .main-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 2px 0; color: #F5A623; }
     .main-header p  { font-size: 0.85rem; margin: 0; font-family: 'IBM Plex Mono', monospace; color: rgba(255,255,255,0.75); }
+    /* Tooltip custom (.ais-tip/.ais-tip-box) -- DIPINDAH APA ADANYA dari
+       dashboard_ais.py (bukan reinvent), sudah lolos beberapa round
+       perbaikan di sana: instan lewat CSS :hover (bukan title="" bawaan
+       browser yang delay ~1 detik), visibility on/off tanpa transisi
+       opacity supaya nggak "nyangkut" keliatan transparan, dan z-index
+       di .ais-tip sendiri (bukan cuma di box-nya) supaya bikin stacking
+       context sendiri & menang lawan elemen lain yang overlap. */
+    .ais-tip { position: relative; cursor: help; z-index: 1; }
+    .ais-tip:hover { z-index: 60; }
+    .ais-tip .ais-tip-box {
+        position: absolute; top: calc(100% + 6px); left: 50%;
+        transform: translateX(-50%);
+        background: #05070d; border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 8px; padding: 8px 10px;
+        font-size: 11px; font-weight: 400; color: #fff; line-height: 1.5;
+        text-align: center; white-space: normal; max-width: 230px;
+        text-transform: none; letter-spacing: normal;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+        visibility: hidden; pointer-events: none; z-index: 50;
+    }
+    .ais-tip:hover .ais-tip-box { visibility: visible; }
     /* Ikon unduh kecil di pojok kanan atas banner header -- round diskusi
        "tombol kecil sebelumnya makan 1 row sendiri, jelek". Container ini
        dirender SETELAH banner header di kode (lihat pemanggilannya), lalu
@@ -531,9 +598,32 @@ if page == "crawl":
            justify-content di situ ngatur SUMBU VERTIKAL, bukan horizontal
            (sempat salah pakai justify-content:flex-end, hasilnya malah
            nempel di bawah, bukan di kanan). align-items yang bener buat
-           narik child-nya ke KANAN dalam container column-flex. */
-        display: flex !important; align-items: flex-end !important;
+           narik child-nya ke KANAN dalam container column-flex.
+           flex-direction DIPAKSA row di sini (override default column) --
+           sejak ikon info (ⓘ) ditambah di sebelah tombol, container ini
+           punya 2 child (markdown ikon + tombol download) yang harus
+           sebaris, bukan tersusun ke bawah seperti kartu 1-child sebelum
+           ini. justify-content:flex-end gantiin peran align-items lama
+           buat dorong keduanya ke KANAN (karena sumbu utama sekarang
+           horizontal, bukan vertikal lagi); align-items:center nyamain
+           tinggi ikon & tombol. */
+        display: flex !important; flex-direction: row !important;
+        align-items: center !important; justify-content: flex-end !important;
+        gap: 6px !important;
         padding-right: 6px !important; position: relative !important; z-index: 5 !important;
+    }
+    /* Wrapper ikon info ikut jadi flex item lebar-konten (bukan lebar-penuh
+       bawaan stMarkdown) supaya beneran sebaris rapat dengan tombol, bukan
+       melebar 100% sampai ikonnya keliatan nempel ke KIRI (kejauhan dari
+       tombol). Target-nya stElementContainer, BUKAN stMarkdown -- level
+       yang beneran nentuin lebar flex-item adalah stElementContainer
+       (Streamlit kasih attribute width="100%" di situ buat markdown,
+       beda dari tombol yang otomatis width="fit-content"); nge-set
+       flex/width di stMarkdown (satu level ke dalam) nggak ngaruh apa-apa
+       karena ukurannya sudah ke-lock dari parent-nya duluan -- ini yang
+       bikin ikon sempat nyasar ke pojok kiri header pas awal dites. */
+    .st-key-download_top_corner div[data-testid="stElementContainer"]:has(span.ais-tip) {
+        width: fit-content !important; flex: 0 0 auto !important;
     }
     .st-key-download_top_corner button {
         padding: 2px 10px !important; min-height: 28px !important; height: 28px !important;
@@ -1321,6 +1411,30 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
         excel_buf = buat_excel(st.session_state["hasil"], st.session_state["label_isu"])
         nama_file = f"MediaCrawl_AIS_{st.session_state['label_isu'].replace(' ','_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         with st.container(key="download_top_corner"):
+            # Ikon info (ⓘ) di sebelah tombol -- round diskusi: user mau ada
+            # penjelasan "kenapa harus unduh" di dekat header, tanpa bikin
+            # header jadi ramai teks yang selalu tampil. Pakai .ais-tip yang
+            # sama kayak di Dashboard AIS (lihat CSS di atas), bukan reinvent
+            # tooltip baru. unsafe_allow_html AMAN di sini -- teksnya string
+            # statis yang aku tulis sendiri, bukan data dari luar (beda dari
+            # judul artikel Google News yang tidak di-escape di tempat lain).
+            #
+            # width EKSPLISIT (bukan cuma andalin max-width di CSS bersama)
+            # WAJIB di sini -- bug yang ketemu pas dites: kalau .ais-tip
+            # nempel di elemen SEMPIT (ikon kecil doang, beda dari dipakai
+            # di Dashboard AIS yang nempel di label selebar kartu), box
+            # absolute-positioned-nya ikut ke-hitung "shrink-to-fit" dari
+            # lebar containing block yang sempit itu -- hasilnya box
+            # kepenyet jadi 1 huruf per baris, bukan lebar wajar. width
+            # eksplisit bikin box-nya nggak butuh shrink-to-fit sama sekali.
+            st.markdown(
+                "<span class='ais-tip' style='display:inline-flex;align-items:center;"
+                "height:28px'><span style='opacity:0.6;font-size:15px'>&#9432;</span>"
+                "<span class='ais-tip-box' style='text-align:left;width:200px'>Simpan file Excel "
+                "ini untuk dipakai lagi nanti, atau dianalisis lebih lanjut di halaman "
+                "Klasterisasi &amp; Analisis.</span></span>",
+                unsafe_allow_html=True,
+            )
             st.download_button("📥 Unduh", data=excel_buf, file_name=nama_file,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 help="Unduh Excel", key="download_excel_top")
