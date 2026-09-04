@@ -122,10 +122,12 @@ st.markdown("""
   }
   .sidebar-fn-title { font-size: 13px; font-weight: 700; color: #F5A623; margin-bottom: 4px; }
   .sidebar-fn-desc { font-size: 11px; opacity: 0.7; line-height: 1.4; margin-bottom: 10px; }
-  /* Tombol popover Upload Data disamakan gayanya dengan tombol lain di
-     dalam kartu (full-width, rata kiri, bukan style default popover yang
-     ditengahkan). */
-  .st-key-sidebar_fn_upload [data-testid="stPopover"] button {
+  /* Tombol popover (Upload Data, Drive Hasil Telaah) disamakan gayanya
+     dengan tombol lain di dalam kartu (full-width, rata kiri, bukan style
+     default popover yang ditengahkan). Selector di-generalisasi ke semua
+     kartu sidebar_fn_* (bukan cuma sidebar_fn_upload) supaya kartu Drive
+     yang sekarang juga pakai popover buat dropzone-nya ikut konsisten. */
+  [class*="st-key-sidebar_fn_"] [data-testid="stPopover"] button {
     width: 100% !important; text-align: left !important; justify-content: flex-start !important;
   }
   /* Font default tombol Streamlit (~16px) kegedean buat lebar sidebar yang
@@ -1200,16 +1202,39 @@ with st.sidebar:
             use_container_width=True,
         )
 
-    fn_drive = st.container(key="sidebar_fn_drive")
-    fn_drive.markdown("""
-    <div class='sidebar-fn-title'>📁 Drive Hasil Telaah</div>
-    <div class='sidebar-fn-desc'>Unggah hasil telaah Anda ke folder ini.</div>
-    """, unsafe_allow_html=True)
-    fn_drive.link_button(
-        "📁 Folder Drive",
-        "https://drive.google.com/drive/u/0/folders/1hRyMkpe6TVgaSDs8uXbHZfRkrmZPcxDE",
-        use_container_width=True,
-    )
+    with st.container(key="sidebar_fn_drive"):
+        st.markdown("""
+        <div class='sidebar-fn-title'>📁 Drive Hasil Telaah</div>
+        <div class='sidebar-fn-desc'>Kirim file Excel hasil telaah langsung ke folder Drive repositori.</div>
+        """, unsafe_allow_html=True)
+        # Sama seperti kartu Upload Data: st.file_uploader dibungkus
+        # st.popover supaya elemen yang kelihatan di kartu cuma tombol
+        # kecil (setinggi kartu lain), dropzone-nya baru muncul mengambang
+        # saat diklik. Beda dari Upload Data, di sini butuh tombol submit
+        # eksplisit ("Kirim ke Drive") karena aksinya manggil Drive API
+        # (butuh momen submit yang jelas), bukan cuma load file ke sesi.
+        with st.popover("📤 Unggah ke Drive", use_container_width=True):
+            file_drive = st.file_uploader(
+                "Pilih file Excel", type=["xlsx"],
+                label_visibility="collapsed", key="uploader_drive_xlsx",
+            )
+            if st.button("Kirim ke Drive", key="drive_upload_submit",
+                          use_container_width=True, disabled=file_drive is None):
+                folder_id = st.secrets.get("REPOSITORI_FOLDER_ID", "") if hasattr(st, "secrets") else ""
+                if not folder_id:
+                    st.error("`REPOSITORI_FOLDER_ID` belum dikonfigurasi di Secrets.")
+                else:
+                    with st.spinner("Mengunggah ke Drive..."):
+                        # unggah_file_ke_drive() dari app.py (scope sama, dieksekusi via exec())
+                        ok, err = unggah_file_ke_drive(
+                            file_drive.getvalue(), file_drive.name,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            folder_id,
+                        )
+                    if ok:
+                        st.success(f"'{file_drive.name}' berhasil diunggah ke Drive.")
+                    else:
+                        st.error(f"Gagal mengunggah: {err}")
 
 # Info banner sumber data
 if sumber_data == "session":
