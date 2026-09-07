@@ -124,7 +124,10 @@ st.markdown("""
   [class*="st-key-repo_tema_card_"] button,
   [class*="st-key-repo_topik_card_"] button {
     background: rgba(128,128,128,0.06) !important;
-    border: 1px solid rgba(128,128,128,0.2) !important;
+    /* Border dipertegas (dari rgba(128,128,128,0.2), nyaris tidak
+       kelihatan di background gelap) — chip Tema/Topik yang berdempetan
+       jadi susah dibedakan satu sama lain tanpa ini. */
+    border: 1px solid rgba(165,175,195,0.45) !important;
     border-radius: 10px !important;
     height: auto !important;
     line-height: 1.4 !important;
@@ -364,7 +367,7 @@ tgl_max = df_repo["_tanggal_upload"].max()
 
 col_tgl, _ = st.columns([1.4, 2.6])
 with col_tgl:
-    st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin-bottom:4px'>📅 Periode</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin-bottom:4px'>📅 Periode</div>", unsafe_allow_html=True)
     rentang_tanggal = st.date_input(
         "Tanggal Upload", value=(tgl_min, tgl_max),
         label_visibility="collapsed",
@@ -382,7 +385,7 @@ else:
     st.info("Pilih tanggal akhir untuk menerapkan filter rentang.")
 
 # ── PENCARIAN CEPAT — jalan pintas, melewati hierarki Sektor→Tema→Topik ──
-st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 6px'>🔎 Cari Cepat</div>", unsafe_allow_html=True)
+st.markdown("<div style='font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 6px'>🔎 Cari Cepat</div>", unsafe_allow_html=True)
 
 col_search, col_clear = st.columns([5, 1.2])
 # Tombol "Hapus" di-render lebih dulu di urutan kode (meski tampil di kanan
@@ -437,7 +440,7 @@ else:
 
     c_label1, c_reset1 = st.columns([5, 1.6])
     with c_label1:
-        st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🗂️ Sektor</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🗂️ Sektor</div>", unsafe_allow_html=True)
     with c_reset1:
         if sektor_aktif != "Semua Sektor":
             if st.button("↺ Semua Sektor", key="repo_sektor_reset", use_container_width=True):
@@ -496,7 +499,7 @@ else:
 
     c_label2, c_reset2 = st.columns([5, 1.6])
     with c_label2:
-        st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🏷️ Tema</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🏷️ Tema</div>", unsafe_allow_html=True)
     with c_reset2:
         if tema_aktif != "Semua Tema":
             if st.button("↺ Semua Tema", key="repo_tema_reset", use_container_width=True):
@@ -547,7 +550,7 @@ else:
 
     c_label3, c_reset3 = st.columns([5, 1.6])
     with c_label3:
-        st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🔖 Topik</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🔖 Topik</div>", unsafe_allow_html=True)
     with c_reset3:
         if topik_aktif != "Semua Topik":
             if st.button("↺ Semua Topik", key="repo_topik_reset", use_container_width=True):
