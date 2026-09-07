@@ -121,7 +121,8 @@ st.markdown("""
      ke "semua" dipindah ke tombol kecil terpisah di sebelah label bagian.
   */
   [class*="st-key-repo_sektor_card_"] button,
-  [class*="st-key-repo_tema_card_"] button {
+  [class*="st-key-repo_tema_card_"] button,
+  [class*="st-key-repo_topik_card_"] button {
     background: rgba(128,128,128,0.06) !important;
     border: 1px solid rgba(128,128,128,0.2) !important;
     border-radius: 10px !important;
@@ -129,22 +130,45 @@ st.markdown("""
     line-height: 1.4 !important;
     transition: background 0.15s ease, border-color 0.15s ease;
   }
+  /* Tinggi kartu Sektor DIPAKSA seragam (bukan height:auto) — nama Sektor
+     panjangnya beda-beda jauh (mis. "B. Kesejahteraan Masyarakat" vs
+     "D. Akuntabilitas Keuangan Pemerintah dan Kekayaan Negara/Daerah yang
+     Dipisahkan"), dan tanpa ini kartu yang teksnya lebih panjang jadi wrap
+     lebih banyak baris & lebih tinggi dari tetangganya di baris yang sama
+     (baris jadi kelihatan "pincang"). Nama tetap teks asli LENGKAP di DOM
+     (tidak diringkas) — yang dipotong cuma tampilan visualnya lewat
+     line-clamp, sisanya tetap bisa dibaca lewat tooltip (help=). */
   [class*="st-key-repo_sektor_card_"] button {
-    padding: 1.3rem 1rem !important;
+    padding: 1rem 1rem !important;
+    min-height: 118px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
   }
   [class*="st-key-repo_sektor_card_"] button p {
     font-size: 0.85rem !important;
   }
-  [class*="st-key-repo_tema_card_"] button p {
+  /* Cuma baris nama (paragraf terakhir dari 3: ikon / jumlah / nama) yang
+     di-clamp — ikon & angka jumlah selalu 1 baris jadi tidak perlu. */
+  [class*="st-key-repo_sektor_card_"] button p:last-child {
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  [class*="st-key-repo_tema_card_"] button p,
+  [class*="st-key-repo_topik_card_"] button p {
     font-size: 0.78rem !important;
   }
   [class*="st-key-repo_sektor_card_"] button:hover:not(:disabled),
-  [class*="st-key-repo_tema_card_"] button:hover:not(:disabled) {
+  [class*="st-key-repo_tema_card_"] button:hover:not(:disabled),
+  [class*="st-key-repo_topik_card_"] button:hover:not(:disabled) {
     background: rgba(245,166,35,0.1) !important;
     border-color: rgba(245,166,35,0.4) !important;
   }
-  /* Tombol reset kecil (bukan kartu) di sebelah label Sektor/Tema */
-  .st-key-repo_sektor_reset button, .st-key-repo_tema_reset button {
+  /* Tombol reset kecil (bukan kartu) di sebelah label Sektor/Tema/Topik */
+  .st-key-repo_sektor_reset button, .st-key-repo_tema_reset button, .st-key-repo_topik_reset button {
     font-size: 0.72rem !important;
     padding: 0.2rem 0.5rem !important;
     height: auto !important;
@@ -421,6 +445,12 @@ else:
         tema_aktif = "Semua Tema"
         st.session_state["repo_tema_pilih"] = "Semua Tema"
 
+    # Reset navigasi Topik begitu Tema berubah, sama seperti Tema direset
+    # begitu Sektor berubah di atas.
+    if st.session_state.get("_repo_tema_prev") != tema_aktif:
+        st.session_state["repo_topik_pilih"] = "Semua Topik"
+        st.session_state["_repo_tema_prev"] = tema_aktif
+
     tema_kode_aktif = "" if tema_aktif == "Semua Tema" else _slug(tema_aktif)
 
     st.markdown(f"""
@@ -461,12 +491,56 @@ else:
 
     df_tahap2 = df_tahap1 if tema_aktif == "Semua Tema" else df_tahap1[df_tahap1["Tema"] == tema_aktif]
 
-    # ── Topik — tetap dropdown ───────────────────────────────────────────
-    st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>Topik</div>", unsafe_allow_html=True)
-    topik_opsi = ["Semua Topik"] + sorted(df_tahap2["Topik"].dropna().unique().tolist())
-    topik_pilih = st.selectbox("Topik", topik_opsi, label_visibility="collapsed")
+    # ── Navigasi Topik — kartu/chip, pola sama persis dengan Tema ───────
+    # (sebelumnya dropdown — diganti supaya nyambung visual dengan Sektor
+    # & Tema di atasnya. Aman dipakai karena datanya kecil: rata-rata cuma
+    # 4, maksimum 8 opsi Topik per Tema di STRUKTUR_APP.)
+    topik_counts = df_tahap2["Topik"].value_counts().to_dict()
+    daftar_topik = sorted(df_tahap2["Topik"].dropna().unique().tolist())
+    topik_aktif = st.session_state.get("repo_topik_pilih", "Semua Topik")
+    if topik_aktif != "Semua Topik" and topik_aktif not in daftar_topik:
+        topik_aktif = "Semua Topik"
+        st.session_state["repo_topik_pilih"] = "Semua Topik"
 
-    df_final = df_tahap2 if topik_pilih == "Semua Topik" else df_tahap2[df_tahap2["Topik"] == topik_pilih]
+    topik_kode_aktif = "" if topik_aktif == "Semua Topik" else _slug(topik_aktif)
+
+    st.markdown(f"""
+    <style>
+    .st-key-repo_topik_card_{topik_kode_aktif} button {{
+        background: rgba(245,166,35,0.16) !important;
+        border: 1px solid rgba(245,166,35,0.55) !important;
+    }}
+    .st-key-repo_topik_card_{topik_kode_aktif} button p {{ color: #F5A623 !important; font-weight: 700 !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    c_label3, c_reset3 = st.columns([5, 1.6])
+    with c_label3:
+        st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 8px'>🔖 Topik</div>", unsafe_allow_html=True)
+    with c_reset3:
+        if topik_aktif != "Semua Topik":
+            if st.button("↺ Semua Topik", key="repo_topik_reset", use_container_width=True):
+                st.session_state["repo_topik_pilih"] = "Semua Topik"
+                st.rerun()
+
+    kartu_topik = [{"kode": _slug(t), "nama": t, "jumlah": int(topik_counts.get(t, 0))} for t in daftar_topik]
+
+    if kartu_topik:
+        for baris_awal in range(0, len(kartu_topik), 3):
+            kolom = st.columns(3)
+            for i, kartu in enumerate(kartu_topik[baris_awal:baris_awal + 3]):
+                with kolom[i]:
+                    with st.container(key=f"repo_topik_card_{kartu['kode']}"):
+                        label_pendek = kartu["nama"] if len(kartu["nama"]) <= 30 else kartu["nama"][:28] + "…"
+                        label = f"{label_pendek}  ·  {kartu['jumlah']}"
+                        if st.button(label, key=f"repo_topik_btn_{kartu['kode']}", use_container_width=True, help=kartu["nama"]):
+                            if kartu["nama"] != topik_aktif:
+                                st.session_state["repo_topik_pilih"] = kartu["nama"]
+                                st.rerun()
+    else:
+        st.caption("Tidak ada Topik untuk Tema ini.")
+
+    df_final = df_tahap2 if topik_aktif == "Semua Topik" else df_tahap2[df_tahap2["Topik"] == topik_aktif]
 
     st.markdown(f"**{len(df_final)} isu** ditemukan sesuai navigasi.")
 
