@@ -140,13 +140,36 @@ st.markdown("""
      line-clamp, sisanya tetap bisa dibaca lewat tooltip (help=). */
   [class*="st-key-repo_sektor_card_"] button {
     padding: 1rem 1rem !important;
-    min-height: 118px !important;
+    min-height: 140px !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
   }
+  /* Tipografi kartu Sektor dibikin lebih "mentereng" — bukan cuma nyala pas
+     lagi aktif/diklik. Ikon dibesarkan jadi penanda visual pertama yang
+     kelihatan, angka jumlah dijadikan aksen amber besar ala stat-tile
+     (lewat selector "p strong", karena **{jumlah}** sudah menghasilkan tag
+     <strong> di dalam paragraf itu), dan nama Sektor semi-bold & lebih
+     besar sejak awal (600) — bukan cuma bold pas aktif (700, tetap lebih
+     tebal dari default supaya status aktif masih terasa beda). Ukuran
+     dibikin lebih besar lagi dari revisi sebelumnya — masih kurang
+     kebaca/kurang nonjol di ukuran 0.85rem/1.7rem/1.5rem. */
   [class*="st-key-repo_sektor_card_"] button p {
-    font-size: 0.85rem !important;
+    font-size: 1rem !important;
+  }
+  [class*="st-key-repo_sektor_card_"] button p:first-child {
+    font-size: 2.1rem !important;
+    line-height: 1.15 !important;
+    margin-bottom: 3px !important;
+  }
+  [class*="st-key-repo_sektor_card_"] button p strong {
+    color: #F5A623 !important;
+    font-size: 1.9rem !important;
+    line-height: 1.15 !important;
+  }
+  [class*="st-key-repo_sektor_card_"] button p:last-child {
+    font-size: 0.98rem !important;
+    font-weight: 600 !important;
   }
   /* Cuma baris nama (paragraf terakhir dari 3: ikon / jumlah / nama) yang
      di-clamp — ikon & angka jumlah selalu 1 baris jadi tidak perlu. */
@@ -157,9 +180,20 @@ st.markdown("""
     overflow: hidden !important;
     text-overflow: ellipsis !important;
   }
+  /* Tema & Topik: chip 1 baris (nama · jumlah). Nama semi-bold sejak awal
+     (bukan cuma pas aktif), angka jumlah di-aksen amber lewat "p strong"
+     sama seperti Sektor — chip label-nya sekarang dibungkus **jumlah**
+     juga di kode Python supaya ada <strong> yang bisa ditarget. Ukuran
+     dibikin lebih besar lagi dari revisi sebelumnya (0.84rem masih mini). */
   [class*="st-key-repo_tema_card_"] button p,
   [class*="st-key-repo_topik_card_"] button p {
-    font-size: 0.78rem !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+  }
+  [class*="st-key-repo_tema_card_"] button p strong,
+  [class*="st-key-repo_topik_card_"] button p strong {
+    color: #F5A623 !important;
+    font-size: 1.15rem !important;
   }
   [class*="st-key-repo_sektor_card_"] button:hover:not(:disabled),
   [class*="st-key-repo_tema_card_"] button:hover:not(:disabled),
@@ -333,7 +367,7 @@ tgl_max = df_repo["_tanggal_upload"].max()
 
 col_tgl, _ = st.columns([1.4, 2.6])
 with col_tgl:
-    st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin-bottom:4px'>📅 Periode</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin-bottom:4px'>📅 Periode</div>", unsafe_allow_html=True)
     rentang_tanggal = st.date_input(
         "Tanggal Upload", value=(tgl_min, tgl_max),
         label_visibility="collapsed",
@@ -351,7 +385,7 @@ else:
     st.info("Pilih tanggal akhir untuk menerapkan filter rentang.")
 
 # ── PENCARIAN CEPAT — jalan pintas, melewati hierarki Sektor→Tema→Topik ──
-st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 6px'>🔎 Cari Cepat</div>", unsafe_allow_html=True)
+st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 6px'>🔎 Cari Cepat</div>", unsafe_allow_html=True)
 
 col_search, col_clear = st.columns([5, 1.2])
 # Tombol "Hapus" di-render lebih dulu di urutan kode (meski tampil di kanan
@@ -406,7 +440,7 @@ else:
 
     c_label1, c_reset1 = st.columns([5, 1.6])
     with c_label1:
-        st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 8px'>🗂️ Sektor</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🗂️ Sektor</div>", unsafe_allow_html=True)
     with c_reset1:
         if sektor_aktif != "Semua Sektor":
             if st.button("↺ Semua Sektor", key="repo_sektor_reset", use_container_width=True):
@@ -465,7 +499,7 @@ else:
 
     c_label2, c_reset2 = st.columns([5, 1.6])
     with c_label2:
-        st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 8px'>🏷️ Tema</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🏷️ Tema</div>", unsafe_allow_html=True)
     with c_reset2:
         if tema_aktif != "Semua Tema":
             if st.button("↺ Semua Tema", key="repo_tema_reset", use_container_width=True):
@@ -481,7 +515,7 @@ else:
                 with kolom[i]:
                     with st.container(key=f"repo_tema_card_{kartu['kode']}"):
                         label_pendek = kartu["nama"] if len(kartu["nama"]) <= 30 else kartu["nama"][:28] + "…"
-                        label = f"{label_pendek}  ·  {kartu['jumlah']}"
+                        label = f"{label_pendek}  ·  **{kartu['jumlah']}**"
                         if st.button(label, key=f"repo_tema_btn_{kartu['kode']}", use_container_width=True, help=kartu["nama"]):
                             if kartu["nama"] != tema_aktif:
                                 st.session_state["repo_tema_pilih"] = kartu["nama"]
@@ -516,7 +550,7 @@ else:
 
     c_label3, c_reset3 = st.columns([5, 1.6])
     with c_label3:
-        st.markdown("<div style='font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.55;margin:16px 0 8px'>🔖 Topik</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:0.85;margin:16px 0 8px'>🔖 Topik</div>", unsafe_allow_html=True)
     with c_reset3:
         if topik_aktif != "Semua Topik":
             if st.button("↺ Semua Topik", key="repo_topik_reset", use_container_width=True):
@@ -532,7 +566,7 @@ else:
                 with kolom[i]:
                     with st.container(key=f"repo_topik_card_{kartu['kode']}"):
                         label_pendek = kartu["nama"] if len(kartu["nama"]) <= 30 else kartu["nama"][:28] + "…"
-                        label = f"{label_pendek}  ·  {kartu['jumlah']}"
+                        label = f"{label_pendek}  ·  **{kartu['jumlah']}**"
                         if st.button(label, key=f"repo_topik_btn_{kartu['kode']}", use_container_width=True, help=kartu["nama"]):
                             if kartu["nama"] != topik_aktif:
                                 st.session_state["repo_topik_pilih"] = kartu["nama"]
