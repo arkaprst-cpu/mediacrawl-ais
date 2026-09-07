@@ -140,35 +140,33 @@ st.markdown("""
      line-clamp, sisanya tetap bisa dibaca lewat tooltip (help=). */
   [class*="st-key-repo_sektor_card_"] button {
     padding: 1rem 1rem !important;
-    min-height: 140px !important;
+    min-height: 128px !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
   }
-  /* Tipografi kartu Sektor dibikin lebih "mentereng" — bukan cuma nyala pas
-     lagi aktif/diklik. Ikon dibesarkan jadi penanda visual pertama yang
-     kelihatan, angka jumlah dijadikan aksen amber besar ala stat-tile
-     (lewat selector "p strong", karena **{jumlah}** sudah menghasilkan tag
-     <strong> di dalam paragraf itu), dan nama Sektor semi-bold & lebih
-     besar sejak awal (600) — bukan cuma bold pas aktif (700, tetap lebih
-     tebal dari default supaya status aktif masih terasa beda). Ukuran
-     dibikin lebih besar lagi dari revisi sebelumnya — masih kurang
-     kebaca/kurang nonjol di ukuran 0.85rem/1.7rem/1.5rem. */
+  /* Tipografi kartu Sektor: ikon jadi penanda visual pertama yang
+     kelihatan, angka jumlah jadi aksen amber besar ala stat-tile (lewat
+     selector "p strong", karena **{jumlah}** sudah menghasilkan tag
+     <strong> di dalam paragraf itu), dan nama Sektor semi-bold sejak awal
+     (600) — bukan cuma bold pas aktif (700, tetap lebih tebal dari
+     default supaya status aktif masih terasa beda). Sempat dinaikkan
+     lebih besar lagi (1rem/2.1rem/1.9rem) lalu dikembalikan ke ukuran
+     ini — itu kebesaran, isi kartu jadi terlalu dominan. */
   [class*="st-key-repo_sektor_card_"] button p {
-    font-size: 1rem !important;
+    font-size: 0.85rem !important;
   }
   [class*="st-key-repo_sektor_card_"] button p:first-child {
-    font-size: 2.1rem !important;
+    font-size: 1.7rem !important;
     line-height: 1.15 !important;
-    margin-bottom: 3px !important;
+    margin-bottom: 2px !important;
   }
   [class*="st-key-repo_sektor_card_"] button p strong {
     color: #F5A623 !important;
-    font-size: 1.9rem !important;
+    font-size: 1.5rem !important;
     line-height: 1.15 !important;
   }
   [class*="st-key-repo_sektor_card_"] button p:last-child {
-    font-size: 0.98rem !important;
     font-weight: 600 !important;
   }
   /* Cuma baris nama (paragraf terakhir dari 3: ikon / jumlah / nama) yang
@@ -182,18 +180,17 @@ st.markdown("""
   }
   /* Tema & Topik: chip 1 baris (nama · jumlah). Nama semi-bold sejak awal
      (bukan cuma pas aktif), angka jumlah di-aksen amber lewat "p strong"
-     sama seperti Sektor — chip label-nya sekarang dibungkus **jumlah**
-     juga di kode Python supaya ada <strong> yang bisa ditarget. Ukuran
-     dibikin lebih besar lagi dari revisi sebelumnya (0.84rem masih mini). */
+     sama seperti Sektor — chip label-nya dibungkus **jumlah** juga di
+     kode Python supaya ada <strong> yang bisa ditarget. */
   [class*="st-key-repo_tema_card_"] button p,
   [class*="st-key-repo_topik_card_"] button p {
-    font-size: 1rem !important;
+    font-size: 0.84rem !important;
     font-weight: 600 !important;
   }
   [class*="st-key-repo_tema_card_"] button p strong,
   [class*="st-key-repo_topik_card_"] button p strong {
     color: #F5A623 !important;
-    font-size: 1.15rem !important;
+    font-size: 0.95rem !important;
   }
   [class*="st-key-repo_sektor_card_"] button:hover:not(:disabled),
   [class*="st-key-repo_tema_card_"] button:hover:not(:disabled),
