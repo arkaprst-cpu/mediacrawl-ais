@@ -767,7 +767,7 @@ if page == "crawl":
         text-transform: uppercase; letter-spacing: 0.04em;
         margin: 4px 0 14px 0;
     }
-    /* Kartu "Isu Aktual" -- ditaruh di AREA KONTEN UTAMA (di bawah kartu
+    /* Kartu "Trending Topics" -- ditaruh di AREA KONTEN UTAMA (di bawah kartu
        "Cara memulai"), bukan sidebar -- round diskusi, sidebar kepanjangan
        kalau ditambah kartu lagi. Karena area utama jauh lebih lebar dari
        sidebar, layoutnya grid multi-kolom (auto-fit) alih-alih list
@@ -775,16 +775,27 @@ if page == "crawl":
        Aksen biru (bukan amber) supaya konsisten dengan kode warna semantik
        yang sudah dipakai di tempat lain: biru = informasional (sama seperti
        .query-box), amber tetap khusus buat brand/aksi utama.
-       Nama "Isu Aktual" -- sebelumnya "Isu Lagi Ramai", round diskusi:
-       kesannya kurang formal/serius buat aplikasi pengawasan BPKP. */
+       Riwayat nama: "Isu Lagi Ramai" -> "Isu Aktual" (dianggap kurang formal
+       buat app pengawasan BPKP) -> "Trending Topics" (round diskusi
+       berikutnya, dipilih sadar meski beda konvensi bahasa dari label lain
+       yang semua Indonesia formal -- PERIODE, SEKTOR, dst). */
     .trending-box { margin-top: 1.2rem; }
     .trending-box-label {
         font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
         text-transform: uppercase; color: #63B3ED; opacity: 0.9;
         margin-bottom: 10px; font-family: 'IBM Plex Mono', monospace;
     }
+    /* Kolom TETAP 3 (bukan auto-fit) -- round diskusi: auto-fit ngikutin
+       lebar kontainer, jadi jumlah kolom per baris bisa berubah-ubah dan
+       kartu terakhir gampang jadi baris pincang (mis. 8 kartu -> 3+3+2).
+       Kolom tetap + jumlah kartu pas kelipatannya (9 kartu, lihat
+       ambil_trending_headlines) bikin grid penuh 3x3 selama RSS
+       mengembalikan 9 entri -- yang dalam praktiknya (top stories Google
+       News) selalu jauh di atas itu. Kalau suatu saat feed-nya kembali
+       kurang dari 9 (jaringan/limit), baris terakhir bisa pincang lagi;
+       ini bukan dijamin absolut, cuma sangat jarang kejadian. */
     .trending-grid {
-        display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        display: grid; grid-template-columns: repeat(3, 1fr);
         gap: 10px;
     }
     .trending-tile {
@@ -823,7 +834,7 @@ if page == "crawl":
         m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
         return judul[:m.start()].strip() if m else judul.strip()
 
-    # -- Kartu "Isu Aktual" (area konten utama, di bawah "Cara memulai") ----
+    # -- Kartu "Trending Topics" (area konten utama, di bawah "Cara memulai") ----
     # Bukan hasil crawl -- ini cuma bantuan brainstorm SEBELUM crawl dimulai,
     # supaya user nggak harus buka tab lain (Google Trends/Google News) buat
     # nyari ide kata kunci apa yang lagi ramai diberitain. Sumbernya feed RSS
@@ -836,7 +847,7 @@ if page == "crawl":
     # re-render (Streamlit rerun sangat sering); TTL 30 menit -- "trending"
     # nggak perlu presisi ke menit, & ngirit panggilan ke Google News.
     @st.cache_data(ttl=1800, show_spinner=False)
-    def ambil_trending_headlines(n: int = 8) -> list:
+    def ambil_trending_headlines(n: int = 9) -> list:
         try:
             feed = feedparser.parse("https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id")
             out = []
@@ -1479,14 +1490,14 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
             </ol>
             """, unsafe_allow_html=True)
 
-        # Kartu "Isu Aktual" -- ditaruh TEPAT DI BAWAH kartu panduan di
+        # Kartu "Trending Topics" -- ditaruh TEPAT DI BAWAH kartu panduan di
         # atas (bukan sidebar, round diskusi), bahan brainstorm kata kunci
         # sebelum mulai crawl. Ikut guard yang sama (cuma tampil sebelum
         # crawl pertama) -- begitu ada hasil, halaman ini beralih fungsi
         # jadi halaman hasil crawl, kartu bantu ini nggak relevan lagi.
         # Gagal-diam kalau RSS-nya kosong (jaringan/limit) -- fitur ini
         # opsional, jangan sampai bikin halaman error gara-gara ini.
-        _trending = ambil_trending_headlines(8)
+        _trending = ambil_trending_headlines(9)
         if _trending:
             _tiles_html = "".join(
                 f"<div class='trending-tile'>"
@@ -1497,7 +1508,7 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
             )
             st.markdown(
                 "<div class='trending-box'><div class='trending-box-label'>"
-                "📰 Isu Aktual (Google News) -- referensi kata kunci</div>"
+                "📰 Trending Topics (Google News) -- referensi kata kunci</div>"
                 "<div class='trending-grid'>" + _tiles_html + "</div></div>",
                 unsafe_allow_html=True,
             )
