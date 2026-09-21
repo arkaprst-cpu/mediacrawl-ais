@@ -6,13 +6,13 @@ default "deepseek-v4-flash" — lihat _baca_deepseek_model())
 """
 
 import streamlit as st
-import feedparser, json, time, re, io, threading, base64, os
+import feedparser, json, time, re, io, threading, base64, os, html
 from datetime import datetime
 from urllib.parse import quote_plus
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from tier_config import classify_sumber
+from tier_config import classify_sumber, pisah_judul_sumber
 
 # ── Logo BPKP (dipakai di kartu brand sidebar) — dibaca & di-encode ke
 # base64 supaya bisa ditempel langsung di HTML markdown (st.image nggak
@@ -798,11 +798,20 @@ if page == "crawl":
         display: grid; grid-template-columns: repeat(3, 1fr);
         gap: 10px;
     }
+    /* Kartunya sekarang <a> (judul bisa diklik ke beritanya), jadi butuh
+       display:block + text-decoration:none + warna teks dipaksa -- tanpa
+       ini browser bikin biru-bergaris-bawah dan kartunya jadi inline. */
     .trending-tile {
+        display: block; text-decoration: none !important;
         background: rgba(99,179,237,0.06); border: 1px solid rgba(99,179,237,0.2);
         border-left: 3px solid #63B3ED; border-radius: 6px;
-        padding: 8px 12px; font-size: 12.5px; color: rgba(255,255,255,0.85);
+        padding: 8px 12px; font-size: 12.5px; color: rgba(255,255,255,0.85) !important;
         line-height: 1.45;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    a.trending-tile:hover {
+        background: rgba(99,179,237,0.14);
+        border-color: rgba(99,179,237,0.5);
     }
     .trending-sumber {
         display: block; font-size: 10px; font-weight: 700;
@@ -818,21 +827,21 @@ if page == "crawl":
     # komentar lengkap di file itu soal kenapa (dulu di-duplikasi manual
     # di 2 file, jebakan klasik gampang nggak sinkron).
 
+    # Pemisahan "Judul - NamaSumber" dipindah ke tier_config.py (dipakai
+    # bareng sama dashboard_ais.py) -- lihat pisah_judul_sumber() di sana
+    # buat alasan lengkapnya, termasuk kenapa pemisah TERAKHIR yang
+    # dipakai (nama sumber bertanda hubung seperti "portal-komando.com"
+    # dulu gagal kedeteksi).
     def extract_sumber_dari_judul(judul: str) -> str:
-        m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
-        if m:
-            sumber = m.group(1).strip()
-            sumber = re.sub(r"\s*\[.*?\]\s*$", "", sumber).strip()
-            return sumber if sumber else ""
-        return ""
+        return pisah_judul_sumber(judul)[1]
 
     def bersihkan_judul_dari_sumber(judul: str) -> str:
         """Buang suffix ' - NamaSumber' Google News dari judul untuk
         ditampilkan \u2014 nama sumbernya sendiri sudah tampil terpisah sebagai
         pill (lihat pill-sumber), sama seperti tweak yang sudah diterapkan
         di Dashboard AIS."""
-        m = re.search(r"\s[-\u2013]\s([^-\u2013]+)$", judul.strip())
-        return judul[:m.start()].strip() if m else judul.strip()
+        judul_bersih, sumber = pisah_judul_sumber(judul)
+        return judul_bersih if sumber else judul.strip()
 
     # -- Kartu "Trending Topics" (area konten utama, di bawah "Cara memulai") ----
     # Bukan hasil crawl -- ini cuma bantuan brainstorm SEBELUM crawl dimulai,
@@ -855,9 +864,17 @@ if page == "crawl":
                 judul_asli = (entry.get("title") or "").strip()
                 if not judul_asli:
                     continue
-                sumber = extract_sumber_dari_judul(judul_asli)
-                judul  = bersihkan_judul_dari_sumber(judul_asli) if sumber else judul_asli
-                out.append({"judul": judul, "sumber": sumber})
+                judul, sumber = pisah_judul_sumber(judul_asli)
+                # entry.link = URL redirect Google News (news.google.com/
+                # rss/articles/...), BUKAN URL asli medianya -- Google yang
+                # meneruskan ke artikel sebenarnya pas diklik. Itu tidak
+                # masalah di sini: kartu ini cuma referensi buat dibaca
+                # sekilas, bukan bahan yang di-crawl/disimpan.
+                out.append({
+                    "judul": judul,
+                    "sumber": sumber,
+                    "link": (entry.get("link") or "").strip(),
+                })
             return out
         except Exception:
             # Gagal diam-diam -- kalau RSS lagi bermasalah, kartu ini cukup
@@ -1499,13 +1516,24 @@ Contoh output: ["query 1", "query 2", "query 3"]"""
         # opsional, jangan sampai bikin halaman error gara-gara ini.
         _trending = ambil_trending_headlines(9)
         if _trending:
-            _tiles_html = "".join(
-                f"<div class='trending-tile'>"
-                f"<span class='trending-sumber'>{t['sumber']}</span>{t['judul']}"
-                f"</div>" if t["sumber"] else
-                f"<div class='trending-tile'>{t['judul']}</div>"
-                for t in _trending
-            )
+            # Judul dibungkus <a> supaya bisa langsung dibuka beritanya
+            # (target _blank -- JANGAN pindah tab yang sama: halaman ini
+            # Streamlit, kalau ditinggal navigasi state crawl-nya hilang).
+            # Kalau entry-nya kebetulan tidak punya link, tetap dirender
+            # sebagai <div> biasa, bukan <a> tanpa href yang tidak bisa
+            # diklik tapi kelihatan seperti link.
+            # html.escape dipakai buat judul & nama sumber (bisa
+            # mengandung & atau kutip yang merusak markup) dan buat href.
+            def _tile_trending(t):
+                judul = html.escape(t["judul"])
+                isi = (f"<span class='trending-sumber'>{html.escape(t['sumber'])}</span>{judul}"
+                       if t["sumber"] else judul)
+                if t.get("link"):
+                    return (f"<a class='trending-tile' href=\"{html.escape(t['link'], quote=True)}\" "
+                            f"target='_blank' rel='noopener noreferrer'>{isi}</a>")
+                return f"<div class='trending-tile'>{isi}</div>"
+
+            _tiles_html = "".join(_tile_trending(t) for t in _trending)
             st.markdown(
                 "<div class='trending-box'><div class='trending-box-label'>"
                 "📰 Trending Topics (Google News) -- referensi kata kunci</div>"
