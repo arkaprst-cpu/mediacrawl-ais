@@ -16,7 +16,7 @@ import math
 from collections import Counter
 from datetime import datetime
 from struktur_app import STRUKTUR_APP
-from tier_config import classify_sumber
+from tier_config import classify_sumber, pisah_judul_sumber
 
 
 def pisahkan_sumber_judul(judul: str):
@@ -638,8 +638,9 @@ def extract_keywords(df):
 
     Judul artikel dari Google News masih membawa suffix ' - NamaSumber'
     (mis. 'Berita XYZ - detikNews') -- dibuang dulu sebelum tokenisasi,
-    supaya nama media tidak ikut kehitung sebagai 'kata kunci isu' (lihat
-    extract_sumber_dari_judul() di app.py, pola regex yang sama). Kata
+    supaya nama media tidak ikut kehitung sebagai 'kata kunci isu' (pakai
+    pisah_judul_sumber() di tier_config.py, SATU sumber kebenaran bareng
+    app.py -- dulu polanya ditulis ulang manual di sini). Kata
     generik lintas-topik ('kasus','diduga','dugaan','akibat', dst) juga
     disaring -- kata-kata ini selalu muncul di hampir semua isu pengawasan
     apa pun, jadi tidak membedakan topik batch crawl ini secara spesifik.
@@ -658,7 +659,7 @@ def extract_keywords(df):
     for col in ['IsuSubisu', 'Judul']:
         for raw in df[col]:
             text = str(raw)
-            text = re.sub(r"\s[-–]\s[^-–]+$", "", text.strip())
+            text = pisah_judul_sumber(text)[0]
             for w in text.lower().split():
                 w = w.strip('.,;:!?()[]"\'')
                 if len(w) > 3 and w not in stopwords:
