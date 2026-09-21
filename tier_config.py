@@ -59,6 +59,42 @@ INSTITUSI_KEYWORDS = {
 }
 
 
+def pisah_judul_sumber(judul: str):
+    """Pecah judul Google News "Judul Berita - NamaSumber" jadi
+    (judul_tanpa_sumber, nama_sumber). Kalau pemisahnya tidak ketemu,
+    return (judul_apa_adanya, "").
+
+    Ditaruh di sini (bukan di app.py) karena dipakai bareng: app.py buat
+    pill sumber & kartu Trending Topics, dashboard_ais.py buat membuang
+    nama media sebelum tokenisasi kata kunci. Sebelumnya pola regexnya
+    ditulis ulang manual di dua file -- persis jebakan yang dulu bikin
+    classify_sumber() dipindah ke sini.
+
+    Dulu nama sumber di-capture pakai [^-]+$ (tidak boleh mengandung
+    tanda hubung) supaya judul yang SENDIRINYA punya " - " di tengah
+    tidak ikut kepotong. Efek sampingnya: nama sumber yang memang
+    bertanda hubung (mis. "portal-komando.com") gagal kedeteksi total --
+    judulnya tampil mentah dengan ekor " - portal-komando.com" dan pill
+    sumbernya hilang, dan di dashboard kata "portal"/"komando"/"com"
+    ikut kehitung sebagai kata kunci isu. Sekarang dipotong di pemisah
+    TERAKHIR: tujuan awalnya tetap kejaga (judul ber-" - " di tengah
+    tidak kepotong, karena yang dipakai pemisah paling kanan), tapi nama
+    sumber bertanda hubung ikut kebaca."""
+    teks = str(judul).strip()
+    # " - " dan " – " sama-sama 3 karakter (spasi + 1 tanda + spasi),
+    # jadi offset +3 di bawah berlaku untuk dua-duanya.
+    posisi = max(teks.rfind(" - "), teks.rfind(" – "))
+    if posisi == -1:
+        return teks, ""
+    sumber = teks[posisi + 3:].strip()
+    # Google News kadang menempelkan "[...]" di belakang nama sumber.
+    sumber = re.sub(r"\s*\[.*?\]\s*$", "", sumber).strip()
+    if not sumber:
+        # Judulnya cuma kebetulan berakhir dengan " - " -- jangan dipotong.
+        return teks, ""
+    return teks[:posisi].strip(), sumber
+
+
 def _normalize(nama: str) -> str:
     """Lowercase + buang semua spasi & tanda baca -- supaya "CNN Indonesia"
     (nama manusiawi dari suffix judul Google News) dan "cnnindonesia.com"
