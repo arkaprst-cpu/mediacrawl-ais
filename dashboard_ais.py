@@ -12,6 +12,7 @@ import pandas as pd
 import json
 import io
 import re
+import html
 import math
 from collections import Counter
 from datetime import datetime
@@ -633,7 +634,7 @@ def compute_stats(df):
     }
 
 
-def extract_keywords(df):
+def extract_keywords(df, n=15):
     """Extract top keywords dari kolom IsuSubisu dan Judul.
 
     Judul artikel dari Google News masih membawa suffix ' - NamaSumber'
@@ -649,7 +650,23 @@ def extract_keywords(df):
                  'pada','oleh','sebagai','dalam','telah','akan','dapat','tidak',
                  'bpjs','kesehatan','bpkp','atas','terkait','bagi','juga','serta',
                  'kasus','diduga','dugaan','akibat','adanya','masih','sudah',
-                 'setelah','sebelum','saat','usai'}
+                 'setelah','sebelum','saat','usai',
+                 # Ditambah -- noise yang ketemu langsung di data crawl asli
+                 # (OTT KPK, insentif molis, judol) & screenshot dashboard:
+                 # kata sambung/keterangan yang lolos filter panjang >3 huruf
+                 # dan sempat nangkring di 10 besar ('terhadap' 12x di OTT
+                 # KPK). Makin penting sejak ada word cloud -- di cloud tidak
+                 # ada angka di samping kata buat "mendiskon" kata sampah.
+                 'terhadap','persen','lebih','belum','disebut','dinilai',
+                 'terlalu','antara','karena','namun','bahwa','menjadi',
+                 'secara','tersebut','hingga','kata','ujar','para','bisa',
+                 'harus','sejak','agar','kini','baru','soal','buat','jadi','tanpa',
+                 # Satuan besaran -- angka nominalnya sendiri sudah dibuang
+                 # (lihat filter huruf di bawah), satuannya jangan sampai
+                 # tampil sendirian seolah-olah "isu".
+                 'juta','ribu','miliar','triliun','rupiah',
+                 'januari','februari','maret','april','mei','juni','juli',
+                 'agustus','september','oktober','november','desember'}
     # str(x) per elemen, BUKAN df[col].astype(str) -- di pandas versi baru
     # dengan dtype 'str' bawaan, .astype(str) di level Series tidak selalu
     # menstringkan sel kosong (tetap balik nilai float NaN), beda dengan
@@ -662,9 +679,63 @@ def extract_keywords(df):
             text = pisah_judul_sumber(text)[0]
             for w in text.lower().split():
                 w = w.strip('.,;:!?()[]"\'')
-                if len(w) > 3 and w not in stopwords:
+                # Wajib ada minimal 1 huruf -- buang token angka murni
+                # ("2026", "100%") yang sebelumnya lolos karena panjangnya
+                # >3. Token campuran seperti "covid-19" tetap lolos.
+                if len(w) > 3 and w not in stopwords and re.search(r"[a-z]", w):
                     words.append(w)
-    return Counter(words).most_common(15)
+    return Counter(words).most_common(n)
+
+
+# ── Word cloud Kata Kunci Dominan ─────────────────────────────────────────
+# Di-render jadi PNG transparan pakai library `wordcloud` (bentuk cloud
+# klasik yang memang dikenal orang, dan bisa langsung di-screenshot ke
+# dokumen AIS). Library-nya di-import di DALAM fungsi, bukan di atas file:
+# kalau paket belum ter-install di deployment (requirements.txt belum
+# ikut ke-update), halaman Dashboard tetap jalan -- cuma cloud-nya yang
+# tidak muncul, daftar 10 teratas tetap tampil (lihat pemanggilnya).
+#
+# Warna = SATU hue (biru informasional, sama dengan aksen biru lain di app),
+# makin sering makin terang -- skala sekuensial, bukan warna acak per kata,
+# supaya warna ikut "membaca" frekuensi bareng ukuran huruf.
+#
+# Font DejaVu Sans Bold diambil dari data bawaan matplotlib (dependensi
+# wordcloud sendiri, jadi pasti ada) -- font default wordcloud monospace,
+# kelihatan kaku dan beda dari tipografi app.
+@st.cache_data(show_spinner=False)
+def render_wordcloud_png(frekuensi: tuple, lebar: int = 760, tinggi: int = 360):
+    """frekuensi: tuple of (kata, jumlah) -- tuple (bukan dict) supaya bisa
+    di-hash st.cache_data. Return bytes PNG, atau None kalau library
+    wordcloud tidak tersedia / datanya kosong."""
+    if not frekuensi:
+        return None
+    try:
+        import os
+        import matplotlib
+        from wordcloud import WordCloud
+    except ImportError:
+        return None
+
+    freq = dict(frekuensi)
+    mx, mn = max(freq.values()), min(freq.values())
+
+    def _warna(word, **kwargs):
+        t = (freq.get(word, mn) - mn) / max(mx - mn, 1)
+        r = int(90 + t * (170 - 90))
+        g = int(120 + t * (215 - 120))
+        b = int(160 + t * (255 - 160))
+        return f"rgb({r},{g},{b})"
+
+    font = os.path.join(matplotlib.get_data_path(), "fonts", "ttf", "DejaVuSans-Bold.ttf")
+    wc = WordCloud(
+        width=lebar, height=tinggi, mode="RGBA", background_color=None,
+        font_path=font if os.path.exists(font) else None,
+        prefer_horizontal=1.0, max_words=len(freq), relative_scaling=0.6,
+        min_font_size=11, margin=6, color_func=_warna, random_state=7,
+    )
+    buf = io.BytesIO()
+    wc.generate_from_frequencies(freq).to_image().save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def extract_sebaran_tier(df):
@@ -2183,17 +2254,38 @@ with tab3:
 
     st.markdown("---")
     st.markdown("**Kata Kunci Dominan**")
-    keywords = extract_keywords(df)
-    if keywords:
-        max_freq = keywords[0][1]
-        for word, freq in keywords[:10]:
-            pct = round(freq / max_freq * 100)
-            st.markdown(f"""
-            <div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>
-              <div style='font-size:11px;color:inherit;opacity:0.85;width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{word}</div>
-              <div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>
-                <div style='width:{pct}%;height:100%;background:#1C3D5A;border-radius:3px'></div>
-              </div>
-              <div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:18px'>{freq}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    # Word cloud (kiri) + 10 teratas dengan angka (kanan) -- round diskusi,
+    # dibandingkan pakai mockup data crawl asli. Cloud dipakai buat
+    # menangkap gambaran isu sekilas & lebih banyak kata (40), tapi ukuran
+    # huruf di cloud menipu buat membandingkan besaran: kata panjang
+    # kelihatan lebih "besar" dari kata pendek yang frekuensinya lebih
+    # tinggi (di data judol, "penerima" 15x tampil hampir sebesar
+    # "bansos" 22x). Makanya daftar 10 teratas + angkanya tetap dipasang
+    # di sebelahnya, bukan diganti total.
+    keywords_cloud = extract_keywords(df, n=40)
+    if keywords_cloud:
+        top10 = keywords_cloud[:10]
+        max_freq = top10[0][1]
+        # Warna bar #63B3ED (sebelumnya #1C3D5A -- sama persis dengan
+        # secondaryBackgroundColor tema, jadi batangnya nyaris tidak
+        # kelihatan di latar gelap), sekaligus satu hue dengan word cloud.
+        bar_rows = "".join(
+            f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px'>"
+            f"<div style='font-size:11px;color:inherit;opacity:0.85;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{html.escape(word)}</div>"
+            f"<div style='flex:1;height:14px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden'>"
+            f"<div style='width:{round(freq / max_freq * 100)}%;height:100%;background:#63B3ED;border-radius:3px'></div></div>"
+            f"<div style='font-size:10px;font-family:monospace;color:inherit;opacity:0.5;width:22px;text-align:right'>{freq}</div>"
+            f"</div>"
+            for word, freq in top10
+        )
+        png = render_wordcloud_png(tuple(keywords_cloud))
+        if png:
+            col_cloud, col_top = st.columns([1.6, 1])
+            with col_cloud:
+                st.image(png, width="stretch")
+            with col_top:
+                st.caption("10 teratas (jumlah kemunculan)")
+                st.markdown(bar_rows, unsafe_allow_html=True)
+        else:
+            # Library wordcloud tidak tersedia -- tetap tampilkan daftarnya.
+            st.markdown(bar_rows, unsafe_allow_html=True)
